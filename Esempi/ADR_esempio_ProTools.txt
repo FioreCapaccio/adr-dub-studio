@@ -1,0 +1,12 @@
+SESSION NAME:	Film ADR
+SAMPLE RATE:	48000.000000
+BIT DEPTH:	24-bit
+SESSION START TIMECODE:	01:00:00:00
+TIMECODE FORMAT:	25 Frame
+
+
+M A R K E R S  L I S T I N G
+#   	LOCATION     	TIME REFERENCE      	UNITS    	NAME                             	COMMENTS
+1   	01:00:12:05	586800	Samples	ADR 1 - MARCO	CHARACTER: Marco | SCENE: 12 | OUT: 01:00:15:00 | DIALOGUE: Non ci credo, non puo essere vero
+2   	01:00:40:00	1920000	Samples	GIULIA	CHARACTER: Giulia | SCENE: 14 | OUT: 01:00:43:10 | DIALOGUE: Dove sei stato tutto questo tempo?
+3   	01:01:20:00	3840000	Samples	MARCO	CHARACTER: Marco | SCENE: 15 | OUT: 01:01:22:00 | DIALOGUE: Andiamo via di qui

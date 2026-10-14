@@ -1,0 +1,83 @@
+cmake_minimum_required(VERSION 3.22)
+
+project(ArotronStudio VERSION 1.0.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# macOS: build universale (Apple Silicon + Intel), da macOS 11. Si puo' ridurre con -DCMAKE_OSX_ARCHITECTURES=arm64
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
+
+# Riusa i sorgenti JUCE gia' scaricati per Voice Cleaner, se ci sono.
+set(_vc_juce "/Volumes/NVME_500/Progetti/VoiceCleaner/build/_deps/juce-src")
+if(EXISTS "${_vc_juce}/CMakeLists.txt" AND NOT DEFINED FETCHCONTENT_SOURCE_DIR_JUCE)
+    set(FETCHCONTENT_SOURCE_DIR_JUCE "${_vc_juce}" CACHE PATH "" FORCE)
+endif()
+
+include(FetchContent)
+FetchContent_Declare(JUCE
+    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+    GIT_TAG        8.0.9
+    GIT_SHALLOW    ON)
+FetchContent_MakeAvailable(JUCE)
+
+juce_add_gui_app(ArotronStudio
+    PRODUCT_NAME "ADR Dub Studio"
+    VERSION 1.0.0
+    BUNDLE_VERSION 1.0.0
+    COMPANY_NAME "Arotron"
+    BUNDLE_ID "com.arotron.studio"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png"
+    DOCUMENT_EXTENSIONS arostudio
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "ADR Dub Studio usa il microfono per registrare l'audio sulle tracce."
+    CAMERA_PERMISSION_ENABLED FALSE)
+
+juce_generate_juce_header(ArotronStudio)
+
+target_sources(ArotronStudio PRIVATE
+    Source/Main.cpp
+    Source/Model.cpp
+    Source/AudioEngine.cpp
+    Source/VideoViewer.cpp
+    Source/PluginHost.cpp
+    Source/EditBar.cpp
+    Source/ExportEngine.cpp
+    Source/ExportDialog.cpp
+    Source/SessionSettings.cpp
+    Source/AdrImport.cpp
+    Source/AdrPanel.cpp
+    Source/TimelineView.cpp
+    Source/MixerView.cpp
+    Source/SpectrumView.cpp
+    Source/EqEditor.cpp
+    Source/MainComponent.cpp)
+
+# Il video (lettura, miniature, esportazione) usa AVFoundation: solo su macOS. Altrove restano audio, ADR ed esportazioni audio.
+if(APPLE)
+    target_sources(ArotronStudio PRIVATE Source/VideoSupport.mm)
+else()
+    target_sources(ArotronStudio PRIVATE Source/VideoSupportStub.cpp)
+endif()
+
+target_compile_definitions(ArotronStudio PRIVATE
+    JUCE_USE_CAMERA=0
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_AU=0
+    JUCE_MODAL_LOOPS_PERMITTED=0
+    JUCE_APPLICATION_NAME_STRING="ADR Dub Studio"
+    JUCE_APPLICATION_VERSION_STRING="1.0.0")
+
+if(APPLE)
+    target_link_libraries(ArotronStudio PRIVATE "-framework AVFoundation" "-framework CoreMedia")
+endif()
+
+target_link_libraries(ArotronStudio
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_video
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)

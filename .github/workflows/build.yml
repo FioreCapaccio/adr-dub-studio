@@ -1,0 +1,68 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos-universal:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (universal: arm64 + x86_64)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+      - name: Check architectures
+        run: lipo -info "build/ArotronStudio_artefacts/Release/ADR Dub Studio.app/Contents/MacOS/ADR Dub Studio"
+      - name: Sign (ad-hoc) and zip
+        run: |
+          APP="build/ArotronStudio_artefacts/Release/ADR Dub Studio.app"
+          codesign --force --deep -s - "$APP"
+          ditto -c -k --keepParent "$APP" ADR-Dub-Studio-macOS-universal.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ADR-Dub-Studio-macOS-universal
+          path: ADR-Dub-Studio-macOS-universal.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Zip
+        shell: pwsh
+        run: |
+          $dir = "build/ArotronStudio_artefacts/Release"
+          Get-ChildItem $dir
+          Compress-Archive -Path "$dir/ADR Dub Studio.exe" -DestinationPath ADR-Dub-Studio-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ADR-Dub-Studio-Windows-x64
+          path: ADR-Dub-Studio-Windows-x64.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos-universal, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/*.zip --repo "${{ github.repository }}" \
+            --title "ADR Dub Studio ${{ github.ref_name }}" \
+            --notes "Build automatica. macOS: universale (Apple Silicon e Intel), firma ad-hoc (clic destro > Apri la prima volta). Windows: x64, senza il supporto video."
