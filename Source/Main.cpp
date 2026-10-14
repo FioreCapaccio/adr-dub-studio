@@ -847,7 +847,7 @@ private:
 
     void stepEq()
     {
-        constexpr double rate = 48000.0;
+        static constexpr double rate = 48000.0;
         auto sine = [] (double hz, int n) { juce::AudioBuffer<float> b (2, n); for (int i = 0; i < n; ++i) { const float v = 0.25f * (float) std::sin (juce::MathConstants<double>::twoPi * hz * i / rate); b.setSample (0, i, v); b.setSample (1, i, v); } return b; };
         auto gainDbAt = [&] (fc::ParamEq& eq, double hz)
         {
@@ -1542,11 +1542,19 @@ private:
             setResizable (true, true);
             setResizeLimits (1400, 700, 6000, 4000);
             centreWithSize (1440, 900);
-            juce::MenuBarModel::setMacMainMenu (c);
+#if JUCE_MAC
+            juce::MenuBarModel::setMacMainMenu (c);   // menu nella barra di macOS
+#else
+            setMenuBar (c);                           // Windows e Linux: menu dentro la finestra
+#endif
             setVisible (true);
         }
 
+#if JUCE_MAC
         ~MainWindow() override { juce::MenuBarModel::setMacMainMenu (nullptr); }
+#else
+        ~MainWindow() override { setMenuBar (nullptr); }
+#endif
 
         fc::MainComponent& main() { return *static_cast<fc::MainComponent*> (getContentComponent()); }
         void closeButtonPressed() override { main().requestQuit(); }

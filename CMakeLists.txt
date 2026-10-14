@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(ArotronStudio VERSION 1.0.0 LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # macOS: build universale (Apple Silicon + Intel), da macOS 11. Si puo' ridurre con -DCMAKE_OSX_ARCHITECTURES=arm64
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")

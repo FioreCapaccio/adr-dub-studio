@@ -26,10 +26,14 @@ jobs:
           APP="build/ArotronStudio_artefacts/Release/ADR Dub Studio.app"
           codesign --force --deep -s - "$APP"
           ditto -c -k --keepParent "$APP" ADR-Dub-Studio-macOS-universal.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ADR-Dub-Studio-macOS-universal
-          path: ADR-Dub-Studio-macOS-universal.zip
+      - name: Publish to the release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "ADR Dub Studio ${{ github.ref_name }}" --notes "Build automatica. macOS: universale (Apple Silicon e Intel), firma ad-hoc: la prima volta clic destro > Apri. Windows: x64, senza il supporto video." || true
+          sleep 10
+          gh release upload "${{ github.ref_name }}" ADR-Dub-Studio-macOS-universal.zip --repo "${{ github.repository }}" --clobber
 
   windows:
     runs-on: windows-latest
@@ -45,24 +49,12 @@ jobs:
           $dir = "build/ArotronStudio_artefacts/Release"
           Get-ChildItem $dir
           Compress-Archive -Path "$dir/ADR Dub Studio.exe" -DestinationPath ADR-Dub-Studio-Windows-x64.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ADR-Dub-Studio-Windows-x64
-          path: ADR-Dub-Studio-Windows-x64.zip
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos-universal, windows]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Create release
+      - name: Publish to the release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" dist/*.zip --repo "${{ github.repository }}" \
-            --title "ADR Dub Studio ${{ github.ref_name }}" \
-            --notes "Build automatica. macOS: universale (Apple Silicon e Intel), firma ad-hoc (clic destro > Apri la prima volta). Windows: x64, senza il supporto video."
+          gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "ADR Dub Studio ${{ github.ref_name }}" --notes "Build automatica. macOS: universale, firma ad-hoc. Windows: x64, senza il supporto video." 2>$null
+          Start-Sleep -Seconds 15
+          gh release upload "${{ github.ref_name }}" ADR-Dub-Studio-Windows-x64.zip --repo "${{ github.repository }}" --clobber
