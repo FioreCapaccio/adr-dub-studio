@@ -371,7 +371,7 @@ void TimelineView::drawHeaderMeter (juce::Graphics& g, int ti)
 {
     const auto& t = project.getSession().tracks[(size_t) ti];
     const auto r = meterRect (ti).toFloat();
-    const bool scale = heightOf (ti) >= 80;
+    const bool scale = heightOf (ti) >= 88;
     const auto it = headerMeters.find (t.id);
     const HeaderMeter m = it != headerMeters.end() ? it->second : HeaderMeter();
     auto xOf = [&] (float db) { return r.getX() + r.getWidth() * juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f); };

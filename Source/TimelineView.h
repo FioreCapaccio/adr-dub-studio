@@ -96,7 +96,14 @@ private:
     juce::Rectangle<int> inputRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 36, 56, 18 }; }
     juce::Rectangle<int> trimRect (int ti) const { return { headerW - knobW + 4, laneTop (ti) + 4, knobW - 10, 64 }; }   // manopola del guadagno in ingresso
     // vu-meter orizzontale in basso nell'intestazione: con la scala (traccia alta) o ridotto (traccia bassa)
-    juce::Rectangle<int> meterRect (int ti) const { const int h = heightOf (ti); return { 42, laneTop (ti) + h - (h >= 80 ? 24 : 12), headerW - knobW - 50, h >= 80 ? 20 : 8 }; }
+    juce::Rectangle<int> meterRect (int ti) const   // sotto i pulsanti, con un margine dal bordo
+    {
+        const int h = heightOf (ti), y = laneTop (ti), w = headerW - knobW - 50;
+        if (h >= 88) return { 42, y + 60, w, 20 };
+        if (h >= 76) return { 42, y + 60, w, 8 };
+        if (h >= 66) return { 42, y + h - 16, w, 8 };
+        return { 42, y + 36, w, 8 };
+    }
     juce::Rectangle<int> autoRect (int ti) const { return { 42, laneTop (ti) + 36, 46, 18 }; }
     int trackIndexAtY (int y) const noexcept;
 
