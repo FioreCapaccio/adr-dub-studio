@@ -1126,17 +1126,21 @@ private:
         fc::Clip c; c.id = 9990; c.asset = asset; c.length = 8192;
         p.edit().tracks[0].clips = { c };
         p.edit().master->limiterOn = false;
+        float lastMeter = 0.0f;
         auto level = [&]
         {
             fc::Mixer m;
             auto sess = p.getSession().cloneDetached();
             juce::AudioBuffer<float> buf (2, 2048);
             for (int pos = 0; pos < 4096; pos += 2048) m.render (sess, pos, buf, 0, 2048);   // si legge il secondo blocco, a regime
+            lastMeter = sess.tracks[0].live->meterL.load();
             return buf.getSample (0, 1500);
         };
         expect (std::abs (level() - 0.25f) < 1.0e-4f, "guadagno in ingresso: 0 dB lascia il livello");
+        expect (std::abs (lastMeter - 0.25f) < 1.0e-3f, "vu-meter di traccia a 0 dB: " + juce::String (lastMeter, 3));
         p.getSession().tracks[0].live->trimDb = 6.0f;
         expect (std::abs (level() - 0.25f * juce::Decibels::decibelsToGain (6.0f)) < 1.0e-3f, "guadagno in ingresso: +6 dB");
+        expect (std::abs (lastMeter - 0.25f * juce::Decibels::decibelsToGain (6.0f)) < 2.0e-3f, "vu-meter di traccia: misura dopo il guadagno (+6 dB) = " + juce::String (lastMeter, 3));
         p.getSession().tracks[0].live->trimDb = -6.0f;
         expect (std::abs (level() - 0.25f * juce::Decibels::decibelsToGain (-6.0f)) < 1.0e-3f, "guadagno in ingresso: -6 dB");
     }

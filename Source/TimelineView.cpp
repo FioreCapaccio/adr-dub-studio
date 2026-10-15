@@ -176,6 +176,7 @@ void TimelineView::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void TimelineView::timerCallback()
 {
+    updateHeaderMeters();
     const int64_t pos = engine.getPosition();
     if (engine.isRecording()) repaint (laneArea());
     if (pos == lastPos) return;
@@ -346,6 +347,74 @@ void TimelineView::drawRuler (juce::Graphics& g)
     }
 }
 
+void TimelineView::updateHeaderMeters()
+{
+    const auto& tracks = project.getSession().tracks;
+    for (size_t i = 0; i < tracks.size(); ++i)
+    {
+        auto& m = headerMeters[tracks[i].id];
+        auto& live = *tracks[i].live;
+        const float l = juce::Decibels::gainToDecibels (live.meterL.exchange (0.0f), -100.0f), r = juce::Decibels::gainToDecibels (live.meterR.exchange (0.0f), -100.0f);
+        const auto before = m;
+        m.dbL = juce::jmax (l, m.dbL - 2.0f);   // caduta di circa 60 dB al secondo
+        m.dbR = juce::jmax (r, m.dbR - 2.0f);
+        const float top = juce::jmax (l, r);
+        if (top > m.holdL) { m.holdL = top; m.age = 0; }
+        else if (++m.age > 45) m.holdL = juce::jmax (-100.0f, m.holdL - 1.0f);
+        if (std::abs (m.dbL - before.dbL) > 0.2f || std::abs (m.dbR - before.dbR) > 0.2f || std::abs (m.holdL - before.holdL) > 0.2f)
+            repaint (meterRect ((int) i).expanded (2, 2));
+    }
+    if (headerMeters.size() > tracks.size() + 8) headerMeters.clear();
+}
+
+void TimelineView::drawHeaderMeter (juce::Graphics& g, int ti)
+{
+    const auto& t = project.getSession().tracks[(size_t) ti];
+    const auto r = meterRect (ti).toFloat();
+    const bool scale = heightOf (ti) >= 80;
+    const auto it = headerMeters.find (t.id);
+    const HeaderMeter m = it != headerMeters.end() ? it->second : HeaderMeter();
+    auto xOf = [&] (float db) { return r.getX() + r.getWidth() * juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f); };
+    const float barH = scale ? 5.0f : 3.5f;
+
+    g.setColour (juce::Colour (0xff08090b));
+    g.fillRoundedRectangle (r.getX() - 1.0f, r.getY() - 1.0f, r.getWidth() + 2.0f, barH * 2.0f + 3.0f, 2.5f);
+    const float ys[2] = { r.getY(), r.getY() + barH + 1.0f };
+    const float dbs[2] = { m.dbL, m.dbR };
+    juce::ColourGradient cg (juce::Colour (0xff3fbf6a), r.getX(), 0.0f, juce::Colour (0xffe8473c), r.getRight(), 0.0f, false);   // verde fino a -18, giallo a -6, rosso a 0 dB
+    cg.addColour (0.70, juce::Colour (0xff3fbf6a));
+    cg.addColour (0.90, juce::Colour (0xffffc94d));
+    g.setGradientFill (cg);
+    for (int c = 0; c < 2; ++c)
+        if (dbs[c] > -59.5f) g.fillRect (r.getX(), ys[c], xOf (dbs[c]) - r.getX(), barH);
+
+    if (m.holdL > -59.0f)   // picco mantenuto e indicatore di clip
+    {
+        g.setColour (m.holdL >= -0.5f ? accent : juce::Colours::white.withAlpha (0.9f));
+        g.fillRect (xOf (m.holdL) - 1.0f, r.getY() - 1.0f, 1.5f, barH * 2.0f + 3.0f);
+    }
+    if (m.holdL >= -0.5f) { g.setColour (accent); g.fillRect (r.getRight() - 3.0f, r.getY() - 1.0f, 4.0f, barH * 2.0f + 3.0f); }
+
+    if (scale)   // graduazione in dBFS sotto le barre
+    {
+        g.setFont (mono (7.5f));
+        static const int marks[] = { 0, -6, -12, -18, -24, -36, -48 };
+        const float ty = r.getY() + barH * 2.0f + 3.0f;
+        float lastLabel = 1.0e9f;
+        for (int k = 0; k < 7; ++k)
+        {
+            const float x = xOf ((float) marks[k]);
+            g.setColour (dim.withAlpha (0.75f));
+            g.drawVerticalLine ((int) x, ty, ty + 3.0f);
+            if (std::abs (x - lastLabel) >= 15.0f || k == 0)
+            {
+                g.drawText (juce::String (marks[k]), juce::Rectangle<float> (x - 9.0f, ty + 3.0f, 18.0f, 9.0f).toNearestInt(), juce::Justification::centred);
+                lastLabel = x;
+            }
+        }
+    }
+}
+
 void TimelineView::drawHeader (juce::Graphics& g, int ti)
 {
     const auto& t = project.getSession().tracks[(size_t) ti];
@@ -393,6 +462,8 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
     drawBtn (muteRect (ti), "M", t.live->mute.load(), muteCol);
     drawBtn (soloRect (ti), "S", t.live->solo.load(), soloCol);
 
+    drawHeaderMeter (g, ti);
+
     if (h >= 52)
     {
         // manopola graduata del guadagno in ingresso (-24..+24 dB): trascina in alto/in basso, Maiusc = fine, doppio clic = 0 dB
@@ -427,7 +498,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         }
     }
 
-    if (h >= 62)
+    if (h >= 66)
     {
         // parametro di automazione mostrato sulla traccia: clic per passare a VOL / PAN / SEND A / SEND B
         {
@@ -1074,9 +1145,9 @@ TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
     {
         h.type = HitType::Header;
         if (armRect (ti).contains (p)) h.type = HitType::HeaderArm;
-        else if (heightOf (ti) >= 62 && inputRect (ti).contains (p)) h.type = HitType::HeaderInput;
-        else if (heightOf (ti) >= 62 && autoRect (ti).contains (p)) h.type = HitType::HeaderAuto;
-        else if (heightOf (ti) >= 62 && paramRect (ti).contains (p)) h.type = HitType::HeaderAutoParam;
+        else if (heightOf (ti) >= 66 && inputRect (ti).contains (p)) h.type = HitType::HeaderInput;
+        else if (heightOf (ti) >= 66 && autoRect (ti).contains (p)) h.type = HitType::HeaderAuto;
+        else if (heightOf (ti) >= 66 && paramRect (ti).contains (p)) h.type = HitType::HeaderAutoParam;
         else if (heightOf (ti) >= 52 && trimRect (ti).contains (p)) h.type = HitType::HeaderTrim;
         else if (muteRect (ti).contains (p)) h.type = HitType::HeaderMute;
         else if (soloRect (ti).contains (p)) h.type = HitType::HeaderSolo;
@@ -1502,7 +1573,12 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
             if (auto* t = project.findTrack (hit.track)) { t->live->autoParam = (t->live->autoParam.load() + 1) % kNumAutoParams; project.liveChanged(); }
             break;
         case HitType::HeaderArm:
-            if (auto* t = project.findTrack (hit.track)) { t->live->armed = ! t->live->armed.load(); project.liveChanged(); }
+            if (auto* t = project.findTrack (hit.track))
+            {
+                t->live->armed = ! t->live->armed.load();
+                if (t->live->armed.load()) engine.ensureInput();   // apre l'ingresso subito, cosi' il vu-meter mostra il livello prima di registrare
+                project.liveChanged();
+            }
             break;
         case HitType::HeaderInput:
             if (auto* t = project.findTrack (hit.track)) { t->live->inputMode = (t->live->inputMode.load() + 1) % 3; project.liveChanged(); }

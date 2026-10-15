@@ -569,6 +569,7 @@ void MainComponent::armSelectedTrack()
     if (auto* t = project->findTrack (project->selectedTrackId))
     {
         t->live->armed = ! t->live->armed.load();
+        if (t->live->armed.load()) engine.ensureInput();   // il vu-meter della traccia funziona anche prima di registrare
         project->liveChanged();
     }
 }

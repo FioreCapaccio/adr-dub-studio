@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include "AudioEngine.h"
 #include "Commands.h"
 #include "Theme.h"
@@ -93,6 +95,8 @@ private:
     juce::Rectangle<int> soloRect (int ti) const { return { headerW - knobW - 42, laneTop (ti) + 9, 26, 20 }; }
     juce::Rectangle<int> inputRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 36, 56, 18 }; }
     juce::Rectangle<int> trimRect (int ti) const { return { headerW - knobW + 4, laneTop (ti) + 4, knobW - 10, 64 }; }   // manopola del guadagno in ingresso
+    // vu-meter orizzontale in basso nell'intestazione: con la scala (traccia alta) o ridotto (traccia bassa)
+    juce::Rectangle<int> meterRect (int ti) const { const int h = heightOf (ti); return { 42, laneTop (ti) + h - (h >= 80 ? 24 : 12), headerW - knobW - 50, h >= 80 ? 20 : 8 }; }
     juce::Rectangle<int> autoRect (int ti) const { return { 42, laneTop (ti) + 36, 46, 18 }; }
     int trackIndexAtY (int y) const noexcept;
 
@@ -144,6 +148,10 @@ private:
     std::set<int64_t> baseSelection;
     juce::Point<int> downPos;
     juce::Rectangle<int> marquee;
+    struct HeaderMeter { float dbL = -100.0f, dbR = -100.0f, holdL = -100.0f, holdR = -100.0f; int age = 0; };
+    std::map<int, HeaderMeter> headerMeters;   // per id di traccia
+    void updateHeaderMeters();
+    void drawHeaderMeter (juce::Graphics&, int ti);
     int64_t loopAnchor = 0;
     int trimTrackId = 0, segTrackId = 0, segIdA = 0, segIdB = 0, segDownY = 0;
     float trimStartDb = 0.0f;

@@ -90,6 +90,7 @@ struct TrackLive
 {
     std::atomic<float> volumeDb { 0.0f }, pan { 0.0f };
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
+    std::atomic<float> meterL { 0.0f }, meterR { 0.0f };   // livello dopo il guadagno in ingresso (mostrato nell'intestazione): ingresso se la traccia e' armata, altrimenti il segnale della traccia
     std::atomic<bool> mute { false }, solo { false };
     std::atomic<bool> invert { false };    // inversione di polarita' (traccia)
     ParamEq eq;                            // equalizzatore parametrico (solo tracce)

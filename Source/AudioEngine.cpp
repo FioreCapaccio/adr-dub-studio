@@ -175,6 +175,9 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
                     scratch.applyGainRamp (1, 0, chunk, live.trimGainLast, tgt);
                 }
                 live.trimGainLast = tgt;
+                const float ml = scratch.getMagnitude (0, 0, chunk), mr = scratch.getMagnitude (1, 0, chunk);   // livello dopo il guadagno
+                if (ml > live.meterL.load()) live.meterL.store (ml);
+                if (mr > live.meterR.load()) live.meterR.store (mr);
             }
             if (audible) live.eq.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);   // EQ, compressore, poi plug-in
             if (audible) live.comp.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);
@@ -566,6 +569,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* in, int 
         if (l > inPeakL.load()) inPeakL.store (l);
         if (r2 > inPeakR.load()) inPeakR.store (r2);
     }
+
+    // misuratore delle tracce armate: livello dell'ingresso dopo il guadagno, anche a registrazione ferma
+    if (current != nullptr && numIn > 0 && in != nullptr)
+        for (auto& t : current->tracks)
+        {
+            auto& live = *t.live;
+            if (! live.armed.load()) continue;
+            const int mode = live.inputMode.load();
+            const int a = mode == 1 ? juce::jmin (1, numIn - 1) : 0;
+            const int b = (mode == 2 && numIn > 1) ? 1 : a;
+            if (in[a] == nullptr || in[b] == nullptr) continue;
+            const float g = dbToGain (live.trimDb.load());
+            const float pl = juce::FloatVectorOperations::findMinAndMax (in[a], numSamples).getEnd() * g;
+            const float nl = -juce::FloatVectorOperations::findMinAndMax (in[a], numSamples).getStart() * g;
+            const float pr = juce::FloatVectorOperations::findMinAndMax (in[b], numSamples).getEnd() * g;
+            const float nr = -juce::FloatVectorOperations::findMinAndMax (in[b], numSamples).getStart() * g;
+            const float l = juce::jmax (pl, nl), r = juce::jmax (pr, nr);
+            if (l > live.meterL.load()) live.meterL.store (l);
+            if (r > live.meterR.load()) live.meterR.store (r);
+        }
 
     int done = 0;
     while (done < numSamples)
