@@ -1355,6 +1355,13 @@ private:
             for (int i = 0; i < n; ++i) v[(size_t) i] = amp * (float) std::sin (juce::MathConstants<double>::twoPi * hz * i / sr);
             return v;
         };
+        auto amp = [] (const juce::AudioBuffer<float>& b, int from, int to)   // ampiezza di una sinusoide da RMS (non dipende dalla fase di campionamento)
+        {
+            double e = 0.0;
+            for (int i = from; i < to; ++i) e += (double) b.getSample (0, i) * b.getSample (0, i);
+            return (float) std::sqrt (2.0 * e / (to - from));
+        };
+        auto gainToDbTest = [] (float g) { return 20.0f * std::log10 (g + 1.0e-9f); };
         auto impulse = [] (int n) { std::vector<float> v ((size_t) n, 0.0f); v[0] = 1.0f; return v; };
         juce::AudioBuffer<float> o;
 
@@ -1375,6 +1382,23 @@ private:
           fx->reset();
           run (*fx, sine (300.0, 0.5f, 48000), o);   const float loud = peak (o, 24000, 48000);
           expect (quiet < 0.0002f && loud > 0.49f, "gate: segnale basso attenuato (" + juce::String (quiet, 5) + "), forte intatto (" + juce::String (loud, 3) + ")"); }
+
+        { // multibanda: con rapporto 1:1 e' trasparente a tutte le frequenze (anche sui crossover); comprime solo la banda interessata
+          auto flat = make (FX::Multiband, {});
+          for (const char* b : { "lowRatio", "midRatio", "highRatio" }) flat->param (b)->setValueNotifyingHost (flat->param (b)->convertTo0to1 (1.0f));
+          float worst = 0.0f;
+          for (double hz : { 60.0, 200.0, 500.0, 3000.0, 8000.0 })
+          {
+              flat->reset();
+              run (*flat, sine (hz, 0.5f, 24000), o);
+              worst = juce::jmax (worst, std::abs (gainToDbTest (amp (o, 12000, 24000) / 0.5f)));
+          }
+          expect (worst < 0.5f, "multibanda: 1:1 trasparente da 60 Hz a 8 kHz (scarto max " + juce::String (worst, 2) + " dB)");
+          auto mb = make (FX::Multiband, { { "lowThr", -30.0f }, { "lowRatio", 10.0f }, { "highRatio", 1.0f }, { "midRatio", 1.0f } });
+          run (*mb, sine (100.0, 0.5f, 24000), o);  const float lowOut = amp (o, 12000, 24000);
+          mb->reset();
+          run (*mb, sine (8000.0, 0.5f, 24000), o); const float highOut = amp (o, 12000, 24000);
+          expect (lowOut < 0.2f && highOut > 0.47f, "multibanda: comprime i bassi (0.5 -> " + juce::String (lowOut, 3) + ") e non tocca gli alti (" + juce::String (highOut, 3) + ")"); }
 
         { auto fx = make (FX::Reverb, { { "mix", 100.0f }, { "size", 0.8f } });
           auto pulse = [] (int n) { std::vector<float> v ((size_t) n, 0.0f); v[2400] = 1.0f; return v; };   // un po' di silenzio prima: il livello del riverbero sale in 10 ms
@@ -1713,7 +1737,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "1.6.0"; }
+    const juce::String getApplicationVersion() override { return "1.7.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

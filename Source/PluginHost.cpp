@@ -16,7 +16,9 @@ PluginWindow::PluginWindow (std::shared_ptr<InsertSlot> s, const juce::String& t
     if (editor == nullptr) editor = new juce::GenericAudioProcessorEditor (p);
 
     setContentOwned (editor, true);
-    setResizable (editor->isResizable(), false);
+    const bool generic = dynamic_cast<juce::GenericAudioProcessorEditor*> (editor) != nullptr;
+    setResizable (editor->isResizable() || generic, false);   // l'editor generico e' scorrevole: si puo' allargare per vedere tutti i parametri
+    if (generic) setResizeLimits (360, 160, 700, 1000);
     centreWithSize (getWidth(), getHeight());
     setVisible (true);
 }

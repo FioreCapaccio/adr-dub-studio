@@ -11,7 +11,7 @@ namespace fc
 class BuiltinFx : public juce::AudioProcessor
 {
 public:
-    enum Kind { Filter, DeEsser, Gate, Reverb, Delay, Saturator, Chorus, numKinds };
+    enum Kind { Filter, DeEsser, Gate, Multiband, Reverb, Delay, Saturator, Chorus, numKinds };
     static constexpr const char* formatName = "ADR Built-in";
 
     explicit BuiltinFx (Kind);
@@ -55,6 +55,7 @@ private:
     void doFilter (juce::AudioBuffer<float>&);
     void doDeEsser (juce::AudioBuffer<float>&);
     void doGate (juce::AudioBuffer<float>&);
+    void doMultiband (juce::AudioBuffer<float>&);
     void doReverb (juce::AudioBuffer<float>&);
     void doDelay (juce::AudioBuffer<float>&);
     void doSaturator (juce::AudioBuffer<float>&);
@@ -70,6 +71,10 @@ private:
     // dinamica
     float env = 0.0f, gainNow = 1.0f;
     bool gateOpen = false;
+    // multibanda: 6 filtri LR4 (2 biquad ciascuno) per canale, e riduzione di guadagno (dB) di ogni banda
+    std::array<std::array<std::array<juce::IIRFilter, 2>, 2>, 6> mbf;
+    std::array<float, 3> mbGr {};
+    float mbXo1 = -1.0f, mbXo2 = -1.0f;
     // riverbero, delay, chorus
     juce::Reverb reverb;
     std::array<std::vector<float>, 2> ring;

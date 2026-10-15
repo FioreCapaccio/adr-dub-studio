@@ -4,7 +4,7 @@ namespace fc
 {
 namespace
 {
-const char* const kIds[BuiltinFx::numKinds] = { "filter", "deesser", "gate", "reverb", "delay", "saturator", "chorus" };
+const char* const kIds[BuiltinFx::numKinds] = { "filter", "deesser", "gate", "multiband", "reverb", "delay", "saturator", "chorus" };
 
 juce::String u8 (const char* s) { return juce::String (juce::CharPointer_UTF8 (s)); }
 
@@ -46,6 +46,20 @@ BuiltinFx::BuiltinFx (Kind k)
             addFloat ("range", "Attenuazione", 0.0f, 80.0f, 40.0f, " dB");                // 1
             addFloat ("att", "Attacco", 0.1f, 50.0f, 1.0f, " ms", 5.0f);                  // 2
             addFloat ("rel", "Rilascio", 5.0f, 1000.0f, 120.0f, " ms", 150.0f);           // 3
+            break;
+        case Multiband:
+            addFloat ("xo1", "Crossover basso/medio", 50.0f, 1000.0f, 200.0f, " Hz", 250.0f);   // 0
+            addFloat ("xo2", "Crossover medio/alto", 1000.0f, 12000.0f, 3000.0f, " Hz", 3500.0f); // 1
+            addFloat ("att", "Attacco", 0.5f, 100.0f, 10.0f, " ms", 15.0f);                      // 2
+            addFloat ("rel", "Rilascio", 20.0f, 1000.0f, 150.0f, " ms", 200.0f);                 // 3
+            addFloat ("out", "Uscita", -12.0f, 12.0f, 0.0f, " dB");                              // 4
+            for (const char* band : { "low", "mid", "high" })                                   // 5.. : soglia, rapporto, guadagno di ogni banda
+            {
+                const juce::String id (band), nm = id == "low" ? "Bassi" : id == "mid" ? "Medi" : "Alti";
+                addFloat (id + "Thr", nm + " - soglia", -60.0f, 0.0f, -24.0f, " dB");
+                addFloat (id + "Ratio", nm + " - rapporto", 1.0f, 20.0f, 3.0f, ":1", 4.0f);
+                addFloat (id + "Gain", nm + " - guadagno", -12.0f, 12.0f, 0.0f, " dB");
+            }
             break;
         case Reverb:
             addFloat ("size", "Dimensione", 0.0f, 1.0f, 0.5f);                            // 0
@@ -107,6 +121,7 @@ juce::String BuiltinFx::kindName (Kind k)
         case Filter:    return "Filtro HP/LP";
         case DeEsser:   return "De-esser";
         case Gate:      return "Gate / Expander";
+        case Multiband: return "Compressore multibanda";
         case Reverb:    return "Riverbero";
         case Delay:     return "Delay";
         case Saturator: return "Saturazione";
@@ -122,6 +137,7 @@ juce::String BuiltinFx::kindHelp (Kind k)
         case Filter:    return "Taglia i bassi (rumble, vento, pop) e gli alti: filtri a 24 dB/ottava.";
         case DeEsser:   return "Riduce le sibilanti (s, sc) del dialogo senza toccare il resto della voce.";
         case Gate:      return "Abbassa il segnale sotto soglia: elimina rumore di fondo e rientri fra le battute.";
+        case Multiband: return "Comprime separatamente bassi, medi e alti: uniforma la voce senza pompare.";
         case Reverb:    return "Riverbero stereo a stanza: per dare ambiente a un dialogo registrato in studio.";
         case Delay:     return "Eco stereo con feedback e modalita' ping-pong.";
         case Saturator: return "Saturazione morbida (tanh): scalda e fa emergere la voce o gli effetti.";
@@ -204,6 +220,8 @@ void BuiltinFx::reset()
     for (auto& ch : lp) for (auto& f : ch) f.reset();
     lastHp = lastLp = -1.0f;
     env = 0.0f; gainNow = 1.0f; gateOpen = false;
+    for (auto& f : mbf) for (auto& ch : f) for (auto& s : ch) s.reset();
+    mbGr = {}; mbXo1 = mbXo2 = -1.0f;
     reverb.reset();
     for (auto& rg : ring) std::fill (rg.begin(), rg.end(), 0.0f);
     ringPos = 0;
@@ -222,6 +240,7 @@ void BuiltinFx::processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&)
         case Filter:    doFilter (b); break;
         case DeEsser:   doDeEsser (b); break;
         case Gate:      doGate (b); break;
+        case Multiband: doMultiband (b); break;
         case Reverb:    doReverb (b); break;
         case Delay:     doDelay (b); break;
         case Saturator: doSaturator (b); break;
@@ -315,6 +334,64 @@ void BuiltinFx::doGate (juce::AudioBuffer<float>& b)
         gainNow = target + (gainNow - target) * k;
         L[i] *= gainNow;
         R[i] *= gainNow;
+    }
+}
+
+// Divisione in 3 bande con filtri Linkwitz-Riley a 4 poli. Il ramo alto passa anche da un all-pass a xo1 (LP+HP), cosi' le tre
+// bande risommate hanno risposta piatta in ampiezza. Ogni banda ha un compressore feed-forward con detector stereo collegato.
+void BuiltinFx::doMultiband (juce::AudioBuffer<float>& b)
+{
+    const float x1 = juce::jmin (get (0), (float) (rate * 0.2));
+    const float x2 = juce::jmin (juce::jmax (get (1), x1 * 1.5f), (float) (rate * 0.45));
+    if (x1 != mbXo1 || x2 != mbXo2)
+    {
+        mbXo1 = x1; mbXo2 = x2;
+        for (int c = 0; c < 2; ++c)
+            for (int s = 0; s < 2; ++s)
+            {
+                mbf[0][(size_t) c][(size_t) s].setCoefficients (juce::IIRCoefficients::makeLowPass  (rate, x2, 0.7071));   // LP2
+                mbf[1][(size_t) c][(size_t) s].setCoefficients (juce::IIRCoefficients::makeHighPass (rate, x2, 0.7071));   // HP2
+                mbf[2][(size_t) c][(size_t) s].setCoefficients (juce::IIRCoefficients::makeLowPass  (rate, x1, 0.7071));   // LP1 (basso)
+                mbf[3][(size_t) c][(size_t) s].setCoefficients (juce::IIRCoefficients::makeHighPass (rate, x1, 0.7071));   // HP1 (medio)
+                mbf[4][(size_t) c][(size_t) s].setCoefficients (juce::IIRCoefficients::makeLowPass  (rate, x1, 0.7071));   // all-pass sull'alto
+                mbf[5][(size_t) c][(size_t) s].setCoefficients (juce::IIRCoefficients::makeHighPass (rate, x1, 0.7071));
+            }
+    }
+    const float atk = std::exp (-1.0f / (get (2) * 0.001f * (float) rate)), rel = std::exp (-1.0f / (get (3) * 0.001f * (float) rate));
+    const float outG = dbToGain (get (4));
+    float thr[3], slope[3], gain[3];
+    for (int k = 0; k < 3; ++k)
+    {
+        thr[k] = get (5 + 3 * k);
+        slope[k] = 1.0f - 1.0f / get (6 + 3 * k);
+        gain[k] = dbToGain (get (7 + 3 * k));
+    }
+    auto lr = [this] (int f, int c, float v) { return mbf[(size_t) f][(size_t) c][1].processSingleSampleRaw (mbf[(size_t) f][(size_t) c][0].processSingleSampleRaw (v)); };
+
+    float* d[2] = { b.getWritePointer (0), b.getWritePointer (1) };
+    for (int i = 0; i < b.getNumSamples(); ++i)
+    {
+        float band[3][2];
+        for (int c = 0; c < 2; ++c)
+        {
+            const float x = d[c][i];
+            const float lowMid = lr (0, c, x), hi = lr (1, c, x);
+            band[0][c] = lr (2, c, lowMid);
+            band[1][c] = lr (3, c, lowMid);
+            band[2][c] = lr (4, c, hi) + lr (5, c, hi);
+        }
+        for (int k = 0; k < 3; ++k)
+        {
+            const float lvl = gainToDb (juce::jmax (std::abs (band[k][0]), std::abs (band[k][1])));
+            const float target = juce::jmax (0.0f, (lvl - thr[k]) * slope[k]);
+            mbGr[(size_t) k] = target + (mbGr[(size_t) k] - target) * (target > mbGr[(size_t) k] ? atk : rel);
+        }
+        for (int c = 0; c < 2; ++c)
+        {
+            float sum = 0.0f;
+            for (int k = 0; k < 3; ++k) sum += band[k][c] * dbToGain (-mbGr[(size_t) k]) * gain[k];
+            d[c][i] = sum * outG;
+        }
     }
 }
 
