@@ -30,4 +30,13 @@ std::vector<juce::Image> thumbnails (const juce::File&, double interval, int cou
     progress riceve 0..1 e restituisce false per annullare. */
 bool muxAudio (const juce::File& video, const juce::File& audio, const juce::File& out, double videoOffsetSec,
                const std::function<bool (double)>& progress, juce::String& error, double rangeStartSec = 0.0, double rangeEndSec = -1.0);
+
+/** Solo con il backend ffmpeg (Windows): estrae la prima traccia audio del video in un WAV a virgola mobile, nella frequenza originale. */
+bool extractAudio (const juce::File& video, const juce::File& wavOut, juce::String& error);
+
+/** Vero se il backend e' ffmpeg: decodifica, miniature ed esportazione usano ffmpeg/ffprobe (vicino all'app o nel PATH). */
+bool usesExternalDecoder();
+
+/** Percorso di ffmpeg/ffprobe oppure stringa vuota se non si trovano (con il backend ffmpeg). */
+juce::String ffmpegStatus();
 } // namespace fc::video

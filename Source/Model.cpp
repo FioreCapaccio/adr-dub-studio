@@ -60,7 +60,16 @@ void Asset::buildPeaks()
 
 AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double rate, juce::String& error)
 {
-    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+    std::unique_ptr<juce::AudioFormatReader> r;
+    juce::File tempWav;
+    if (video::usesExternalDecoder() && video::isVideoFile (f))
+    {
+        // senza decodificatori di sistema l'audio del video si estrae con ffmpeg in un WAV temporaneo
+        tempWav = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("adr_audio", ".wav");
+        juce::String e;
+        if (video::extractAudio (f, tempWav, e)) r.reset (fm.createReaderFor (tempWav));
+    }
+    if (r == nullptr) r.reset (fm.createReaderFor (f));
     if (r == nullptr || r->lengthInSamples <= 0)
     {
         error = "Formato non supportato o file vuoto: " + f.getFileName();
@@ -76,14 +85,17 @@ AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double ra
     const int srcLen = (int) r->lengthInSamples;
     juce::AudioBuffer<float> src (nch, srcLen);
     r->read (&src, 0, srcLen, 0, true, nch > 1);
+    const double srcRate = r->sampleRate;
+    r.reset();
+    if (tempWav != juce::File()) tempWav.deleteFile();
 
     auto a = std::make_shared<Asset>();
     a->file = f;
     a->name = f.getFileNameWithoutExtension();
 
-    if (std::abs (r->sampleRate - rate) > 0.5)
+    if (std::abs (srcRate - rate) > 0.5)
     {
-        const double ratio = r->sampleRate / rate;
+        const double ratio = srcRate / rate;
         const int outLen = (int) std::ceil ((double) srcLen / ratio);
         a->audio.setSize (nch, outLen);
         for (int ch = 0; ch < nch; ++ch)

@@ -2,9 +2,18 @@
 
 #include "Model.h"
 #include "Theme.h"
+#if ADR_FFMPEG_VIDEO
+ #include "FfmpegFramePlayer.h"
+#endif
 
 namespace fc
 {
+#if ADR_FFMPEG_VIDEO
+using VideoWidget = FfmpegFramePlayer;   // Windows: ffmpeg
+#else
+using VideoWidget = juce::VideoComponent;   // macOS: AVFoundation
+#endif
+
 /** Mostra il video (muto) seguendo il trasporto audio: la posizione dell'audio e' sempre il riferimento. */
 class VideoViewer : public juce::Component
 {
@@ -47,7 +56,7 @@ private:
     void nudge (double seconds);
     void commitLabel();
 
-    juce::VideoComponent video { false };
+    VideoWidget video { false };
     std::shared_ptr<VideoAsset> asset;
     bool loaded = false, running = false, detached = false;
     double lastSetPos = -1.0, holdoffUntil = 0.0, lastShown = -1.0;

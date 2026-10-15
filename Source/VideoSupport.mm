@@ -165,4 +165,8 @@ bool muxAudio (const juce::File& video, const juce::File& audio, const juce::Fil
     return true;
 }
 
+
+bool extractAudio (const juce::File&, const juce::File&, juce::String& error) { error = "Non usato su macOS."; return false; }
+bool usesExternalDecoder() { return false; }
+juce::String ffmpegStatus() { return {}; }
 } // namespace fc::video

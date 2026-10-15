@@ -53,11 +53,17 @@ target_sources(ArotronStudio PRIVATE
     Source/EqEditor.cpp
     Source/MainComponent.cpp)
 
-# Il video (lettura, miniature, esportazione) usa AVFoundation: solo su macOS. Altrove restano audio, ADR ed esportazioni audio.
+# Video: su macOS AVFoundation; altrove (Windows) ffmpeg/ffprobe accanto all'app o nel PATH.
+# Su macOS si puo' provare il backend ffmpeg con -DADR_FFMPEG_VIDEO=ON.
 if(APPLE)
-    target_sources(ArotronStudio PRIVATE Source/VideoSupport.mm)
+    option(ADR_FFMPEG_VIDEO "Video via ffmpeg invece di AVFoundation" OFF)
 else()
-    target_sources(ArotronStudio PRIVATE Source/VideoSupportStub.cpp)
+    set(ADR_FFMPEG_VIDEO ON)
+endif()
+if(ADR_FFMPEG_VIDEO)
+    target_sources(ArotronStudio PRIVATE Source/VideoSupportFfmpeg.cpp Source/FfmpegFramePlayer.cpp)
+else()
+    target_sources(ArotronStudio PRIVATE Source/VideoSupport.mm)
 endif()
 
 target_compile_definitions(ArotronStudio PRIVATE
@@ -70,14 +76,22 @@ target_compile_definitions(ArotronStudio PRIVATE
     JUCE_APPLICATION_NAME_STRING="ADR Dub Studio"
     JUCE_APPLICATION_VERSION_STRING="1.0.0")
 
-if(APPLE)
+if(ADR_FFMPEG_VIDEO)
+    target_compile_definitions(ArotronStudio PRIVATE ADR_FFMPEG_VIDEO=1)
+else()
+    target_compile_definitions(ArotronStudio PRIVATE ADR_FFMPEG_VIDEO=0)
+endif()
+
+if(APPLE AND NOT ADR_FFMPEG_VIDEO)
     target_link_libraries(ArotronStudio PRIVATE "-framework AVFoundation" "-framework CoreMedia")
+endif()
+if(NOT ADR_FFMPEG_VIDEO)
+    target_link_libraries(ArotronStudio PRIVATE juce::juce_video)
 endif()
 
 target_link_libraries(ArotronStudio
     PRIVATE
         juce::juce_audio_utils
-        juce::juce_video
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
