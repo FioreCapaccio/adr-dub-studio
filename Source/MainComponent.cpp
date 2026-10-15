@@ -354,6 +354,11 @@ void MainComponent::layoutAll()
     if (showDocked) viewer.setBounds (r.removeFromRight (juce::jlimit (360, 620, (int) (r.getWidth() * 0.36))));
     editBar->setBounds (r.removeFromTop (40));
     timeline->setBounds (r);
+    if (pendingFit && timeline->getHeight() > 120)   // all'avvio (e con un nuovo video) le tracce si adattano alla finestra: si vedono tutte
+    {
+        pendingFit = false;
+        timeline->fitTrackHeights();
+    }
     repaint();
 }
 
@@ -482,6 +487,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
         shownVideo = project->getSession().video;
         viewer.setVideo (shownVideo);
         if (shownVideo == nullptr && videoWindow != nullptr) setViewerDetached (false);
+        pendingFit = true;
         layoutAll();
     }
     viewer.refreshOffset();
@@ -1291,7 +1297,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNew:
         {
             juce::Component::SafePointer<MainComponent> safe (this);
-            confirmDiscard ([safe] { if (safe != nullptr) { safe->engine.stop(); safe->engine.setPosition (0); safe->project->newSession(); } });
+            confirmDiscard ([safe] { if (safe != nullptr) { safe->engine.stop(); safe->engine.setPosition (0); safe->project->newSession(); safe->pendingFit = true; safe->layoutAll(); } });
             break;
         }
         case cmdOpen:          openDialog(); break;

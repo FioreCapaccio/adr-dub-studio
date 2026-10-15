@@ -150,6 +150,7 @@ private:
     bool mixerVisible = true, viewerVisible = true;
     int mixerHeight = 420;
     bool mixerUserSized = false;
+    bool pendingFit = true;   // adatta l'altezza delle tracce alla finestra al prossimo layout
     int64_t lastShownPos = -1;
     int infoTick = 0, secondTick = 0, secondsSinceAutosave = 0;
     std::unique_ptr<juce::Component> helpWindow;
