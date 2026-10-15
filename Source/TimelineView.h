@@ -13,7 +13,7 @@ class TimelineView : public juce::Component,
                      public juce::FileDragAndDropTarget
 {
 public:
-    static constexpr int headerW = 214, exportH = 12, rulerH = 44, sbSize = 12, videoH = 66, minTrackH = 48, maxTrackH = 400;
+    static constexpr int headerW = 264, knobW = 50, exportH = 12, rulerH = 44, sbSize = 12, videoH = 66, minTrackH = 48, maxTrackH = 400;
 
     TimelineView (Project&, AudioEngine&);
     ~TimelineView() override;
@@ -69,9 +69,9 @@ public:
     void fileDragExit (const juce::StringArray&) override { dropHighlight = false; repaint(); }
 
 private:
-    enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, TrackResize, VideoMove,
+    enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, Trim, AutoSegment, TrackResize, VideoMove,
                       Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint };
-    enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderMute, HeaderSolo, HeaderArm, HeaderInput, TrackResize,
+    enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderInput, TrackResize,
                          Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane };
     struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; };
     struct Origin { int64_t id, start, offset, length, fadeIn, fadeOut; int track; };
@@ -88,10 +88,11 @@ private:
     int64_t xToSample (double x) const noexcept { return (int64_t) std::llround (xToSampleD (x)); }
     float sampleToX (int64_t s) const noexcept { return (float) (headerW + ((double) s - scrollX) / spp); }
     juce::Rectangle<float> clipRect (int trackIdx, const Clip&) const;
-    juce::Rectangle<int> armRect (int ti) const { return { headerW - 98, laneTop (ti) + 9, 26, 20 }; }
-    juce::Rectangle<int> muteRect (int ti) const { return { headerW - 70, laneTop (ti) + 9, 26, 20 }; }
-    juce::Rectangle<int> soloRect (int ti) const { return { headerW - 42, laneTop (ti) + 9, 26, 20 }; }
-    juce::Rectangle<int> inputRect (int ti) const { return { headerW - 70, laneTop (ti) + 36, 56, 18 }; }
+    juce::Rectangle<int> armRect (int ti) const { return { headerW - knobW - 98, laneTop (ti) + 9, 26, 20 }; }
+    juce::Rectangle<int> muteRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 9, 26, 20 }; }
+    juce::Rectangle<int> soloRect (int ti) const { return { headerW - knobW - 42, laneTop (ti) + 9, 26, 20 }; }
+    juce::Rectangle<int> inputRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 36, 56, 18 }; }
+    juce::Rectangle<int> trimRect (int ti) const { return { headerW - knobW + 4, laneTop (ti) + 4, knobW - 10, 64 }; }   // manopola del guadagno in ingresso
     juce::Rectangle<int> autoRect (int ti) const { return { 42, laneTop (ti) + 36, 46, 18 }; }
     int trackIndexAtY (int y) const noexcept;
 
@@ -124,6 +125,8 @@ private:
     float autoValueForY (int ti, int param, int y) const;
     juce::Rectangle<int> paramRect (int ti) const { return { 92, laneTop (ti) + 36, 48, 18 }; }
     bool findAutoPointAt (juce::Point<int> p, int& trackIndex, int& pointId) const;
+    bool findAutoSegmentAt (juce::Point<int> p, int& trackIndex, int& idA, int& idB) const;   // linea tra due punti
+    void drawWaveformChannel (juce::Graphics&, const Clip&, juce::Rectangle<float>, juce::Rectangle<int>, int channel);   // -1 = tutti i canali sovrapposti
 
     Project& project;
     AudioEngine& engine;
@@ -142,6 +145,11 @@ private:
     juce::Point<int> downPos;
     juce::Rectangle<int> marquee;
     int64_t loopAnchor = 0;
+    int trimTrackId = 0, segTrackId = 0, segIdA = 0, segIdB = 0, segDownY = 0;
+    float trimStartDb = 0.0f;
+    int trimDownY = 0;
+    int64_t segPosA = 0, segPosB = 0;
+    float segValA = 0.0f, segValB = 0.0f;
     // intervallo di esportazione (barra sopra il righello)
     int exportMode = 0;                  // 0 nuovo, 1 sposta l'inizio, 2 sposta la fine, 3 sposta tutto
     int64_t exportAnchor = 0, exportGrab = 0;

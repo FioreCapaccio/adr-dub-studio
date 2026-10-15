@@ -19,26 +19,28 @@ void Asset::buildPeaks()
 {
     levels.clear();
     const int n = audio.getNumSamples(), nch = audio.getNumChannels();
+    const bool stereo = nch >= 2;
 
     PeakLevel l0;
     l0.block = 64;
     const int nb = juce::jmax (1, (n + 63) / 64);
     l0.mn.assign ((size_t) nb, 0.0f);
     l0.mx.assign ((size_t) nb, 0.0f);
+    if (stereo) { l0.mn1.assign ((size_t) nb, 0.0f); l0.mx1.assign ((size_t) nb, 0.0f); }
 
     for (int b = 0; b < nb; ++b)
     {
         const int s0 = b * 64, s1 = juce::jmin (n, s0 + 64);
         if (s1 <= s0) break;
-        float lo = 0.0f, hi = 0.0f;
-        for (int ch = 0; ch < nch; ++ch)
+        auto r0 = juce::FloatVectorOperations::findMinAndMax (audio.getReadPointer (0) + s0, s1 - s0);
+        l0.mn[(size_t) b] = juce::jmin (0.0f, r0.getStart());
+        l0.mx[(size_t) b] = juce::jmax (0.0f, r0.getEnd());
+        if (stereo)
         {
-            auto r = juce::FloatVectorOperations::findMinAndMax (audio.getReadPointer (ch) + s0, s1 - s0);
-            lo = juce::jmin (lo, r.getStart());
-            hi = juce::jmax (hi, r.getEnd());
+            auto r1 = juce::FloatVectorOperations::findMinAndMax (audio.getReadPointer (1) + s0, s1 - s0);
+            l0.mn1[(size_t) b] = juce::jmin (0.0f, r1.getStart());
+            l0.mx1[(size_t) b] = juce::jmax (0.0f, r1.getEnd());
         }
-        l0.mn[(size_t) b] = lo;
-        l0.mx[(size_t) b] = hi;
     }
     levels.push_back (std::move (l0));
 
@@ -50,10 +52,16 @@ void Asset::buildPeaks()
         const size_t cnt = (p.mn.size() + 7) / 8;
         nx.mn.assign (cnt, 0.0f);
         nx.mx.assign (cnt, 0.0f);
+        if (stereo) { nx.mn1.assign (cnt, 0.0f); nx.mx1.assign (cnt, 0.0f); }
         for (size_t i = 0; i < p.mn.size(); ++i)
         {
             nx.mn[i / 8] = juce::jmin (nx.mn[i / 8], p.mn[i]);
             nx.mx[i / 8] = juce::jmax (nx.mx[i / 8], p.mx[i]);
+            if (stereo)
+            {
+                nx.mn1[i / 8] = juce::jmin (nx.mn1[i / 8], p.mn1[i]);
+                nx.mx1[i / 8] = juce::jmax (nx.mx1[i / 8], p.mx1[i]);
+            }
         }
         levels.push_back (std::move (nx));
     }
@@ -1248,6 +1256,7 @@ juce::var Project::toVar() const
         o->setProperty ("autoMode", t.live->autoMode.load());
         o->setProperty ("invert", t.live->invert.load());
         o->setProperty ("outBus", t.live->outBus.load());
+        o->setProperty ("trim", (double) t.live->trimDb.load());
         o->setProperty ("trackType", t.live->trackType.load());
         {
             auto* c = new juce::DynamicObject();
@@ -1445,6 +1454,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     insertsFromVar (tv.getProperty ("inserts", {}), *t.live);
                     t.live->autoMode = (int) tv.getProperty ("autoMode", 0);
                     t.live->invert = (bool) tv.getProperty ("invert", false);
+                    t.live->trimDb = juce::jlimit (-24.0f, 24.0f, (float) (double) tv.getProperty ("trim", 0.0));
                     t.live->trackType = juce::jlimit (0, (int) kNumTrackTypes - 1, (int) tv.getProperty ("trackType", 0));
                     if (tv.hasProperty ("comp"))
                     {

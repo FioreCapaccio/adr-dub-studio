@@ -19,7 +19,8 @@ inline float dbToGain (float db) noexcept { return db <= -79.5f ? 0.0f : juce::D
 struct PeakLevel
 {
     int block = 64;
-    std::vector<float> mn, mx;
+    std::vector<float> mn, mx;     // canale sinistro (o l'unico canale)
+    std::vector<float> mn1, mx1;   // canale destro, solo per l'audio stereo
 };
 
 /** Audio caricato in memoria alla frequenza di sessione, con picchi pre-calcolati per la forma d'onda. */
@@ -98,6 +99,8 @@ struct TrackLive
     Limiter trackLimiter;
     double trackLimiterRate = 0.0;
     bool trackLimiterActive = false;
+    std::atomic<float> trimDb { 0.0f };    // guadagno in ingresso della traccia (prima di EQ e compressore), -24..+24 dB
+    float trimGainLast = -1.0f;            // stato del thread audio: guadagno applicato nel blocco precedente
     std::atomic<int> outBus { 0 };         // uscita della traccia: 0 = master, 1..4 = bus di gruppo
     std::atomic<bool> monoMon { false }, dimMon { false };   // solo master: controllo d'ascolto (non influisce sull'export)
     std::atomic<int> autoMode { 0 };       // automazione: 0 spenta, 1 lettura, 2 scrittura (vale per tutti i parametri della traccia)
@@ -156,7 +159,7 @@ struct TrackLive
         volumeDb = o.volumeDb.load(); pan = o.pan.load();
         mute = o.mute.load(); solo = o.solo.load();
         armed = o.armed.load(); inputMode = o.inputMode.load(); height = o.height.load(); autoMode = o.autoMode.load(); autoParam = o.autoParam.load(); invert = o.invert.load(); outBus = o.outBus.load();
-        eq.copyFrom (o.eq); comp.copyFrom (o.comp); trackType = o.trackType.load();
+        trimDb = o.trimDb.load(); eq.copyFrom (o.eq); comp.copyFrom (o.comp); trackType = o.trackType.load();
         limiterOn = o.limiterOn.load(); ceilingDb = o.ceilingDb.load();
         sendDb[0] = o.sendDb[0].load(); sendDb[1] = o.sendDb[1].load();
     }

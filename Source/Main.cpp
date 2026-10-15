@@ -105,6 +105,7 @@ private:
         stepTrackLimiter();
         stepAutoLanes();
         stepPresets();
+        stepTrimAndPeaks();
         stepAutomation();
         stepCrossfade();
         stepTimecode();
@@ -187,7 +188,7 @@ private:
         project->getSession().tracks[0].live->outBus = 4;
         project->exportIn = 12000; project->exportOut = 96000; project->adrDialogueSize = 44;
         { auto& t3 = project->edit().tracks[3]; fc::AutoPoint a; a.pos = 4800; a.db = -0.5f; t3.panAuto = { a }; a.db = -9.0f; t3.sendAAuto = { a }; t3.live->autoParam = fc::AutoSendA; }   // curve su una traccia vuota
-        { auto& t3 = project->edit().tracks[3]; t3.live->trackType = fc::TrackEffects; t3.live->comp.enabled = true; t3.live->comp.ratio = 5.5f; t3.live->comp.thresholdDb = -33.0f; }
+        { auto& t3 = project->edit().tracks[3]; t3.live->trimDb = 7.5f; t3.live->trackType = fc::TrackEffects; t3.live->comp.enabled = true; t3.live->comp.ratio = 5.5f; t3.live->comp.thresholdDb = -33.0f; }
         project->getSession().tracks[3].live->limiterOn = true; project->getSession().tracks[3].live->ceilingDb = -3.0f;   // traccia 4 vuota: il mix non cambia
         { auto& e = project->getSession().tracks[0].live->eq; e.enabled = true; e.band[2].gainDb = 0.0f; e.band[2].freq = 3200.0f; e.band[2].q = 2.5f; e.band[2].type = fc::ParamEq::Bell; }   // EQ acceso ma neutro: non cambia il mix
         expect (project->save (tmp, err), "salva sessione " + err);
@@ -222,6 +223,7 @@ private:
                         "automazione: curve pan e send salvate e ricaricate con la sessione");
             }
             {
+                expect (std::abs (reload->getSession().tracks[3].live->trimDb.load() - 7.5f) < 1.0e-4f, "guadagno in ingresso: salvato e ricaricato con la sessione");
                 auto& c3 = reload->getSession().tracks[3].live->comp;
                 expect (reload->getSession().tracks[3].live->trackType.load() == fc::TrackEffects && c3.enabled.load() && std::abs (c3.ratio.load() - 5.5f) < 1.0e-4f && std::abs (c3.thresholdDb.load() + 33.0f) < 1.0e-4f,
                         "tipo di traccia e compressore: salvati e ricaricati con la sessione");
@@ -1093,6 +1095,50 @@ private:
         // setTrackType su una traccia del progetto
         p.setTrackType (p.getSession().tracks[0].id, fc::TrackMusic);
         expect (p.getSession().tracks[0].live->trackType.load() == fc::TrackMusic && p.getSession().tracks[0].live->comp.enabled.load(), "setTrackType applica la catena alla traccia");
+    }
+
+    void stepTrimAndPeaks()
+    {
+        // picchi per canale: sinistro forte, destro quasi muto
+        fc::Asset a;
+        a.audio.setSize (2, 4096);
+        a.audio.clear();
+        for (int i = 0; i < 4096; ++i) a.audio.setSample (0, i, 0.8f * (float) std::sin (i * 0.05));
+        a.audio.setSample (1, 100, 0.1f);
+        a.buildPeaks();
+        float maxL = 0.0f, maxR = 0.0f;
+        for (auto v : a.levels.front().mx) maxL = juce::jmax (maxL, v);
+        for (auto v : a.levels.front().mx1) maxR = juce::jmax (maxR, v);
+        expect (maxL > 0.7f && maxR > 0.09f && maxR < 0.11f && ! a.levels.front().mn1.empty(), "picchi per canale: sinistro " + juce::String (maxL, 2) + ", destro " + juce::String (maxR, 2));
+        fc::Asset mono;
+        mono.audio.setSize (1, 1024);
+        mono.audio.clear();
+        mono.buildPeaks();
+        expect (mono.levels.front().mn1.empty(), "audio mono: un solo canale di picchi");
+
+        // guadagno in ingresso della traccia: +6 dB raddoppia, -6 dB dimezza, salvato con la sessione (vedi il test di ricarica)
+        fc::Project p (formats, 48000.0);
+        auto asset = std::make_shared<fc::Asset>();
+        asset->name = "dc";
+        asset->audio.setSize (2, 8192);
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 8192; ++i) asset->audio.setSample (ch, i, 0.25f);
+        asset->buildPeaks();
+        fc::Clip c; c.id = 9990; c.asset = asset; c.length = 8192;
+        p.edit().tracks[0].clips = { c };
+        p.edit().master->limiterOn = false;
+        auto level = [&]
+        {
+            fc::Mixer m;
+            auto sess = p.getSession().cloneDetached();
+            juce::AudioBuffer<float> buf (2, 2048);
+            for (int pos = 0; pos < 4096; pos += 2048) m.render (sess, pos, buf, 0, 2048);   // si legge il secondo blocco, a regime
+            return buf.getSample (0, 1500);
+        };
+        expect (std::abs (level() - 0.25f) < 1.0e-4f, "guadagno in ingresso: 0 dB lascia il livello");
+        p.getSession().tracks[0].live->trimDb = 6.0f;
+        expect (std::abs (level() - 0.25f * juce::Decibels::decibelsToGain (6.0f)) < 1.0e-3f, "guadagno in ingresso: +6 dB");
+        p.getSession().tracks[0].live->trimDb = -6.0f;
+        expect (std::abs (level() - 0.25f * juce::Decibels::decibelsToGain (-6.0f)) < 1.0e-3f, "guadagno in ingresso: -6 dB");
     }
 
     void stepSpectrum()

@@ -380,7 +380,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
 
     g.setColour (text);
     g.setFont (font (13.0f, true));
-    g.drawText (t.name, 42, y + 9, headerW - 42 - 104, 20, juce::Justification::centredLeft, true);
+    g.drawText (t.name, 42, y + 9, headerW - knobW - 42 - 104, 20, juce::Justification::centredLeft, true);
 
     auto drawBtn = [&] (juce::Rectangle<int> b, const char* label, bool on, juce::Colour onCol)
     {
@@ -392,6 +392,40 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
     drawBtn (armRect (ti), "R", armed, accent);
     drawBtn (muteRect (ti), "M", t.live->mute.load(), muteCol);
     drawBtn (soloRect (ti), "S", t.live->solo.load(), soloCol);
+
+    if (h >= 52)
+    {
+        // manopola graduata del guadagno in ingresso (-24..+24 dB): trascina in alto/in basso, Maiusc = fine, doppio clic = 0 dB
+        const auto kr = trimRect (ti);
+        const float cx = (float) kr.getCentreX(), cy = (float) kr.getY() + 21.0f;
+        const float trim = t.live->trimDb.load();
+        const float a0 = juce::MathConstants<float>::pi * 1.25f, a1 = juce::MathConstants<float>::pi * 2.75f;
+        auto angleOf = [&] (float db) { return a0 + (a1 - a0) * (db + 24.0f) / 48.0f; };
+        auto pt = [&] (float ang, float rad) { return juce::Point<float> (cx + rad * std::sin (ang), cy - rad * std::cos (ang)); };
+        for (int k = -24; k <= 24; k += 6)   // graduazione ogni 6 dB, il tratto dello zero piu' lungo
+        {
+            const float ang = angleOf ((float) k);
+            const bool zero = k == 0;
+            g.setColour (zero ? text.withAlpha (0.95f) : dim.withAlpha (0.8f));
+            g.drawLine (juce::Line<float> (pt (ang, zero ? 15.0f : 16.5f), pt (ang, 20.5f)), zero ? 1.8f : 1.2f);
+        }
+        juce::Path arc;   // arco colorato dallo zero al valore attuale
+        arc.addCentredArc (cx, cy, 18.5f, 18.5f, 0.0f, angleOf (0.0f), angleOf (trim), true);
+        g.setColour ((trim > 0.05f ? juce::Colour (0xffff9f43) : (trim < -0.05f ? blue : dim)).withAlpha (0.85f));
+        g.strokePath (arc, juce::PathStrokeType (2.2f));
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4a505b), cx, cy - 12.0f, juce::Colour (0xff23262c), cx, cy + 12.0f, false));
+        g.fillEllipse (cx - 12.0f, cy - 12.0f, 24.0f, 24.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.6f));
+        g.drawEllipse (cx - 12.0f, cy - 12.0f, 24.0f, 24.0f, 1.0f);
+        g.setColour (juce::Colours::white);
+        g.drawLine (juce::Line<float> (pt (angleOf (trim), 4.0f), pt (angleOf (trim), 11.0f)), 2.0f);
+        if (h >= 72)
+        {
+            g.setColour (dim);
+            g.setFont (mono (9.5f));
+            g.drawText ((trim > 0.05f ? "+" : "") + juce::String (trim, 1) + " dB", juce::Rectangle<int> (kr.getX() - 4, (int) cy + 22, kr.getWidth() + 8, 12), juce::Justification::centred);
+        }
+    }
 
     if (h >= 62)
     {
@@ -523,7 +557,7 @@ void TimelineView::drawVideoLane (juce::Graphics& g)
                 16, rulerH + 42, headerW - 24, 16, juce::Justification::centredLeft, true);
 }
 
-void TimelineView::drawWaveform (juce::Graphics& g, const Clip& c, juce::Rectangle<float> wf, juce::Rectangle<int> lanes)
+void TimelineView::drawWaveformChannel (juce::Graphics& g, const Clip& c, juce::Rectangle<float> wf, juce::Rectangle<int> lanes, int channel)
 {
     const auto& a = *c.asset;
     const float mid = wf.getCentreY(), half = wf.getHeight() * 0.5f - 1.0f;
@@ -543,6 +577,7 @@ void TimelineView::drawWaveform (juce::Graphics& g, const Clip& c, juce::Rectang
     if (spp < 64.0)
     {
         const int nch = a.numChannels();
+        const int chFrom = channel < 0 ? 0 : channel, chTo = channel < 0 ? nch : channel + 1;
         for (int px = px0; px < px1; ++px)
         {
             double sa = (double) c.offset + (xToSampleD (px) - (double) c.start);
@@ -553,7 +588,7 @@ void TimelineView::drawWaveform (juce::Graphics& g, const Clip& c, juce::Rectang
             const int i0 = (int) std::floor (sa);
             const int i1 = juce::jmin ((int) a.length() - 1, juce::jmax (i0 + 1, (int) std::ceil (sb)));
             float lo = 0.0f, hi = 0.0f;
-            for (int ch = 0; ch < nch; ++ch)
+            for (int ch = chFrom; ch < chTo && ch < nch; ++ch)
             {
                 const float* d = a.audio.getReadPointer (ch);
                 for (int i = i0; i <= i1; ++i) { lo = juce::jmin (lo, d[i]); hi = juce::jmax (hi, d[i]); }
@@ -579,11 +614,26 @@ void TimelineView::drawWaveform (juce::Graphics& g, const Clip& c, juce::Rectang
         float lo = 0.0f, hi = 0.0f;
         for (int b = b0; b <= b1; ++b)
         {
-            lo = juce::jmin (lo, L->mn[(size_t) b]);
-            hi = juce::jmax (hi, L->mx[(size_t) b]);
+            if (channel != 1) { lo = juce::jmin (lo, L->mn[(size_t) b]); hi = juce::jmax (hi, L->mx[(size_t) b]); }
+            if ((channel == 1 || channel < 0) && ! L->mn1.empty()) { lo = juce::jmin (lo, L->mn1[(size_t) b]); hi = juce::jmax (hi, L->mx1[(size_t) b]); }
         }
         column (px, lo, hi);
     }
+}
+
+void TimelineView::drawWaveform (juce::Graphics& g, const Clip& c, juce::Rectangle<float> wf, juce::Rectangle<int> lanes)
+{
+    // audio stereo: i due canali separati (sinistro sopra, destro sotto); audio mono: una sola onda
+    if (c.asset->numChannels() >= 2 && wf.getHeight() >= 40.0f)
+    {
+        const float h2 = (wf.getHeight() - 2.0f) * 0.5f;
+        drawWaveformChannel (g, c, wf.withHeight (h2), lanes, 0);
+        drawWaveformChannel (g, c, wf.withTrimmedTop (h2 + 2.0f), lanes, 1);
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.fillRect (wf.getX(), wf.getY() + h2, wf.getWidth(), 2.0f);
+    }
+    else
+        drawWaveformChannel (g, c, wf, lanes, -1);
 }
 
 void TimelineView::drawClip (juce::Graphics& g, const Track& t, int ti, const Clip& c, juce::Rectangle<int> lanes)
@@ -781,10 +831,11 @@ void TimelineView::paint (juce::Graphics& g)
             const auto& tr = s.tracks[(size_t) i];
             const int mode = tr.live->autoMode.load();
             const int y = laneTop (i), h = heightOf (i);
-            if (mode == 0 || y + h < lanes.getY() || y > lanes.getBottom()) continue;
+            const bool showAlways = tool == Tool::Automation && tr.id == project.selectedTrackId;   // con la traccia selezionata la linea si vede subito, anche a zero
+            if ((mode == 0 && ! showAlways) || y + h < lanes.getY() || y > lanes.getBottom()) continue;
             const int param = tr.live->autoParam.load();
             const auto& lane = tr.lane (param);
-            const juce::Colour lc = mode == 2 ? accent : green;
+            const juce::Colour lc = mode == 2 ? accent : (mode == 1 ? green : blue.brighter (0.3f));
             g.setColour (lc.withAlpha (0.85f));
             g.setFont (font (9.5f, true));
             g.drawText ("AUTOMAZIONE: " + juce::String (autoParamName (param)), juce::Rectangle<int> (lanes.getX() + 6, y + 1, 160, 12), juce::Justification::centredLeft);
@@ -1026,6 +1077,7 @@ TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
         else if (heightOf (ti) >= 62 && inputRect (ti).contains (p)) h.type = HitType::HeaderInput;
         else if (heightOf (ti) >= 62 && autoRect (ti).contains (p)) h.type = HitType::HeaderAuto;
         else if (heightOf (ti) >= 62 && paramRect (ti).contains (p)) h.type = HitType::HeaderAutoParam;
+        else if (heightOf (ti) >= 52 && trimRect (ti).contains (p)) h.type = HitType::HeaderTrim;
         else if (muteRect (ti).contains (p)) h.type = HitType::HeaderMute;
         else if (soloRect (ti).contains (p)) h.type = HitType::HeaderSolo;
         else h.type = HitType::HeaderGrip;   // tutta l'intestazione si puo' trascinare per spostare la traccia
@@ -1074,6 +1126,24 @@ float TimelineView::autoValueForY (int ti, int param, int y) const
     if (frac > 0.985f) return -80.0f;
     if (param == AutoVolume) return 6.0f - 66.0f * std::pow (frac, 1.0f / 0.55f);
     return -60.0f * frac / 0.985f;
+}
+
+bool TimelineView::findAutoSegmentAt (juce::Point<int> p, int& trackIndex, int& idA, int& idB) const
+{
+    const auto& tracks = project.getSession().tracks;
+    const int ti = trackIndexAtY (p.y);
+    if (ti < 0 || ti >= (int) tracks.size()) return false;
+    const int param = tracks[(size_t) ti].live->autoParam.load();
+    const auto& lane = tracks[(size_t) ti].lane (param);
+    for (size_t i = 0; i + 1 < lane.size(); ++i)
+    {
+        const float x0 = sampleToX (lane[i].pos), x1 = sampleToX (lane[i + 1].pos);
+        if ((float) p.x < x0 || (float) p.x > x1 || x1 - x0 < 1.0f) continue;
+        const float y0 = autoYForValue (ti, param, lane[i].db), y1 = autoYForValue (ti, param, lane[i + 1].db);
+        const float yl = y0 + ((float) p.x - x0) / (x1 - x0) * (y1 - y0);
+        if (std::abs ((float) p.y - yl) <= 6.0f) { trackIndex = ti; idA = lane[i].id; idB = lane[i + 1].id; return true; }
+    }
+    return false;
 }
 
 bool TimelineView::findAutoPointAt (juce::Point<int> p, int& trackIndex, int& pointId) const
@@ -1193,10 +1263,22 @@ bool TimelineView::handleToolMouseDown (const juce::MouseEvent& e, const Hit& hi
             if (! inLanes || hit.trackIndex < 0) return false;
             project.selectedTrackId = hit.track;
             int ti = -1, pid = 0;
+            int sa = 0, sb = 0, sti = -1;
             if (findAutoPointAt (e.getPosition(), ti, pid))
             {
                 autoTrackId = project.getSession().tracks[(size_t) ti].id;
                 autoPointId = pid;
+            }
+            else if (! e.mods.isAltDown() && findAutoSegmentAt (e.getPosition(), sti, sa, sb))
+            {
+                // clic sulla linea tra due punti: trascinando in alto o in basso si sposta tutto il tratto (Alt + clic aggiunge un punto)
+                const auto& tr = project.getSession().tracks[(size_t) sti];
+                const auto& lane = tr.lane (tr.live->autoParam.load());
+                segTrackId = tr.id; segIdA = sa; segIdB = sb; segDownY = e.y;
+                for (auto& ap : lane) { if (ap.id == sa) { segPosA = ap.pos; segValA = ap.db; } if (ap.id == sb) { segPosB = ap.pos; segValB = ap.db; } }
+                dragStarted = false;
+                drag = Drag::AutoSegment;
+                return true;
             }
             else
             {
@@ -1270,12 +1352,18 @@ void TimelineView::mouseMove (const juce::MouseEvent& e)
     }
 
     if (hit.type == HitType::TrackResize) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
+    if (hit.type == HitType::HeaderTrim) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
     if (hit.type == HitType::HeaderGrip) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); return; }
 
     if (tool == Tool::Razor && inLanes) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
     if ((tool == Tool::Slip || tool == Tool::Stretch) && onClip) { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
     if (tool == Tool::Hand && (inLanes || hit.type == HitType::Video)) { setMouseCursor (juce::MouseCursor::PointingHandCursor); return; }
     if (tool == Tool::Zoom && inLanes) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
+    if (tool == Tool::Automation && inLanes)
+    {
+        int t0 = -1, a0 = 0, b0 = 0, pid0 = 0;
+        if (! findAutoPointAt (e.getPosition(), t0, pid0) && findAutoSegmentAt (e.getPosition(), t0, a0, b0)) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
+    }
     if (tool == Tool::Automation && inLanes) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
 
     switch (hit.type)
@@ -1398,6 +1486,17 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
 
         case HitType::HeaderAuto:
             if (auto* t = project.findTrack (hit.track)) { t->live->autoMode = (t->live->autoMode.load() + 1) % 3; project.liveChanged(); }
+            break;
+        case HitType::HeaderTrim:
+            if (auto* t = project.findTrack (hit.track))
+            {
+                project.selectedTrackId = hit.track;
+                trimTrackId = hit.track;
+                trimStartDb = t->live->trimDb.load();
+                trimDownY = e.y;
+                drag = Drag::Trim;
+                project.sendChangeMessage();
+            }
             break;
         case HitType::HeaderAutoParam:
             if (auto* t = project.findTrack (hit.track)) { t->live->autoParam = (t->live->autoParam.load() + 1) % kNumAutoParams; project.liveChanged(); }
@@ -1577,6 +1676,30 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
     {
         engine.setPosition (juce::jmax<int64_t> (0, xToSample (e.x)));
         repaint();
+        return;
+    }
+    if (drag == Drag::Trim)
+    {
+        if (auto* t = project.findTrack (trimTrackId))
+        {
+            const float step = e.mods.isShiftDown() ? 0.04f : 0.25f;   // dB per pixel
+            t->live->trimDb = juce::jlimit (-24.0f, 24.0f, std::round ((trimStartDb + (float) (trimDownY - e.y) * step) * 10.0f) / 10.0f);
+            project.liveChanged();
+            repaint (0, laneTop (project.trackIndexForId (trimTrackId)), headerW, 80);
+        }
+        return;
+    }
+    if (drag == Drag::AutoSegment)
+    {
+        const int ti = project.trackIndexForId (segTrackId);
+        if (ti < 0) return;
+        const int dy = e.y - segDownY;
+        if (! dragStarted && std::abs (dy) < 2) return;
+        beginDragEdit();
+        const int param = project.getSession().tracks[(size_t) ti].live->autoParam.load();
+        // la linea si sposta in verticale: i due punti mantengono la loro posizione e si muovono dello stesso tratto sullo schermo
+        project.moveAutoPoint (segTrackId, segIdA, segPosA, autoValueForY (ti, param, (int) (autoYForValue (ti, param, segValA) + (float) dy)));
+        project.moveAutoPoint (segTrackId, segIdB, segPosB, autoValueForY (ti, param, (int) (autoYForValue (ti, param, segValB) + (float) dy)));
         return;
     }
     if (drag == Drag::ExportRange)
@@ -1799,6 +1922,10 @@ void TimelineView::mouseDoubleClick (const juce::MouseEvent& e)
         // doppio clic sul bordo: altezza predefinita
         if (auto* t = project.findTrack (hit.track)) { t->live->height = 96; project.liveChanged(); updateScrollBars(); repaint(); }
     }
+    else if (hit.type == HitType::HeaderTrim)
+    {
+        if (auto* t = project.findTrack (hit.track)) { t->live->trimDb = 0.0f; project.liveChanged(); repaint(); }
+    }
     else if ((hit.type == HitType::Header || hit.type == HitType::HeaderGrip) && hit.track >= 0 && e.x > 30)
         renameTrackDialog (hit.track);
     else if (hit.type == HitType::ExportBar) { project.exportIn = project.exportOut = -1; project.markDirty(); repaint(); }
@@ -1820,6 +1947,17 @@ void TimelineView::mouseDoubleClick (const juce::MouseEvent& e)
 
 void TimelineView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
+    {
+        const auto hit = hitTest (e.getPosition());
+        if (hit.type == HitType::HeaderTrim)
+            if (auto* t = project.findTrack (hit.track))
+            {
+                t->live->trimDb = juce::jlimit (-24.0f, 24.0f, std::round ((t->live->trimDb.load() + w.deltaY * 8.0f) * 10.0f) / 10.0f);
+                project.liveChanged();
+                repaint();
+                return;
+            }
+    }
     if (e.mods.isCommandDown() || e.mods.isCtrlDown())
     {
         zoomBy (std::exp ((double) w.deltaY * 1.6), (float) e.x);

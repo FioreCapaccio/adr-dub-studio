@@ -165,6 +165,17 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
                     if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! (auditionClip < 0 && c.cueId != 0))) && c.end() > cpos && c.start < cpos + chunk)
                         renderClip (c, cpos, chunk);
 
+            if (audible)   // guadagno in ingresso (a rampa): alimenta EQ e compressore al livello giusto
+            {
+                const float tgt = dbToGain (live.trimDb.load());
+                if (live.trimGainLast < 0.0f) live.trimGainLast = tgt;
+                if (live.trimGainLast != 1.0f || tgt != 1.0f)
+                {
+                    scratch.applyGainRamp (0, 0, chunk, live.trimGainLast, tgt);
+                    scratch.applyGainRamp (1, 0, chunk, live.trimGainLast, tgt);
+                }
+                live.trimGainLast = tgt;
+            }
             if (audible) live.eq.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);   // EQ, compressore, poi plug-in
             if (audible) live.comp.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);
             if (audible) runInserts (live, scratch, chunk, midi);   // plug-in pre-fader
