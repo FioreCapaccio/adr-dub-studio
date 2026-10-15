@@ -10,36 +10,12 @@ namespace fc
 class PluginWindow : public juce::DocumentWindow
 {
 public:
-    PluginWindow (std::shared_ptr<InsertSlot> s, const juce::String& title, std::function<void (PluginWindow*)> onClose);
+    PluginWindow (std::shared_ptr<InsertSlot> s, const juce::String& title, std::function<void (PluginWindow*)> onClose, std::function<void()> onBypassChanged = {});
     void closeButtonPressed() override { if (closeCallback) closeCallback (this); }
     std::shared_ptr<InsertSlot> slot;
 
 private:
     std::function<void (PluginWindow*)> closeCallback;
-};
-
-/** Dialogo di ricerca tra i VST3 installati. */
-class PluginPicker : public juce::Component, private juce::ListBoxModel
-{
-public:
-    PluginPicker (juce::Array<juce::File> files, std::function<void (juce::File)> onPick);
-    void resized() override;
-    void paint (juce::Graphics&) override;
-
-private:
-    int getNumRows() override { return shown.size(); }
-    void paintListBoxItem (int row, juce::Graphics&, int w, int h, bool selected) override;
-    void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override { choose (row); }
-    void returnKeyPressed (int row) override { choose (row); }
-    void applyFilter();
-    void choose (int row);
-    void closeDialog();
-
-    juce::Array<juce::File> all, shown;
-    std::function<void (juce::File)> pick;
-    juce::TextEditor search;
-    juce::ListBox list { {}, this };
-    juce::TextButton addButton { "Aggiungi" }, cancelButton { "Annulla" };
 };
 
 /** Gestisce gli inserti VST3 (per traccia e sul master): ricerca, caricamento, editor, ripristino dalla sessione. */
@@ -54,7 +30,7 @@ public:
     std::function<void()> onChanged;                       // la catena di una traccia e' cambiata (aggiorna la UI)
     std::function<void (const juce::String&)> onError;
 
-    /** Apre il dialogo di ricerca e aggiunge il plug-in scelto in coda alla catena. */
+    /** Apre il browser degli effetti (integrati e VST3) e aggiunge quello scelto in coda alla catena. */
     void pickAndAdd (std::shared_ptr<TrackLive> live, juce::Component* centreAround);
     void removeSlot (TrackLive&, int index);
     void moveSlot (TrackLive&, int index, int delta);
@@ -77,7 +53,6 @@ public:
 
 private:
     juce::String prepareInstance (juce::AudioProcessor&);
-    void openPicker (std::shared_ptr<TrackLive> live, juce::Component* centreAround);
     void instantiate (std::shared_ptr<InsertSlot>, std::function<void (juce::String)> done);
     void append (TrackLive&, std::shared_ptr<InsertSlot>);
 

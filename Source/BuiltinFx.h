@@ -18,6 +18,17 @@ public:
 
     static juce::String kindName (Kind);
     static juce::String kindHelp (Kind);
+    static juce::String kindCategory (Kind);   // Filtro, Dinamica, Spazio, Colore, Modulazione
+    static juce::String kindBadge (Kind);      // sigla di 1-2 lettere per le icone
+
+    /** Come l'editor dispone i controlli: gruppi di manopole (o interruttori) con un titolo; 'meter' >= 0 aggiunge il misuratore di riduzione. */
+    struct Knob { juce::String id, label; };
+    struct Group { juce::String title; std::vector<Knob> knobs; int meter = -1; bool newRow = false; };
+    static std::vector<Group> layout (Kind);
+    /** Riduzione di guadagno in dB (>= 0) letta dall'editor: de-esser e gate usano il misuratore 0, il multibanda 0..2. */
+    float meterDb (int i) const noexcept { return meters[(size_t) i].load(); }
+    /** Risposta in ampiezza (dB) del filtro HP/LP alla frequenza hz, per disegnare la curva. */
+    float filterResponseDb (float hz) const;
     /** Descrizione da salvare nella sessione (format "ADR Built-in", identificatore "builtin:<id>"). */
     static juce::PluginDescription describe (Kind);
     /** Crea l'effetto descritto, oppure nullptr se la descrizione non e' di un integrato. */
@@ -62,6 +73,7 @@ private:
     void doChorus (juce::AudioBuffer<float>&);
 
     Kind kind;
+    std::array<std::atomic<float>, 3> meters {};
     std::vector<juce::RangedAudioParameter*> params;   // di proprieta' del processore (addParameter)
     double rate = 48000.0;
 

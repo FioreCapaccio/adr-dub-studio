@@ -1379,8 +1379,10 @@ private:
 
         { auto fx = make (FX::Gate, { { "thr", -50.0f }, { "range", 40.0f }, { "att", 1.0f }, { "rel", 50.0f } });
           run (*fx, sine (300.0, 0.001f, 48000), o); const float quiet = peak (o, 24000, 48000);
+          const float gateGr = fx->meterDb (0);   // il gate e' chiuso: ~40 dB di attenuazione
           fx->reset();
           run (*fx, sine (300.0, 0.5f, 48000), o);   const float loud = peak (o, 24000, 48000);
+          expect (gateGr > 30.0f, "gate: misuratore di riduzione leggibile (" + juce::String (gateGr, 1) + " dB)");
           expect (quiet < 0.0002f && loud > 0.49f, "gate: segnale basso attenuato (" + juce::String (quiet, 5) + "), forte intatto (" + juce::String (loud, 3) + ")"); }
 
         { // multibanda: con rapporto 1:1 e' trasparente a tutte le frequenze (anche sui crossover); comprime solo la banda interessata
@@ -1396,8 +1398,10 @@ private:
           expect (worst < 0.5f, "multibanda: 1:1 trasparente da 60 Hz a 8 kHz (scarto max " + juce::String (worst, 2) + " dB)");
           auto mb = make (FX::Multiband, { { "lowThr", -30.0f }, { "lowRatio", 10.0f }, { "highRatio", 1.0f }, { "midRatio", 1.0f } });
           run (*mb, sine (100.0, 0.5f, 24000), o);  const float lowOut = amp (o, 12000, 24000);
+          const float lowGr = mb->meterDb (0);
           mb->reset();
           run (*mb, sine (8000.0, 0.5f, 24000), o); const float highOut = amp (o, 12000, 24000);
+          expect (lowGr > 5.0f && mb->meterDb (2) < 0.5f, "multibanda: misuratori (bassi " + juce::String (lowGr, 1) + " dB, alti " + juce::String (mb->meterDb (2), 1) + " dB)");
           expect (lowOut < 0.2f && highOut > 0.47f, "multibanda: comprime i bassi (0.5 -> " + juce::String (lowOut, 3) + ") e non tocca gli alti (" + juce::String (highOut, 3) + ")"); }
 
         { auto fx = make (FX::Reverb, { { "mix", 100.0f }, { "size", 0.8f } });
@@ -1737,7 +1741,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "1.7.0"; }
+    const juce::String getApplicationVersion() override { return "1.8.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

@@ -92,7 +92,7 @@ void BuiltinFx::addFloat (const juce::String& id, const juce::String& name, floa
 {
     juce::NormalisableRange<float> r (lo, hi);
     if (centre > 0.0f) r.setSkewForCentre (centre);
-    const int decimals = unit.isEmpty() ? 2 : 1;   // senza unita' (0..1) due decimali, altrimenti uno; interi oltre 100
+    const int decimals = unit.isEmpty() ? 2 : unit.contains ("Hz") ? 0 : 1;   // senza unita' (0..1) due decimali, Hz interi, altrimenti uno; interi oltre 100
     auto attrs = juce::AudioParameterFloatAttributes().withLabel (unit)
                      .withStringFromValueFunction ([decimals] (float v, int) { return juce::String (v, std::abs (v) >= 100.0f ? 0 : decimals); });
     auto* p = new juce::AudioParameterFloat (juce::ParameterID (id, 1), name, r, def, attrs);
@@ -172,6 +172,63 @@ std::unique_ptr<BuiltinFx> BuiltinFx::create (const juce::PluginDescription& d)
     return nullptr;
 }
 
+juce::String BuiltinFx::kindCategory (Kind k)
+{
+    switch (k)
+    {
+        case Filter:    return "Filtro";
+        case DeEsser:
+        case Gate:
+        case Multiband: return "Dinamica";
+        case Reverb:
+        case Delay:     return "Spazio";
+        case Saturator: return "Colore";
+        case Chorus:    return "Modulazione";
+        default:        return {};
+    }
+}
+
+juce::String BuiltinFx::kindBadge (Kind k)
+{
+    static const char* const b[numKinds] = { "HP", "DS", "GT", "MB", "RV", "DL", "ST", "CH" };
+    return b[k];
+}
+
+std::vector<BuiltinFx::Group> BuiltinFx::layout (Kind k)
+{
+    switch (k)
+    {
+        case Filter:    return { { "Filtro", { { "hp", "Passa-alto" }, { "lp", "Passa-basso" } }, -1 } };
+        case DeEsser:   return { { "De-esser", { { "freq", "Frequenza" }, { "thr", "Soglia" }, { "max", "Riduzione max" } }, 0 } };
+        case Gate:      return { { "Soglia", { { "thr", "Soglia" }, { "range", "Attenuazione" } }, 0 },
+                                 { "Tempi", { { "att", "Attacco" }, { "rel", "Rilascio" } }, -1 } };
+        case Multiband: return { { "Crossover", { { "xo1", "Bassi / medi" }, { "xo2", "Medi / alti" } }, -1 },
+                                 { "Tempi e uscita", { { "att", "Attacco" }, { "rel", "Rilascio" }, { "out", "Uscita" } }, -1 },
+                                 { "Bassi", { { "lowThr", "Soglia" }, { "lowRatio", "Rapporto" }, { "lowGain", "Guadagno" } }, 0, true },
+                                 { "Medi", { { "midThr", "Soglia" }, { "midRatio", "Rapporto" }, { "midGain", "Guadagno" } }, 1 },
+                                 { "Alti", { { "highThr", "Soglia" }, { "highRatio", "Rapporto" }, { "highGain", "Guadagno" } }, 2 } };
+        case Reverb:    return { { "Ambiente", { { "size", "Dimensione" }, { "damp", "Smorzamento" }, { "width", "Larghezza" } }, -1 },
+                                 { "Uscita", { { "mix", "Mix" } }, -1 } };
+        case Delay:     return { { "Eco", { { "time", "Tempo" }, { "fb", "Feedback" }, { "mix", "Mix" } }, -1 },
+                                 { "Stereo", { { "pingpong", "Ping-pong" } }, -1 } };
+        case Saturator: return { { "Saturazione", { { "drive", "Drive" }, { "tone", "Tono" } }, -1 },
+                                 { "Uscita", { { "mix", "Mix" }, { "out", "Livello" } }, -1 } };
+        case Chorus:    return { { "Modulazione", { { "rate", "Frequenza" }, { "depth", u8 ("Profondit\xc3\xa0") } }, -1 },
+                                 { "Uscita", { { "mix", "Mix" } }, -1 } };
+        default:        return {};
+    }
+}
+
+float BuiltinFx::filterResponseDb (float hz) const
+{
+    // Butterworth del 4 ordine (la coppia di biquad): |H|^2 = 1 / (1 + (fc/f)^8) per l'HP, 1 / (1 + (f/fc)^8) per l'LP
+    const float hp = get (0), lp = get (1);
+    double p = 1.0;
+    if (hp > 20.5f) p *= 1.0 / (1.0 + std::pow ((double) hp / hz, 8.0));
+    if (lp < 19500.0f) p *= 1.0 / (1.0 + std::pow ((double) hz / lp, 8.0));
+    return (float) (10.0 * std::log10 (p));
+}
+
 bool BuiltinFx::isBusesLayoutSupported (const BusesLayout& l) const
 {
     return l.getMainInputChannelSet() == juce::AudioChannelSet::stereo() && l.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
@@ -222,6 +279,7 @@ void BuiltinFx::reset()
     env = 0.0f; gainNow = 1.0f; gateOpen = false;
     for (auto& f : mbf) for (auto& ch : f) for (auto& s : ch) s.reset();
     mbGr = {}; mbXo1 = mbXo2 = -1.0f;
+    for (auto& m : meters) m = 0.0f;
     reverb.reset();
     for (auto& rg : ring) std::fill (rg.begin(), rg.end(), 0.0f);
     ringPos = 0;
@@ -312,6 +370,7 @@ void BuiltinFx::doDeEsser (juce::AudioBuffer<float>& b)
         const float g = over > 0.0f ? dbToGain (-juce::jmin (over * 0.75f, maxRed)) : 1.0f;   // rapporto fisso 4:1
         d[0][i] = lo[0] + hi[0] * g;
         d[1][i] = lo[1] + hi[1] * g;
+        meters[0] = -gainToDb (g);
     }
 }
 
@@ -335,6 +394,7 @@ void BuiltinFx::doGate (juce::AudioBuffer<float>& b)
         L[i] *= gainNow;
         R[i] *= gainNow;
     }
+    meters[0] = -gainToDb (gainNow);
 }
 
 // Divisione in 3 bande con filtri Linkwitz-Riley a 4 poli. Il ramo alto passa anche da un all-pass a xo1 (LP+HP), cosi' le tre
@@ -393,6 +453,7 @@ void BuiltinFx::doMultiband (juce::AudioBuffer<float>& b)
             d[c][i] = sum * outG;
         }
     }
+    for (size_t k = 0; k < 3; ++k) meters[k] = mbGr[k];
 }
 
 void BuiltinFx::doReverb (juce::AudioBuffer<float>& b)

@@ -1,105 +1,29 @@
 #include "PluginHost.h"
+#include "PluginUi.h"
 
 namespace fc
 {
 using namespace theme;
 
 //==============================================================================
-PluginWindow::PluginWindow (std::shared_ptr<InsertSlot> s, const juce::String& title, std::function<void (PluginWindow*)> onClose)
+PluginWindow::PluginWindow (std::shared_ptr<InsertSlot> s, const juce::String& title, std::function<void (PluginWindow*)> onClose, std::function<void()> onBypassChanged)
     : juce::DocumentWindow (title, bg, juce::DocumentWindow::closeButton | juce::DocumentWindow::minimiseButton),
       slot (std::move (s)), closeCallback (std::move (onClose))
 {
     setUsingNativeTitleBar (true);
 
     auto& p = *slot->plugin;
-    juce::AudioProcessorEditor* editor = p.hasEditor() ? p.createEditorIfNeeded() : nullptr;
+    juce::AudioProcessorEditor* editor = nullptr;
+    if (auto* fx = dynamic_cast<BuiltinFx*> (&p)) editor = new BuiltinEditor (*fx, slot->bypass, std::move (onBypassChanged));
+    else if (p.hasEditor()) editor = p.createEditorIfNeeded();
     if (editor == nullptr) editor = new juce::GenericAudioProcessorEditor (p);
 
     setContentOwned (editor, true);
     const bool generic = dynamic_cast<juce::GenericAudioProcessorEditor*> (editor) != nullptr;
-    setResizable (editor->isResizable() || generic, false);   // l'editor generico e' scorrevole: si puo' allargare per vedere tutti i parametri
+    setResizable (editor->isResizable() || generic, false);   // l'editor generico (plug-in senza interfaccia) e' scorrevole: si puo' allargare
     if (generic) setResizeLimits (360, 160, 700, 1000);
     centreWithSize (getWidth(), getHeight());
     setVisible (true);
-}
-
-//==============================================================================
-PluginPicker::PluginPicker (juce::Array<juce::File> files, std::function<void (juce::File)> onPick)
-    : all (std::move (files)), pick (std::move (onPick))
-{
-    search.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Cerca (es. EQ, reverb, limiter...)"), dim);
-    search.onTextChange = [this] { applyFilter(); };
-    search.onReturnKey = [this] { choose (list.getSelectedRow() >= 0 ? list.getSelectedRow() : 0); };
-    search.onEscapeKey = [this] { closeDialog(); };
-    addAndMakeVisible (search);
-
-    list.setRowHeight (30);
-    list.setColour (juce::ListBox::outlineColourId, border);
-    list.setColour (juce::ListBox::backgroundColourId, bg);
-    list.setOutlineThickness (1);
-    addAndMakeVisible (list);
-
-    addButton.onClick = [this] { choose (list.getSelectedRow()); };
-    cancelButton.onClick = [this] { closeDialog(); };
-    addAndMakeVisible (addButton);
-    addAndMakeVisible (cancelButton);
-
-    applyFilter();
-    if (shown.size() > 0) list.selectRow (0);
-}
-
-void PluginPicker::applyFilter()
-{
-    shown.clear();
-    const auto terms = juce::StringArray::fromTokens (search.getText().trim(), " ", "");
-    for (const auto& f : all)
-    {
-        const auto name = f.getFileNameWithoutExtension();
-        bool ok = true;
-        for (const auto& t : terms) ok = ok && name.containsIgnoreCase (t);
-        if (ok) shown.add (f);
-    }
-    list.updateContent();
-    list.repaint();
-    if (shown.size() > 0) list.selectRow (0);
-}
-
-void PluginPicker::choose (int row)
-{
-    if (! juce::isPositiveAndBelow (row, shown.size())) return;
-    auto file = shown[row];
-    auto callback = pick;
-    closeDialog();
-    if (callback) callback (file);
-}
-
-void PluginPicker::closeDialog()
-{
-    if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) dw->exitModalState (0);
-}
-
-void PluginPicker::paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected)
-{
-    if (! juce::isPositiveAndBelow (row, shown.size())) return;
-    if (selected) g.fillAll (blue.withAlpha (0.35f));
-    g.setColour (text);
-    g.setFont (font (14.0f));
-    g.drawText (shown[row].getFileNameWithoutExtension(), 12, 0, w - 24, h, juce::Justification::centredLeft);
-}
-
-void PluginPicker::paint (juce::Graphics& g) { g.fillAll (panel); }
-
-void PluginPicker::resized()
-{
-    auto r = getLocalBounds().reduced (14);
-    search.setBounds (r.removeFromTop (32));
-    r.removeFromTop (10);
-    auto bottom = r.removeFromBottom (36);
-    r.removeFromBottom (10);
-    list.setBounds (r);
-    cancelButton.setBounds (bottom.removeFromRight (100));
-    bottom.removeFromRight (8);
-    addButton.setBounds (bottom.removeFromRight (110));
 }
 
 //==============================================================================
@@ -129,8 +53,13 @@ juce::Array<juce::File> PluginHost::findInstalledVST3()
             else if (f.isDirectory() && depth < 2) scan (f, depth + 1);
         }
     };
+#if JUCE_WINDOWS
+    scan (juce::File::getSpecialLocation (juce::File::globalApplicationsDirectory).getChildFile ("Common Files/VST3"), 0);
+    scan (juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getParentDirectory().getChildFile ("Local/Programs/Common/VST3"), 0);
+#else
     scan (juce::File ("/Library/Audio/Plug-Ins/VST3"), 0);
     scan (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Audio/Plug-Ins/VST3"), 0);
+#endif
 
     struct ByName
     {
@@ -279,40 +208,36 @@ void PluginHost::addBuiltin (std::shared_ptr<TrackLive> live, BuiltinFx::Kind ki
     });
 }
 
-/** Menu degli insert: effetti integrati, poi i VST3 installati. */
+/** Apre il browser: effetti integrati e VST3 in un'unica lista con ricerca. */
 void PluginHost::pickAndAdd (std::shared_ptr<TrackLive> live, juce::Component* centreAround)
 {
-    juce::PopupMenu m;
-    m.addSectionHeader ("Effetti integrati");
-    for (int k = 0; k < BuiltinFx::numKinds; ++k)
-        m.addItem (k + 1, BuiltinFx::kindName ((BuiltinFx::Kind) k) + "   -   " + BuiltinFx::kindHelp ((BuiltinFx::Kind) k));
-    m.addSeparator();
-    m.addItem (100, "Plug-in VST3 installati...");
-
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (centreAround),
-                     [this, live, centreAround, flag = std::weak_ptr<bool> (alive)] (int r)
+    auto alive_ = std::weak_ptr<bool> (alive);
+    PluginBrowser::Callbacks cbs;
+    cbs.builtin = [this, live, alive_] (BuiltinFx::Kind k)
     {
-        auto a = flag.lock();
-        if (r == 0 || a == nullptr || ! *a) return;
-        if (r == 100) openPicker (live, centreAround);
-        else addBuiltin (live, (BuiltinFx::Kind) (r - 1));
-    });
-}
-
-void PluginHost::openPicker (std::shared_ptr<TrackLive> live, juce::Component* centreAround)
-{
-    auto* picker = new PluginPicker (findInstalledVST3(), [this, live, flag = std::weak_ptr<bool> (alive)] (juce::File f)
+        juce::MessageManager::callAsync ([this, live, k, alive_] { if (auto a = alive_.lock()) if (*a) addBuiltin (live, k); });
+    };
+    cbs.vst3 = [this, live, alive_] (juce::File f)
     {
-        juce::MessageManager::callAsync ([this, live, f, flag]
+        juce::MessageManager::callAsync ([this, live, f, alive_] { if (auto a = alive_.lock()) if (*a) addFromFile (live, f); });
+    };
+    cbs.browse = [this, live, alive_]
+    {
+        auto chooser = std::make_shared<juce::FileChooser> ("Scegli un plug-in VST3", juce::File(), "*.vst3");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories,
+                              [this, live, alive_, chooser] (const juce::FileChooser& fc)
         {
-            if (auto a = flag.lock()) if (*a) addFromFile (live, f);
+            if (auto a = alive_.lock())
+                if (*a && fc.getResult() != juce::File()) addFromFile (live, fc.getResult());
         });
-    });
-    picker->setSize (520, 580);
+    };
+
+    auto* browser = new PluginBrowser (findInstalledVST3(), cbs);
+    browser->setSize (600, 640);
 
     juce::DialogWindow::LaunchOptions o;
-    o.content.setOwned (picker);
-    o.dialogTitle = "Aggiungi plug-in VST3";
+    o.content.setOwned (browser);
+    o.dialogTitle = "Aggiungi effetto o plug-in";
     o.dialogBackgroundColour = panel;
     o.componentToCentreAround = centreAround;
     o.escapeKeyTriggersCloseButton = true;
@@ -373,7 +298,8 @@ void PluginHost::openEditor (std::shared_ptr<InsertSlot> slot, const juce::Strin
         {
             if (auto a = flag.lock()) if (*a) windows.removeObject (closing);
         });
-    });
+    },
+                                [this] { if (onChanged) onChanged(); });   // il bypass dell'editor aggiorna anche il LED nel mixer
     windows.add (w);
 }
 
