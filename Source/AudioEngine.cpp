@@ -588,6 +588,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* in, int 
             const float l = juce::jmax (pl, nl), r = juce::jmax (pr, nr);
             if (l > live.meterL.load()) live.meterL.store (l);
             if (r > live.meterR.load()) live.meterR.store (r);
+            // anche il misuratore della strip nel mixer mostra l'ingresso della traccia armata, a registrazione ferma
+            if (l > live.peakL.load()) live.peakL.store (l);
+            if (r > live.peakR.load()) live.peakR.store (r);
         }
 
     int done = 0;

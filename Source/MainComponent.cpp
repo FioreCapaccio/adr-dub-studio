@@ -330,6 +330,12 @@ void MainComponent::paint (juce::Graphics& g)
     else if (project->getSession().video != nullptr) left = "Video: " + project->getSession().video->file.getFileName();
     g.setColour (leftCol);
     g.drawText (left, statusBox.reduced (10, 0), juce::Justification::centredLeft, true);
+
+    // versione e copyright, al centro della barra
+    g.setColour (dim.withAlpha (0.8f));
+    g.setFont (font (10.5f));
+    g.drawText ("ADR Dub Studio " + juce::JUCEApplication::getInstance()->getApplicationVersion() + juce::String (juce::CharPointer_UTF8 ("   \xc2\xb7   \xc2\xa9 2026 Fioravante Capaccio")),
+                statusBox, juce::Justification::centred);
 }
 
 void MainComponent::paintOverChildren (juce::Graphics& g)
