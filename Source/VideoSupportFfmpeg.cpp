@@ -56,6 +56,10 @@ bool isVideoFile (const juce::File& f)
 
 bool usesExternalDecoder() { return true; }
 
+bool decodeAudioNative (const juce::File&, double, juce::AudioBuffer<float>&, const std::function<void (float)>&, juce::String&) { return false; }   // qui si estrae con ffmpeg in un WAV
+
+void setNativePlayerRate (juce::Component&, double) {}
+
 juce::String ffmpegStatus()
 {
     juce::String out;
@@ -100,16 +104,30 @@ Info probe (const juce::File& f)
     return info;
 }
 
-std::vector<juce::Image> thumbnails (const juce::File& f, double interval, int count, int height)
+std::vector<juce::Image> thumbnails (const juce::File& f, double interval, int count, int height, const std::function<void (float)>& progress)
 {
     std::vector<juce::Image> out;
     auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("adr_thumbs_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
     if (! dir.createDirectory()) return out;
 
-    juce::String log;
-    runTool ("ffmpeg", { "-v", "error", "-y", "-ss", juce::String (interval * 0.5, 3), "-i", f.getFullPathName(),
-                         "-vf", "fps=1/" + juce::String (interval, 4) + ",scale=-2:" + juce::String (height),
-                         "-frames:v", juce::String (count), "-q:v", "5", dir.getChildFile ("t_%05d.jpg").getFullPathName() }, log, true, 300000);
+    juce::StringArray args { toolCommand ("ffmpeg"), "-v", "error", "-y", "-ss", juce::String (interval * 0.5, 3), "-i", f.getFullPathName(),
+                             "-vf", "fps=1/" + juce::String (interval, 4) + ",scale=-2:" + juce::String (height),
+                             "-frames:v", juce::String (count), "-q:v", "5", dir.getChildFile ("t_%05d.jpg").getFullPathName() };
+    {
+        juce::ChildProcess p;
+        if (p.start (args, juce::ChildProcess::wantStdErr))
+        {
+            // l'avanzamento si legge dai file prodotti
+            const auto deadline = juce::Time::getMillisecondCounter() + 600000;
+            while (p.isRunning() && juce::Time::getMillisecondCounter() < deadline)
+            {
+                if (progress) progress ((float) juce::jmin (1.0, (double) dir.getNumberOfChildFiles (juce::File::findFiles) / (double) juce::jmax (1, count)));
+                juce::Thread::sleep (150);
+            }
+            p.kill();
+        }
+    }
+    if (progress) progress (1.0f);
 
     for (int i = 1; i <= count; ++i)
     {

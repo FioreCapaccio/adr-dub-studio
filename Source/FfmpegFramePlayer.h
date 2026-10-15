@@ -18,6 +18,7 @@ public:
     void loadAsync (const juce::URL&, std::function<void (const juce::URL&, juce::Result)> done);
     void closeVideo();
     void setAudioVolume (float) {}
+    void setPlaySpeed (double) {}   // l'orologio segue l'audio: nessuna regolazione di velocita'
     void play();
     void stop();
     bool isPlaying() const noexcept { return playing; }
@@ -27,7 +28,7 @@ public:
     void paint (juce::Graphics&) override;
 
 private:
-    struct Frame { juce::Image image; double pts = 0.0; };
+    struct Frame { juce::Image image; double pts = 0.0, arrival = 0.0; };
     class Decoder;
 
     void timerCallback() override;
@@ -40,6 +41,9 @@ private:
     bool playing = false;
     double basePos = 0.0, baseWall = 0.0, lastRequestedPos = -1.0;
     double streamStart = -1.0;   // posizione da cui parte lo stream in corso (-1 = nessuno)
+    double startLead = 0.4;      // quanto in anticipo si chiede lo stream: il tempo che ffmpeg impiega a produrre il primo fotogramma (si impara)
+    double playStartWall = 0.0;
+    bool measuringStart = false;
     Frame current;
 
     juce::CriticalSection lock;

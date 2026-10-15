@@ -58,8 +58,24 @@ void Asset::buildPeaks()
     }
 }
 
-AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double rate, juce::String& error)
+AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double rate, juce::String& error, const std::function<void (float)>& progress)
 {
+    if (video::isVideoFile (f))
+    {
+        // l'audio dei video (.mov compresi) si decodifica con AVFoundation: i lettori audio di JUCE non conoscono tutti i contenitori
+        juce::AudioBuffer<float> native;
+        juce::String e;
+        if (video::decodeAudioNative (f, rate, native, progress, e) && native.getNumSamples() > 0)
+        {
+            auto a = std::make_shared<Asset>();
+            a->file = f;
+            a->name = f.getFileNameWithoutExtension();
+            a->audio = std::move (native);
+            a->buildPeaks();
+            return a;
+        }
+    }
+
     std::unique_ptr<juce::AudioFormatReader> r;
     juce::File tempWav;
     if (video::usesExternalDecoder() && video::isVideoFile (f))
@@ -67,7 +83,9 @@ AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double ra
         // senza decodificatori di sistema l'audio del video si estrae con ffmpeg in un WAV temporaneo
         tempWav = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("adr_audio", ".wav");
         juce::String e;
+        if (progress) progress (0.1f);
         if (video::extractAudio (f, tempWav, e)) r.reset (fm.createReaderFor (tempWav));
+        if (progress) progress (0.6f);
     }
     if (r == nullptr) r.reset (fm.createReaderFor (f));
     if (r == nullptr || r->lengthInSamples <= 0)
@@ -84,7 +102,13 @@ AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double ra
     const int nch = (int) juce::jmin (2u, r->numChannels);
     const int srcLen = (int) r->lengthInSamples;
     juce::AudioBuffer<float> src (nch, srcLen);
-    r->read (&src, 0, srcLen, 0, true, nch > 1);
+    for (int done = 0; done < srcLen;)   // a blocchi, per poter mostrare l'avanzamento
+    {
+        const int n = juce::jmin (1 << 20, srcLen - done);
+        r->read (&src, done, n, done, true, nch > 1);
+        done += n;
+        if (progress) progress ((float) done / (float) srcLen);
+    }
     const double srcRate = r->sampleRate;
     r.reset();
     if (tempWav != juce::File()) tempWav.deleteFile();
@@ -110,6 +134,7 @@ AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double ra
     }
 
     a->buildPeaks();
+    if (progress) progress (1.0f);
     return a;
 }
 
@@ -435,9 +460,13 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
 
     runAsync ([=, this]() -> std::function<void()>
     {
+        setTask ("Carico il video: lettura delle informazioni", 0.01f);
         auto info = video::probe (f);
         if (! info.ok)
+        {
+            setTask ({}, -1.0f);
             return [=] { if (done) done (info.error); };
+        }
 
         auto va = std::make_shared<VideoAsset>();
         va->file = f;
@@ -446,17 +475,21 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
         va->width = info.width;
         va->height = info.height;
         va->thumbInterval = juce::jmax (1.0, std::ceil (info.duration / 240.0));
-        va->thumbs = video::thumbnails (f, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56);
+        setTask ("Carico il video: miniature", 0.03f);
+        va->thumbs = video::thumbnails (f, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56,
+                                        [this] (float p) { setTask ("Carico il video: miniature", 0.03f + 0.37f * p); });
 
         AssetPtr audio;
         juce::String audioNote;
         if (info.hasAudio)
         {
             juce::String err;
-            audio = loadAsset (*fm, f, rate, err);
+            setTask ("Carico il video: audio", 0.4f);
+            audio = loadAsset (*fm, f, rate, err, [this] (float p) { setTask ("Carico il video: audio", 0.4f + 0.6f * p); });
             if (audio == nullptr) audioNote = "Il video e' stato caricato, ma non riesco a estrarne l'audio: " + err;
         }
 
+        setTask ({}, -1.0f);
         return [=, this]
         {
             if (std::abs (rate - sampleRate) > 0.5) { if (done) done ("La frequenza di campionamento e' cambiata."); return; }
@@ -1467,7 +1500,10 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     va->width = info.width;
                     va->height = info.height;
                     va->thumbInterval = juce::jmax (1.0, std::ceil (info.duration / 240.0));
-                    va->thumbs = video::thumbnails (vf, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56);
+                    setTask ("Carico il video: miniature", 0.02f);
+                    va->thumbs = video::thumbnails (vf, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56,
+                                                    [this] (float p) { setTask ("Carico il video: miniature", 0.02f + 0.9f * p); });
+                    setTask ({}, -1.0f);
                     va->offsetSec = (double) parsed.getProperty ("videoOffset", 0.0);
                     result->video = va;
                 }

@@ -56,6 +56,7 @@ public:
 
     // Component
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;   // barra di avanzamento dei caricamenti lunghi
     void resized() override;
 
     // ApplicationCommandTarget
@@ -152,6 +153,7 @@ private:
     bool mixerUserSized = false;
     bool pendingFit = true;   // adatta l'altezza delle tracce alla finestra al prossimo layout
     int64_t lastShownPos = -1;
+    int lastTaskPct = -1;
     int infoTick = 0, secondTick = 0, secondsSinceAutosave = 0;
     std::unique_ptr<juce::Component> helpWindow;
     std::shared_ptr<VideoAsset> shownVideo;

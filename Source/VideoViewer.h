@@ -48,6 +48,8 @@ private:
     int adrH() const { return adr.active ? 44 + (int) std::round ((float) adr.dialogueSize * 1.3f * 2.0f) : 0; }   // spazio per due righe di dialogo
     AdrInfo adr;
     double curT = 0.0;
+    double startLead = 0.09, displayLead = 0.0, lastSpeed = 1.0;   // anticipo alla partenza (si impara), e velocita' corrente
+    bool measuredStart = false;
     juce::TextLayout dialogueLayout;   // dialogo gia' impaginato (si ricalcola solo se cambiano testo, dimensione o spazio)
     juce::String dialogueKey;
     juce::Rectangle<int> adrStrip() const { return getLocalBounds().withTrimmedBottom (bottomH).removeFromBottom (adrH()); }

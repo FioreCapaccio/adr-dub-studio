@@ -1,4 +1,5 @@
 #include "VideoViewer.h"
+#include "VideoSupport.h"
 
 namespace fc
 {
@@ -176,21 +177,42 @@ void VideoViewer::sync (double t, bool playing)
     {
         if (! running)
         {
-            video.setPlayPosition (tc);
+            // il lettore parte con un ritardo (decodifica del primo fotogramma): si parte un po' avanti, e il ritardo
+            // misurato la prima volta serve a partire meglio le volte dopo
+            video.setPlaySpeed (1.0);
+            video.setPlayPosition (juce::jmin (tc + startLead, juce::jmax (0.0, dur - frame)));
             video.play();
             running = true;
-            holdoffUntil = now + 0.6;
+            lastSpeed = 1.0;
+            measuredStart = false;
+            holdoffUntil = now + 0.25;
         }
-        else if (now > holdoffUntil && std::abs (video.getPlayPosition() - vt) > 0.10)
+        else if (now > holdoffUntil)
         {
-            video.setPlayPosition (tc);   // recupero della deriva: l'audio comanda
-            holdoffUntil = now + 0.6;
+            // l'audio comanda: la differenza si recupera accelerando o rallentando di poco il video (senza salti, che con i
+            // video pesanti sono lenti e si vedono come scatti); solo se e' enorme si riposiziona
+            const double err = video.getPlayPosition() - vt - displayLead;   // > 0: il video e' avanti
+            if (! measuredStart) { measuredStart = true; startLead = juce::jlimit (0.0, 0.5, startLead - 0.7 * err); }
+            if (std::abs (err) > 0.6)
+            {
+                video.setPlayPosition (tc + startLead);
+                holdoffUntil = now + 0.8;
+                lastSpeed = 1.0;
+                fc::video::setNativePlayerRate (video, 1.0);
+            }
+            else
+            {
+                double speed = 1.0;
+                if (std::abs (err) > 0.008) speed = 1.0 - juce::jlimit (-0.06, 0.06, err * 1.2);
+                if (std::abs (speed - lastSpeed) > 0.004) { fc::video::setNativePlayerRate (video, speed); lastSpeed = speed; }
+            }
         }
     }
     else
     {
         if (running)
         {
+            lastSpeed = 1.0;
             video.stop();
             running = false;
             lastSetPos = -1.0;

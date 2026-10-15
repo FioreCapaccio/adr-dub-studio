@@ -35,7 +35,7 @@ struct Asset
 };
 using AssetPtr = std::shared_ptr<Asset>;
 
-AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double rate, juce::String& error);
+AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double rate, juce::String& error, const std::function<void (float)>& progress = {});
 
 //==============================================================================
 struct Clip
@@ -343,6 +343,9 @@ public:
     bool isDirty() const noexcept { return dirty; }
     juce::File getFile() const { return sessionFile; }
     int getBusyCount() const noexcept { return busy; }
+    /** Avanzamento (0..1) dell'operazione lunga in corso (caricamento video), o -1 se non ce n'e'. */
+    float getTaskProgress() const noexcept { return taskProgress.load(); }
+    juce::String getTaskLabel() const { const juce::ScopedLock sl (taskLock); return taskLabel; }
 
     // undo/redo
     void beginEdit();
@@ -491,6 +494,10 @@ private:
     bool dirty = false;
     juce::File sessionFile;
     std::atomic<int> busy { 0 };
+    std::atomic<float> taskProgress { -1.0f };
+    mutable juce::CriticalSection taskLock;
+    juce::String taskLabel;
+    void setTask (const juce::String& label, float p) { { const juce::ScopedLock sl (taskLock); taskLabel = label; } taskProgress = p; }
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>> (true);
 };
 

@@ -62,8 +62,11 @@ private:
 
     void decode (bool stream, double pos, uint32_t gen)
     {
-        juce::StringArray args { ffmpegCommand(), "-v", "error", "-ss", juce::String (pos, 4), "-i", file.getFullPathName(), "-an", "-sn",
-                                 "-vf", "scale=" + juce::String (width) + ":" + juce::String (height) + ":flags=fast_bilinear", "-pix_fmt", "bgra" };
+        // prima si prova con l'accelerazione hardware (se c'e' e' molto piu' leggera per i video 4K), poi senza
+        juce::StringArray args { ffmpegCommand(), "-v", "error" };
+        if (useHardware) args.add ("-hwaccel"), args.add ("auto");
+        args.addArray ({ "-ss", juce::String (pos, 4), "-i", file.getFullPathName(), "-an", "-sn",
+                         "-vf", "scale=" + juce::String (width) + ":" + juce::String (height) + ":flags=fast_bilinear", "-pix_fmt", "bgra" });
         if (! stream) { args.add ("-frames:v"); args.add ("1"); }
         args.addArray ({ "-f", "rawvideo", "pipe:1" });
 
@@ -86,6 +89,14 @@ private:
                 if (n <= 0) break;
                 got += (size_t) n;
             }
+            if (got < bytes && k == 0 && useHardware && ! threadShouldExit() && ! superseded (gen))
+            {
+                useHardware = false;   // l'accelerazione non parte su questo sistema: si riprova in software
+                proc.kill();
+                { const juce::ScopedLock sl (reqLock); running = nullptr; }
+                decode (stream, pos, gen);
+                return;
+            }
             if (got < bytes || threadShouldExit() || superseded (gen)) break;
 
             juce::Image img (juce::Image::ARGB, width, height, false);
@@ -102,7 +113,7 @@ private:
                     if (! stream) owner.queue.clear();
                     if (! stream || owner.queue.size() < 10)
                     {
-                        owner.queue.push_back ({ img, pos + (double) k / fps });
+                        owner.queue.push_back ({ img, pos + (double) k / fps, wallClock() });
                         break;
                     }
                 }
@@ -129,6 +140,7 @@ private:
     double reqPos = 0.0;
     uint32_t reqGen = 0;
     juce::ChildProcess* running = nullptr;
+    bool useHardware = true;
 };
 
 //==============================================================================
@@ -206,7 +218,9 @@ void FfmpegFramePlayer::play()
     if (! loaded || playing) return;
     playing = true;
     baseWall = wallClock();
-    request (true, basePos);
+    playStartWall = baseWall;
+    measuringStart = true;
+    request (true, basePos + startLead);
 }
 
 void FfmpegFramePlayer::stop()
@@ -232,7 +246,7 @@ void FfmpegFramePlayer::setPlayPosition (double seconds)
     {
         // piccola correzione: si riancora l'orologio; salto grande o all'indietro: nuovo stream
         const double now = getPlayPosition();
-        if (seconds < now - 0.3 || seconds > now + 1.0) { basePos = seconds; baseWall = wallClock(); request (true, seconds); }
+        if (seconds < now - 0.3 || seconds > now + 1.0) { basePos = seconds; baseWall = wallClock(); playStartWall = baseWall; measuringStart = true; request (true, seconds + startLead); }
         else { basePos = seconds; baseWall = wallClock(); }
         return;
     }
@@ -253,7 +267,17 @@ void FfmpegFramePlayer::timerCallback()
         if (playing)
         {
             while (queue.size() > 1 && queue[1].pts <= pos + 0.001) queue.pop_front();   // si salta quello che e' gia' passato
-            if (! queue.empty() && queue.front().pts <= pos + 0.02) { current = queue.front(); queue.pop_front(); changed = true; }
+            if (! queue.empty() && queue.front().pts <= pos + 0.02)
+            {
+                current = queue.front();
+                queue.pop_front();
+                changed = true;
+                if (measuringStart)   // ritardo di ffmpeg per il primo fotogramma: la prossima partenza lo anticipa
+                {
+                    measuringStart = false;
+                    startLead = juce::jlimit (0.05, 2.0, 0.5 * startLead + 0.5 * (current.arrival - playStartWall + 0.03));
+                }
+            }
         }
         else if (! queue.empty()) { current = queue.back(); queue.clear(); changed = true; }
     }

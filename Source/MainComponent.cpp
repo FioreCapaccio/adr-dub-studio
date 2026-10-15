@@ -332,6 +332,33 @@ void MainComponent::paint (juce::Graphics& g)
     g.drawText (left, statusBox.reduced (10, 0), juce::Justification::centredLeft, true);
 }
 
+void MainComponent::paintOverChildren (juce::Graphics& g)
+{
+    const float p = project->getTaskProgress();
+    if (p < 0.0f) return;
+    const auto label = project->getTaskLabel();
+    const auto box = juce::Rectangle<int> (0, 0, 460, 92).withCentre (getLocalBounds().getCentre());
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.fillRect (getLocalBounds());
+    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.fillRoundedRectangle (box.toFloat().translated (0.0f, 4.0f), 12.0f);
+    g.setColour (panelHi);
+    g.fillRoundedRectangle (box.toFloat(), 12.0f);
+    g.setColour (border);
+    g.drawRoundedRectangle (box.toFloat().reduced (0.5f), 12.0f, 1.0f);
+    g.setColour (text);
+    g.setFont (font (14.0f, true));
+    g.drawText (label.isEmpty() ? juce::String ("Caricamento in corso...") : label, box.reduced (22, 12).removeFromTop (24), juce::Justification::centredLeft, true);
+    auto bar = box.reduced (22, 0).withTrimmedTop (44).withHeight (14).toFloat();
+    g.setColour (juce::Colour (0xff0a0b0d));
+    g.fillRoundedRectangle (bar, 7.0f);
+    g.setGradientFill (juce::ColourGradient (blue.brighter (0.2f), bar.getX(), 0.0f, green, bar.getRight(), 0.0f, false));
+    g.fillRoundedRectangle (bar.withWidth (juce::jmax (14.0f, bar.getWidth() * juce::jlimit (0.0f, 1.0f, p))), 7.0f);
+    g.setColour (dim);
+    g.setFont (mono (12.0f));
+    g.drawText (juce::String ((int) std::round (p * 100.0f)) + " %", box.reduced (22, 8).removeFromBottom (22), juce::Justification::centredRight);
+}
+
 void MainComponent::layoutAll()
 {
     auto r = getLocalBounds();
@@ -467,6 +494,11 @@ void MainComponent::timerCallback()
     {
         playBtn.setClickingTogglesState (false);
         playBtn.setToggleState (playing, juce::dontSendNotification);
+    }
+    {
+        const float tp = project->getTaskProgress();
+        const int pct = tp < 0.0f ? -1 : (int) std::round (tp * 100.0f);
+        if (pct != lastTaskPct) { lastTaskPct = pct; repaint(); }
     }
     if (++secondTick >= 30)
     {

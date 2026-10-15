@@ -56,7 +56,7 @@ Info probe (const juce::File& f)
     return info;
 }
 
-std::vector<juce::Image> thumbnails (const juce::File& f, double interval, int count, int height)
+std::vector<juce::Image> thumbnails (const juce::File& f, double interval, int count, int height, const std::function<void (float)>& progress)
 {
     std::vector<juce::Image> out;
     @autoreleasepool
@@ -84,6 +84,7 @@ std::vector<juce::Image> thumbnails (const juce::File& f, double interval, int c
             {
                 out.push_back (out.empty() ? juce::Image() : out.back());
             }
+            if (progress) progress ((float) (i + 1) / (float) count);
         }
     }
     return out;
@@ -165,6 +166,81 @@ bool muxAudio (const juce::File& video, const juce::File& audio, const juce::Fil
     return true;
 }
 
+
+bool decodeAudioNative (const juce::File& f, double targetRate, juce::AudioBuffer<float>& out, const std::function<void (float)>& progress, juce::String& error)
+{
+    @autoreleasepool
+    {
+        AVURLAsset* a = [AVURLAsset URLAssetWithURL: urlFor (f) options: nil];
+        NSArray<AVAssetTrack*>* tracks = [a tracksWithMediaType: AVMediaTypeAudio];
+        if (tracks.count == 0) { error = "Il file non contiene audio."; return false; }
+
+        int channels = 2;
+        for (id desc in tracks.firstObject.formatDescriptions)
+            if (const AudioStreamBasicDescription* asbd = CMAudioFormatDescriptionGetStreamBasicDescription ((CMAudioFormatDescriptionRef) desc))
+                channels = (int) juce::jlimit<UInt32> (1, 2, asbd->mChannelsPerFrame);
+
+        NSError* err = nil;
+        AVAssetReader* reader = [[AVAssetReader alloc] initWithAsset: a error: &err];
+        if (reader == nil) { error = "Impossibile aprire l'audio: " + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
+        NSDictionary* settings = @{ AVFormatIDKey: @(kAudioFormatLinearPCM), AVLinearPCMBitDepthKey: @32, AVLinearPCMIsFloatKey: @YES,
+                                    AVLinearPCMIsBigEndianKey: @NO, AVLinearPCMIsNonInterleaved: @NO,
+                                    AVNumberOfChannelsKey: @(channels), AVSampleRateKey: @(targetRate) };
+        AVAssetReaderTrackOutput* o = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack: tracks.firstObject outputSettings: settings];
+        [reader addOutput: o];
+        if (! [reader startReading])
+        {
+            error = "Impossibile leggere l'audio: " + (reader.error != nil ? juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String) : juce::String ("errore sconosciuto"));
+            return false;
+        }
+
+        const double totalSec = juce::jmax (0.001, CMTimeGetSeconds (a.duration));
+        std::vector<float> chan[2];
+        const size_t reserve = (size_t) (totalSec * targetRate * 1.02) + 4096;
+        for (int c = 0; c < channels; ++c) chan[c].reserve (reserve);
+
+        while (CMSampleBufferRef sb = [o copyNextSampleBuffer])
+        {
+            CMBlockBufferRef bb = CMSampleBufferGetDataBuffer (sb);
+            size_t len = 0;
+            char* data = nullptr;
+            if (bb != nullptr && CMBlockBufferGetDataPointer (bb, 0, nullptr, &len, &data) == kCMBlockBufferNoErr)
+            {
+                const float* fl = reinterpret_cast<const float*> (data);
+                const size_t frames = len / (sizeof (float) * (size_t) channels);
+                for (size_t i = 0; i < frames; ++i)
+                    for (int c = 0; c < channels; ++c) chan[c].push_back (fl[i * (size_t) channels + (size_t) c]);
+            }
+            CFRelease (sb);
+            if (progress) progress ((float) juce::jlimit (0.0, 1.0, (double) chan[0].size() / (targetRate * totalSec)));
+        }
+        if (reader.status == AVAssetReaderStatusFailed)
+        {
+            error = "Lettura dell'audio non riuscita: " + juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String);
+            return false;
+        }
+        if (chan[0].empty()) { error = "L'audio del file e' vuoto."; return false; }
+
+        out.setSize (channels, (int) chan[0].size());
+        for (int c = 0; c < channels; ++c) out.copyFrom (c, 0, chan[c].data(), (int) chan[c].size());
+    }
+    return true;
+}
+
+void setNativePlayerRate (juce::Component& videoComponent, double rate)
+{
+    for (int i = 0; i < videoComponent.getNumChildComponents(); ++i)
+        if (auto* nv = dynamic_cast<juce::NSViewComponent*> (videoComponent.getChildComponent (i)))
+        {
+            id view = (__bridge id) nv->getView();
+            if ([view respondsToSelector: @selector (player)])
+            {
+                AVPlayer* p = [view player];
+                if (p != nil && p.rate != 0.0f) p.rate = (float) rate;
+            }
+            return;
+        }
+}
 
 bool extractAudio (const juce::File&, const juce::File&, juce::String& error) { error = "Non usato su macOS."; return false; }
 bool usesExternalDecoder() { return false; }
