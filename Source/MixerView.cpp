@@ -274,7 +274,7 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
             });
         };
         addAndMakeVisible (trackLimMenuBtn);
-        eqBtn.setTooltip ("Equalizzatore parametrico a 4 bande della traccia (acceso = colorato)");
+        eqBtn.setTooltip ("EQ a 4 bande, compressore e tipo di traccia (preset per dialogo, musica, effetti). Acceso = colorato");
         eqBtn.onClick = [this] { if (onEq) onEq(); };
         addAndMakeVisible (eqBtn);
 
@@ -338,7 +338,8 @@ void ChannelStrip::syncFromLive()
         invertBtn.setToggleState (live->invert.load(), juce::dontSendNotification);
         trackLimBtn.setToggleState (live->limiterOn.load(), juce::dontSendNotification);
         trackLimBtn.setButtonText (live->limiterOn.load() ? "LIM " + juce::String (live->ceilingDb.load(), 0) : juce::String ("LIM"));
-        eqBtn.setToggleState (live->eq.enabled.load() && ! live->eq.isNeutral(), juce::dontSendNotification);
+        eqBtn.setToggleState ((live->eq.enabled.load() && ! live->eq.isNeutral()) || live->comp.enabled.load(), juce::dontSendNotification);
+        repaint (0, 0, getWidth(), 30);
         routeBtn.setButtonText (live->outBus.load() == 0 ? juce::String ("MASTER") : "GRUPPO " + juce::String (live->outBus.load()));
         sendA.setValue (live->sendDb[0].load() <= -79.5f ? -60.0 : (double) live->sendDb[0].load(), juce::dontSendNotification);
         sendB.setValue (live->sendDb[1].load() <= -79.5f ? -60.0 : (double) live->sendDb[1].load(), juce::dontSendNotification);
@@ -489,8 +490,15 @@ void ChannelStrip::paint (juce::Graphics& g)
 
     g.setColour (text);
     g.setFont (font (12.0f, true));
-    g.drawText (master ? "MASTER" : name, getLocalBounds().withHeight (28).withTrimmedTop (4).reduced (8, 0),
+    const int type = (! master && ! aux) ? live->trackType.load() : 0;
+    g.drawText (master ? "MASTER" : name, getLocalBounds().withHeight (type > 0 ? 22 : 28).withTrimmedTop (type > 0 ? 1 : 4).reduced (8, 0),
                 juce::Justification::centred, true);
+    if (type > 0)   // tipo di traccia (dialogo, musica, effetti) sotto il nome
+    {
+        g.setColour (trackTypeColour (type));
+        g.setFont (font (8.5f, true));
+        g.drawText (trackTypeTag (type), getLocalBounds().withHeight (26).withTrimmedTop (15).reduced (8, 0), juce::Justification::centred);
+    }
 
     if (master)
     {
@@ -798,11 +806,11 @@ void MixerView::openEq (int trackId)
     auto* t = project.findTrack (trackId);
     if (t == nullptr) return;
     for (auto& w : eqWindows)
-        if (w.first == t->live) { w.second->setName (t->name + " - Equalizzatore"); w.second->toFront (true); return; }
+        if (w.first == t->live) { w.second->setName (t->name + " - EQ e compressore"); w.second->toFront (true); return; }
 
     auto live = t->live;
     juce::Component::SafePointer<MixerView> safe (this);
-    auto win = std::make_unique<EqWindow> (t->name + " - Equalizzatore", [safe, live]
+    auto win = std::make_unique<EqWindow> (t->name + " - EQ e compressore", [safe, live]
     {
         juce::MessageManager::callAsync ([safe, live]
         {

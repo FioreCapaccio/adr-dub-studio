@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  APP_VERSION: "1.1.0"
+
 jobs:
   macos-universal:
     runs-on: macos-14
@@ -25,7 +28,7 @@ jobs:
         run: |
           APP="build/ArotronStudio_artefacts/Release/ADR Dub Studio.app"
           codesign --force --deep -s - "$APP"
-          ditto -c -k --keepParent "$APP" ADR-Dub-Studio-macOS-universal.zip
+          ditto -c -k --keepParent "$APP" ADR-Dub-Studio-${{ env.APP_VERSION }}-macOS-universal.zip
       - name: Publish to the release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -33,7 +36,7 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "ADR Dub Studio ${{ github.ref_name }}" --notes "Build automatica. macOS: universale (Apple Silicon e Intel), firma ad-hoc: la prima volta clic destro > Apri. Windows: installer (Setup.exe) con ffmpeg incluso per il video, piu' una versione portatile (zip)." || true
           sleep 10
-          gh release upload "${{ github.ref_name }}" ADR-Dub-Studio-macOS-universal.zip --repo "${{ github.repository }}" --clobber
+          gh release upload "${{ github.ref_name }}" ADR-Dub-Studio-${{ env.APP_VERSION }}-macOS-universal.zip --repo "${{ github.repository }}" --clobber
 
   windows:
     runs-on: windows-latest
@@ -54,13 +57,13 @@ jobs:
           Copy-Item (Join-Path $bin "ffmpeg.exe"), (Join-Path $bin "ffprobe.exe") pkg/
           Copy-Item LICENSE pkg/
           Set-Content -Path pkg/FFMPEG.txt -Value "ffmpeg.exe e ffprobe.exe sono FFmpeg (https://ffmpeg.org), build LGPL di https://github.com/BtbN/FFmpeg-Builds , usati per leggere e esportare i video."
-          Compress-Archive -Path pkg/* -DestinationPath ADR-Dub-Studio-Windows-x64-portable.zip
+          Compress-Archive -Path pkg/* -DestinationPath ADR-Dub-Studio-${{ env.APP_VERSION }}-Windows-x64-portable.zip
       - name: Build the installer (Inno Setup)
         shell: pwsh
         run: |
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
-          & $iscc "/DMyAppVersion=1.0.0" installer/adr-dub-studio.iss
+          & $iscc "/DMyAppVersion=${{ env.APP_VERSION }}" installer/adr-dub-studio.iss
           Get-ChildItem installer_out
       - name: Publish to the release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -70,4 +73,4 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "ADR Dub Studio ${{ github.ref_name }}" --notes "Build automatica. macOS: universale, firma ad-hoc. Windows: installer (Setup.exe) con ffmpeg incluso per il video, piu' una versione portatile (zip)." 2>$null
           Start-Sleep -Seconds 15
-          gh release upload "${{ github.ref_name }}" installer_out/ADR-Dub-Studio-Windows-x64-Setup.exe ADR-Dub-Studio-Windows-x64-portable.zip --repo "${{ github.repository }}" --clobber
+          gh release upload "${{ github.ref_name }}" installer_out/ADR-Dub-Studio-${{ env.APP_VERSION }}-Windows-x64-Setup.exe ADR-Dub-Studio-${{ env.APP_VERSION }}-Windows-x64-portable.zip --repo "${{ github.repository }}" --clobber

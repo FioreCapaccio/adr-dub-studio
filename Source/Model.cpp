@@ -1,5 +1,6 @@
 #include "Model.h"
 #include "TimeStretch.h"
+#include "TrackPresets.h"
 #include "Theme.h"
 #include "VideoSupport.h"
 #include <map>
@@ -297,6 +298,15 @@ int Project::addTrack()
     return id;
 }
 
+void Project::setTrackType (int trackId, int type)
+{
+    if (auto* t = findTrack (trackId))
+    {
+        applyTrackPreset (*t->live, type);
+        liveChanged();
+    }
+}
+
 void Project::removeTrack (int id)
 {
     const int i = trackIndexForId (id);
@@ -498,7 +508,16 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
             if (tcFormat == 2 && std::abs (va->fps - 25.0) > 0.01) tcFormat = tcFormatForFps (va->fps);
             if (audio != nullptr)
             {
-                const int id = addTrackInternal();
+                // la traccia dell'audio del video sta in cima, accanto alla corsia video; una prima traccia vuota si riusa
+                int id;
+                if (! session.tracks.empty() && session.tracks.front().clips.empty())
+                    id = session.tracks.front().id;
+                else
+                {
+                    id = addTrackInternal();
+                    std::rotate (session.tracks.begin(), session.tracks.end() - 1, session.tracks.end());
+                }
+                selectedTrackId = id;
                 auto* t = findTrack (id);
                 t->name = "Audio video";
                 Clip c;
@@ -1229,6 +1248,15 @@ juce::var Project::toVar() const
         o->setProperty ("autoMode", t.live->autoMode.load());
         o->setProperty ("invert", t.live->invert.load());
         o->setProperty ("outBus", t.live->outBus.load());
+        o->setProperty ("trackType", t.live->trackType.load());
+        {
+            auto* c = new juce::DynamicObject();
+            const auto& k = t.live->comp;
+            c->setProperty ("on", k.enabled.load()); c->setProperty ("thr", (double) k.thresholdDb.load()); c->setProperty ("ratio", (double) k.ratio.load());
+            c->setProperty ("atk", (double) k.attackMs.load()); c->setProperty ("rel", (double) k.releaseMs.load());
+            c->setProperty ("knee", (double) k.kneeDb.load()); c->setProperty ("makeup", (double) k.makeupDb.load());
+            o->setProperty ("comp", juce::var (c));
+        }
         o->setProperty ("limiter", t.live->limiterOn.load());
         o->setProperty ("ceiling", (double) t.live->ceilingDb.load());
         {
@@ -1319,7 +1347,7 @@ void Project::newSession()
     redoStack.clear();
     selection.clear();
     nextTrackId = 1;
-    for (int i = 0; i < 4; ++i) addTrackInternal();
+    addTrackInternal();   // una nuova sessione parte con una sola traccia
     selectedTrackId = session.tracks.front().id;
     sessionFile = juce::File();
     publish();
@@ -1417,6 +1445,19 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     insertsFromVar (tv.getProperty ("inserts", {}), *t.live);
                     t.live->autoMode = (int) tv.getProperty ("autoMode", 0);
                     t.live->invert = (bool) tv.getProperty ("invert", false);
+                    t.live->trackType = juce::jlimit (0, (int) kNumTrackTypes - 1, (int) tv.getProperty ("trackType", 0));
+                    if (tv.hasProperty ("comp"))
+                    {
+                        const auto cv = tv.getProperty ("comp", {});
+                        auto& k = t.live->comp;
+                        k.enabled = (bool) cv.getProperty ("on", false);
+                        k.thresholdDb = juce::jlimit (-60.0f, 0.0f, (float) (double) cv.getProperty ("thr", -18.0));
+                        k.ratio = juce::jlimit (1.0f, 20.0f, (float) (double) cv.getProperty ("ratio", 3.0));
+                        k.attackMs = juce::jlimit (0.1f, 200.0f, (float) (double) cv.getProperty ("atk", 10.0));
+                        k.releaseMs = juce::jlimit (5.0f, 2000.0f, (float) (double) cv.getProperty ("rel", 120.0));
+                        k.kneeDb = juce::jlimit (0.0f, 24.0f, (float) (double) cv.getProperty ("knee", 6.0));
+                        k.makeupDb = juce::jlimit (-12.0f, 24.0f, (float) (double) cv.getProperty ("makeup", 0.0));
+                    }
                     t.live->limiterOn = (bool) tv.getProperty ("limiter", false);   // le sessioni vecchie non lo avevano
                     t.live->ceilingDb = juce::jlimit (-24.0f, 0.0f, (float) (double) tv.getProperty ("ceiling", -1.0));
                     t.live->outBus = juce::jlimit (0, Session::kNumGroups, (int) tv.getProperty ("outBus", 0));

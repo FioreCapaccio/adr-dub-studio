@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "Timecode.h"
 #include "ParamEq.h"
+#include "TrackComp.h"
 #include "Limiter.h"
 #include <atomic>
 #include <functional>
@@ -91,6 +92,8 @@ struct TrackLive
     std::atomic<bool> mute { false }, solo { false };
     std::atomic<bool> invert { false };    // inversione di polarita' (traccia)
     ParamEq eq;                            // equalizzatore parametrico (solo tracce)
+    TrackComp comp;                        // compressore di traccia (dopo l'EQ, prima degli inserti)
+    std::atomic<int> trackType { 0 };      // tipo di traccia (preset): 0 nessuno, 1 dialogo, 2 musica, 3 effetti
     // limiter per traccia (limiterOn/ceilingDb/grDb sono gli stessi del master); lo stato e' del solo thread audio
     Limiter trackLimiter;
     double trackLimiterRate = 0.0;
@@ -153,7 +156,7 @@ struct TrackLive
         volumeDb = o.volumeDb.load(); pan = o.pan.load();
         mute = o.mute.load(); solo = o.solo.load();
         armed = o.armed.load(); inputMode = o.inputMode.load(); height = o.height.load(); autoMode = o.autoMode.load(); autoParam = o.autoParam.load(); invert = o.invert.load(); outBus = o.outBus.load();
-        eq.copyFrom (o.eq);
+        eq.copyFrom (o.eq); comp.copyFrom (o.comp); trackType = o.trackType.load();
         limiterOn = o.limiterOn.load(); ceilingDb = o.ceilingDb.load();
         sendDb[0] = o.sendDb[0].load(); sendDb[1] = o.sendDb[1].load();
     }
@@ -367,6 +370,8 @@ public:
     // tracce
     int addTrack();
     void removeTrack (int id);
+    /** Applica a una traccia il preset del tipo scelto (EQ, compressore, limiter, livello) e ne ricorda il tipo. */
+    void setTrackType (int trackId, int type);
     void moveTrackTo (int fromIndex, int toIndex);
     void duplicateTrack (int id);
     void renameTrack (int id, const juce::String& name);

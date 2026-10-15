@@ -165,7 +165,8 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
                     if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! (auditionClip < 0 && c.cueId != 0))) && c.end() > cpos && c.start < cpos + chunk)
                         renderClip (c, cpos, chunk);
 
-            if (audible) live.eq.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);   // EQ, poi plug-in
+            if (audible) live.eq.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);   // EQ, compressore, poi plug-in
+            if (audible) live.comp.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);
             if (audible) runInserts (live, scratch, chunk, midi);   // plug-in pre-fader
 
             // compensazione di latenza: ritarda la traccia fino alla latenza della piu' lenta

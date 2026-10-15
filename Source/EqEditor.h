@@ -2,6 +2,7 @@
 
 #include "Model.h"
 #include "Theme.h"
+#include "TrackPresets.h"
 
 namespace fc
 {
@@ -46,6 +47,14 @@ private:
     std::shared_ptr<TrackLive> live;
     std::function<double()> rate;
     juce::ToggleButton enableBtn { "EQ ATTIVO" };
+    juce::Label typeLbl, typeInfo;
+    juce::ComboBox typeBox;   // tipo di traccia: applica una catena consigliata
+    juce::ToggleButton compOn { "COMPRESSORE" };
+    juce::Slider compThr { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight }, compRatio { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
+                 compAtk { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight }, compRel { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
+                 compMakeup { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    juce::Label compThrLbl, compRatioLbl, compAtkLbl, compRelLbl, compMakeupLbl;
+    juce::Rectangle<int> compBox;
     juce::TextButton resetBtn { "AZZERA" };
     BandUi ui[ParamEq::kBands];
     int dragBand = -1;

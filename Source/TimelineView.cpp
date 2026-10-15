@@ -1,4 +1,5 @@
 #include "TimelineView.h"
+#include "TrackPresets.h"
 #include "VideoSupport.h"
 
 namespace fc
@@ -62,7 +63,7 @@ void TimelineView::fitTrackHeights()
 {
     const int n = juce::jmax (1, (int) project.getSession().tracks.size());
     scrollY = 0;
-    setAllTrackHeights (laneArea().getHeight() / n);
+    setAllTrackHeights (juce::jmin (160, laneArea().getHeight() / n));   // con poche tracce non diventano enormi
 }
 
 juce::Rectangle<float> TimelineView::clipRect (int ti, const Clip& c) const
@@ -1935,6 +1936,13 @@ void TimelineView::showTrackMenu (int trackId)
             colours.addColouredItem (100 + i, "Colore " + juce::String (i + 1), trackPalette[i]);
         m.addSubMenu ("Colore", colours);
         m.addItem (2, "Elimina traccia", project.getSession().tracks.size() > 1);
+        {
+            // tipo di traccia: applica la catena consigliata (EQ, compressore, limiter, livello)
+            juce::PopupMenu types;
+            const int cur = project.findTrack (trackId) != nullptr ? project.findTrack (trackId)->live->trackType.load() : 0;
+            for (int t = 0; t < kNumTrackTypes; ++t) types.addItem (200 + t, trackTypeName (t), true, t == cur);
+            m.addSubMenu ("Tipo di traccia (preset)", types);
+        }
         m.addSeparator();
     }
     m.addItem (3, "Nuova traccia");
@@ -1954,6 +1962,7 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 4 && safe->onImportRequested) safe->onImportRequested();
         else if (r == 5) safe->fitTrackHeights();
         else if (r == 6) p.clearAutomation (trackId);
+        else if (r >= 200 && r < 200 + kNumTrackTypes) p.setTrackType (trackId, r - 200);
         else if (r >= 100) p.setTrackColour (trackId, trackPalette[r - 100]);
     });
 }

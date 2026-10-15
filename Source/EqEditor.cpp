@@ -26,6 +26,49 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
     };
     addAndMakeVisible (resetBtn);
 
+    typeLbl.setText ("TIPO DI TRACCIA", juce::dontSendNotification);
+    typeLbl.setFont (font (10.0f, true));
+    typeLbl.setColour (juce::Label::textColourId, dim);
+    addAndMakeVisible (typeLbl);
+    for (int t = 0; t < kNumTrackTypes; ++t) typeBox.addItem (trackTypeName (t), t + 1);
+    typeBox.setTooltip ("Applica una catena consigliata: EQ, compressore, limiter e livello. Si puo' ritoccare tutto dopo");
+    typeBox.onChange = [this]
+    {
+        if (loading) return;
+        applyTrackPreset (*live, typeBox.getSelectedId() - 1);
+        project.liveChanged();
+        refresh();
+    };
+    addAndMakeVisible (typeBox);
+    typeInfo.setFont (font (10.5f));
+    typeInfo.setColour (juce::Label::textColourId, dim);
+    typeInfo.setJustificationType (juce::Justification::topLeft);
+    addAndMakeVisible (typeInfo);
+
+    compOn.onClick = [this] { if (! loading) { live->comp.enabled = compOn.getToggleState(); project.liveChanged(); repaint(); } };
+    addAndMakeVisible (compOn);
+    struct CS { juce::Slider* s; juce::Label* l; const char* name; double lo, hi, step, mid; const char* suffix; std::atomic<float> TrackComp::* p; };
+    const CS comps[] = {
+        { &compThr, &compThrLbl, "SOGLIA", -60.0, 0.0, 0.5, -18.0, " dB", &TrackComp::thresholdDb },
+        { &compRatio, &compRatioLbl, "RAPPORTO", 1.0, 20.0, 0.1, 4.0, " :1", &TrackComp::ratio },
+        { &compAtk, &compAtkLbl, "ATTACCO", 0.1, 200.0, 0.1, 20.0, " ms", &TrackComp::attackMs },
+        { &compRel, &compRelLbl, "RILASCIO", 5.0, 2000.0, 1.0, 200.0, " ms", &TrackComp::releaseMs },
+        { &compMakeup, &compMakeupLbl, "GUADAGNO", -12.0, 24.0, 0.1, 0.0, " dB", &TrackComp::makeupDb } };
+    for (auto& c : comps)
+    {
+        c.s->setRange (c.lo, c.hi, c.step);
+        if (c.mid > c.lo && c.mid < c.hi) c.s->setSkewFactorFromMidPoint (c.mid);
+        c.s->setTextValueSuffix (c.suffix);
+        c.s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 20);
+        c.s->setColour (juce::Slider::thumbColourId, juce::Colour (0xff8ab4ff));
+        c.s->onValueChange = [this, c] { if (! loading) { (live->comp.*(c.p)).store ((float) c.s->getValue()); project.liveChanged(); repaint(); } };
+        c.l->setText (c.name, juce::dontSendNotification);
+        c.l->setFont (font (10.0f, true));
+        c.l->setColour (juce::Label::textColourId, dim);
+        addAndMakeVisible (*c.s);
+        addAndMakeVisible (*c.l);
+    }
+
     for (int i = 0; i < ParamEq::kBands; ++i)
     {
         auto& u = ui[i];
@@ -66,13 +109,21 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
         for (auto* c : std::initializer_list<juce::Component*> { &u.type, &u.on, &u.freq, &u.gain, &u.q, &u.freqLbl, &u.gainLbl, &u.qLbl }) addAndMakeVisible (*c);
     }
     refresh();
-    setSize (840, 560);
+    setSize (840, 650);
 }
 
 void EqEditor::refresh()
 {
     loading = true;
     enableBtn.setToggleState (live->eq.enabled.load(), juce::dontSendNotification);
+    typeBox.setSelectedId (live->trackType.load() + 1, juce::dontSendNotification);
+    typeInfo.setText (trackPresetDescription (live->trackType.load()), juce::dontSendNotification);
+    compOn.setToggleState (live->comp.enabled.load(), juce::dontSendNotification);
+    compThr.setValue (live->comp.thresholdDb.load(), juce::dontSendNotification);
+    compRatio.setValue (live->comp.ratio.load(), juce::dontSendNotification);
+    compAtk.setValue (live->comp.attackMs.load(), juce::dontSendNotification);
+    compRel.setValue (live->comp.releaseMs.load(), juce::dontSendNotification);
+    compMakeup.setValue (live->comp.makeupDb.load(), juce::dontSendNotification);
     for (int i = 0; i < ParamEq::kBands; ++i)
     {
         auto& b = live->eq.band[i];
@@ -111,7 +162,7 @@ void EqEditor::changed()
 //==============================================================================
 juce::Rectangle<float> EqEditor::plot() const
 {
-    return juce::Rectangle<float> (46.0f, 56.0f, (float) getWidth() - 46.0f - 20.0f, 260.0f);
+    return juce::Rectangle<float> (46.0f, 96.0f, (float) getWidth() - 46.0f - 20.0f, 230.0f);
 }
 
 float EqEditor::freqToX (float hz) const
@@ -135,13 +186,17 @@ void EqEditor::resized()
     resetBtn.setBounds (top.removeFromRight (90));
     top.removeFromRight (8);
     enableBtn.setBounds (top.removeFromRight (120));
+    top.removeFromLeft (250);
+    typeLbl.setBounds (top.removeFromLeft (110).withTrimmedTop (4));
+    typeBox.setBounds (top.removeFromLeft (170));
+    typeInfo.setBounds (16, 46, getWidth() - 32, 38);
 
     const int y0 = (int) plot().getBottom() + 28;
     const int w = (getWidth() - 32) / ParamEq::kBands;
     for (int i = 0; i < ParamEq::kBands; ++i)
     {
         auto& u = ui[i];
-        auto col = juce::Rectangle<int> (16 + i * w, y0, w - 8, getHeight() - y0 - 14);
+        auto col = juce::Rectangle<int> (16 + i * w, y0, w - 8, 150);
         u.box = col;
         auto r = col.reduced (8, 6);
         u.on.setBounds (r.removeFromTop (22));
@@ -149,10 +204,23 @@ void EqEditor::resized()
         r.removeFromTop (4);
         for (auto pr : { std::make_pair (&u.freqLbl, &u.freq), std::make_pair (&u.gainLbl, &u.gain), std::make_pair (&u.qLbl, &u.q) })
         {
-            pr.first->setBounds (r.removeFromTop (14));
-            pr.second->setBounds (r.removeFromTop (22));
-            r.removeFromTop (2);
+            pr.first->setBounds (r.removeFromTop (12));
+            pr.second->setBounds (r.removeFromTop (20));
         }
+    }
+
+    // compressore: una riga con i cinque controlli
+    compBox = juce::Rectangle<int> (16, y0 + 160, getWidth() - 32, 90);
+    auto cr = compBox.reduced (10, 6);
+    compOn.setBounds (cr.removeFromTop (22).removeFromLeft (170));
+    const int cw = cr.getWidth() / 5;
+    juce::Slider* sl[] = { &compThr, &compRatio, &compAtk, &compRel, &compMakeup };
+    juce::Label* lb[] = { &compThrLbl, &compRatioLbl, &compAtkLbl, &compRelLbl, &compMakeupLbl };
+    for (int i = 0; i < 5; ++i)
+    {
+        auto c = cr.removeFromLeft (cw).reduced (4, 0);
+        lb[i]->setBounds (c.removeFromTop (14));
+        sl[i]->setBounds (c.removeFromTop (22));
     }
 }
 
@@ -209,7 +277,7 @@ void EqEditor::paint (juce::Graphics& g)
     g.fillAll (panel);
     g.setColour (text);
     g.setFont (font (13.0f, true));
-    g.drawText ("EQUALIZZATORE PARAMETRICO", 16, 0, 320, 46, juce::Justification::centredLeft);
+    g.drawText ("EQ E COMPRESSORE", 16, 0, 230, 46, juce::Justification::centredLeft);
 
     const auto p = plot();
     g.setColour (juce::Colour (0xff08090b));
@@ -280,6 +348,17 @@ void EqEditor::paint (juce::Graphics& g)
     g.setFont (font (10.5f));
     g.drawText ("Trascina i nodi: frequenza e guadagno. Rotella sul nodo: larghezza (Q). Doppio clic: guadagno a zero.",
                 juce::Rectangle<int> (46, (int) plot().getBottom() + 14, getWidth() - 66, 14), juce::Justification::centredLeft);
+
+    // riquadro del compressore
+    {
+        auto f = compBox.toFloat();
+        g.setColour (panelTop);
+        g.fillRoundedRectangle (f, 8.0f);
+        g.setColour ((live->comp.enabled.load() ? juce::Colour (0xff8ab4ff) : dim).withAlpha (0.8f));
+        g.fillRect (f.getX() + 8.0f, f.getY(), f.getWidth() - 16.0f, 2.0f);
+        g.setColour (border);
+        g.drawRoundedRectangle (f, 8.0f, 1.0f);
+    }
 
     // riquadri delle bande
     for (int i = 0; i < ParamEq::kBands; ++i)

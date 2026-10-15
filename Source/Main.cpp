@@ -104,6 +104,7 @@ private:
         stepAudition();
         stepTrackLimiter();
         stepAutoLanes();
+        stepPresets();
         stepAutomation();
         stepCrossfade();
         stepTimecode();
@@ -186,6 +187,7 @@ private:
         project->getSession().tracks[0].live->outBus = 4;
         project->exportIn = 12000; project->exportOut = 96000; project->adrDialogueSize = 44;
         { auto& t3 = project->edit().tracks[3]; fc::AutoPoint a; a.pos = 4800; a.db = -0.5f; t3.panAuto = { a }; a.db = -9.0f; t3.sendAAuto = { a }; t3.live->autoParam = fc::AutoSendA; }   // curve su una traccia vuota
+        { auto& t3 = project->edit().tracks[3]; t3.live->trackType = fc::TrackEffects; t3.live->comp.enabled = true; t3.live->comp.ratio = 5.5f; t3.live->comp.thresholdDb = -33.0f; }
         project->getSession().tracks[3].live->limiterOn = true; project->getSession().tracks[3].live->ceilingDb = -3.0f;   // traccia 4 vuota: il mix non cambia
         { auto& e = project->getSession().tracks[0].live->eq; e.enabled = true; e.band[2].gainDb = 0.0f; e.band[2].freq = 3200.0f; e.band[2].q = 2.5f; e.band[2].type = fc::ParamEq::Bell; }   // EQ acceso ma neutro: non cambia il mix
         expect (project->save (tmp, err), "salva sessione " + err);
@@ -218,6 +220,11 @@ private:
                 auto& t3 = reload->getSession().tracks[3];
                 expect (t3.panAuto.size() == 1 && std::abs (t3.panAuto[0].db + 0.5f) < 1.0e-4f && t3.sendAAuto.size() == 1 && std::abs (t3.sendAAuto[0].db + 9.0f) < 1.0e-4f && t3.live->autoParam.load() == fc::AutoSendA,
                         "automazione: curve pan e send salvate e ricaricate con la sessione");
+            }
+            {
+                auto& c3 = reload->getSession().tracks[3].live->comp;
+                expect (reload->getSession().tracks[3].live->trackType.load() == fc::TrackEffects && c3.enabled.load() && std::abs (c3.ratio.load() - 5.5f) < 1.0e-4f && std::abs (c3.thresholdDb.load() + 33.0f) < 1.0e-4f,
+                        "tipo di traccia e compressore: salvati e ricaricati con la sessione");
             }
             expect (reload->getSession().tracks[3].live->limiterOn.load() && ! reload->getSession().tracks[0].live->limiterOn.load() && std::abs (reload->getSession().tracks[3].live->ceilingDb.load() + 3.0f) < 1.0e-4f,
                     "limiter di traccia: salvato e ricaricato (le altre tracce restano senza)");
@@ -1034,6 +1041,60 @@ private:
         expect (p.getSession().tracks[0].sendBAuto.size() == 1 && p.getSession().tracks[0].panAuto.size() == 1, "automazione: la scrittura touch di un send non tocca le altre curve");
     }
 
+    void stepPresets()
+    {
+        constexpr double rate = 48000.0;
+        auto sine = [] (float amp, int n) { juce::AudioBuffer<float> b (2, n); for (int i = 0; i < n; ++i) { const float v = amp * (float) std::sin (juce::MathConstants<double>::twoPi * 1000.0 * i / rate); b.setSample (0, i, v); b.setSample (1, i, v); } return b; };
+        auto peakAfter = [] (juce::AudioBuffer<float>& b, int from) { return b.getMagnitude (0, from, b.getNumSamples() - from); };
+
+        // compressore: seno a -6 dBFS, soglia -20, 4:1 -> uscita a -20 + 14/4 = -16,5 dBFS
+        fc::TrackComp k;
+        k.enabled = true; k.thresholdDb = -20.0f; k.ratio = 4.0f; k.attackMs = 1.0f; k.releaseMs = 50.0f; k.kneeDb = 0.0f; k.makeupDb = 0.0f;
+        auto b = sine (0.5f, 48000);
+        k.process (b.getWritePointer (0), b.getWritePointer (1), 48000, rate);
+        const float outDb = juce::Decibels::gainToDecibels (peakAfter (b, 24000));
+        expect (std::abs (outDb + 16.5f) < 0.6f, "compressore: -6 dBFS con soglia -20 e 4:1 esce a " + juce::String (outDb, 2) + " dBFS (attesi -16,5)");
+        auto quiet = sine (0.05f, 24000);
+        k.process (quiet.getWritePointer (0), quiet.getWritePointer (1), 24000, rate);
+        expect (std::abs (juce::Decibels::gainToDecibels (peakAfter (quiet, 8000)) + 26.0f) < 0.3f, "compressore: sotto la soglia il segnale non cambia");
+        k.makeupDb = 6.0f;
+        auto up = sine (0.05f, 24000);
+        k.process (up.getWritePointer (0), up.getWritePointer (1), 24000, rate);
+        expect (std::abs (juce::Decibels::gainToDecibels (peakAfter (up, 8000)) + 20.0f) < 0.4f, "compressore: il guadagno di compensazione si somma (+6 dB)");
+        k.enabled = false;
+        auto off = sine (0.5f, 4096);
+        auto offCopy = off;
+        k.process (off.getWritePointer (0), off.getWritePointer (1), 4096, rate);
+        bool same = true;
+        for (int i = 0; i < 4096; ++i) same = same && off.getSample (0, i) == offCopy.getSample (0, i);
+        expect (same, "compressore spento: passa invariato");
+
+        // preset dei tipi di traccia
+        fc::TrackLive l;
+        fc::applyTrackPreset (l, fc::TrackDialogue);
+        expect (l.trackType.load() == fc::TrackDialogue && l.eq.enabled.load() && l.eq.band[0].type.load() == fc::ParamEq::HighPass && std::abs (l.eq.band[0].freq.load() - 80.0f) < 0.1f
+                    && l.comp.enabled.load() && std::abs (l.comp.ratio.load() - 3.0f) < 0.01f && l.limiterOn.load() && std::abs (l.ceilingDb.load() + 3.0f) < 0.01f,
+                "preset dialogo: passa-alto 80 Hz, compressore 3:1, limiter a -3 dB");
+        fc::applyTrackPreset (l, fc::TrackMusic);
+        expect (l.trackType.load() == fc::TrackMusic && std::abs (l.volumeDb.load() + 6.0f) < 0.01f && std::abs (l.comp.ratio.load() - 2.0f) < 0.01f, "preset musica: livello -6 dB, compressore 2:1");
+        fc::applyTrackPreset (l, fc::TrackEffects);
+        expect (l.trackType.load() == fc::TrackEffects && std::abs (l.comp.ratio.load() - 4.0f) < 0.01f && std::abs (l.volumeDb.load() + 3.0f) < 0.01f, "preset effetti: compressore 4:1, livello -3 dB");
+        fc::applyTrackPreset (l, fc::TrackNone);
+        expect (l.trackType.load() == 0 && ! l.eq.enabled.load() && ! l.comp.enabled.load() && ! l.limiterOn.load() && std::abs (l.volumeDb.load()) < 0.01f, "preset nessuno: tutto spento");
+
+        // l'EQ del preset dialogo fa quello che dice: a 100 Hz attenua, a 3,5 kHz esalta
+        fc::applyTrackPreset (l, fc::TrackDialogue);
+        expect (l.eq.responseDb (40.0, rate) < -8.0 && std::abs (l.eq.responseDb (3500.0, rate) - 2.5) < 1.5, "preset dialogo: taglia i bassi e valorizza la presenza (40 Hz " + juce::String (l.eq.responseDb (40.0, rate), 1) + " dB, 3,5 kHz " + juce::String (l.eq.responseDb (3500.0, rate), 1) + " dB)");
+
+        // nuova sessione: una sola traccia; un video si inserisce in cima
+        fc::Project p (formats, rate);
+        p.newSession();
+        expect (p.getSession().tracks.size() == 1, "nuova sessione: una sola traccia");
+        // setTrackType su una traccia del progetto
+        p.setTrackType (p.getSession().tracks[0].id, fc::TrackMusic);
+        expect (p.getSession().tracks[0].live->trackType.load() == fc::TrackMusic && p.getSession().tracks[0].live->comp.enabled.load(), "setTrackType applica la catena alla traccia");
+    }
+
     void stepSpectrum()
     {
         // sinusoide a -6 dBFS esattamente sul bin 170 (996,09 Hz a 48 kHz): il picco deve cadere li' e valere -6 dB
@@ -1417,8 +1478,9 @@ private:
             for (auto& im : v->thumbs) allValid = allValid && im.isValid() && im.getHeight() == 56;
             expect (allValid && (int) v->thumbs.size() == 20, "miniature: " + juce::String ((int) v->thumbs.size()));
 
-            expect ((int) project->getSession().tracks.size() == tracksBefore + 1, "audio del video estratto in una nuova traccia");
-            auto& t = project->getSession().tracks.back();
+            expect ((int) project->getSession().tracks.size() == tracksBefore + 1 && project->getSession().tracks.front().name == "Audio video",
+                    "audio del video estratto in una nuova traccia, in cima (vicino alla corsia video)");
+            auto& t = project->getSession().tracks.front();
             expect (! t.clips.empty() && std::abs (t.clips[0].length - 20 * 48000) < 4096, "durata audio estratto: "
                         + juce::String (t.clips.empty() ? 0 : (juce::int64) t.clips[0].length));
 
@@ -1490,7 +1552,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "1.0.0"; }
+    const juce::String getApplicationVersion() override { return "1.1.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
