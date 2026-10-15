@@ -162,13 +162,18 @@ MainComponent::MainComponent()
     addAndMakeVisible (inMeter);
 
     for (juce::Button* b : std::initializer_list<juce::Button*> { &rewindBtn, &playBtn, &stopBtn, &recBtn, &loopBtn, &snapBtn, &followBtn, &monBtn, &zoomOutBtn, &zoomInBtn,
-                     &fitBtn, &importBtn, &exportBtn, &addTrackBtn, &videoBtn, &mixerBtn })
+                     &fitBtn, &importBtn, &exportBtn, &addTrackBtn, &videoBtn, &mixerBtn, &exitBtn })
     {
         b->setWantsKeyboardFocus (false);
         addAndMakeVisible (*b);
     }
     for (auto* b : { &loopBtn, &snapBtn, &followBtn, &monBtn, &videoBtn, &mixerBtn })
         b->setClickingTogglesState (true);
+    exitBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4a2523));
+    exitBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffff8a7d));
+    exitBtn.setTooltip ("Esci dal programma (chiede se salvare le modifiche)");
+    exitBtn.onClick = [this] { requestQuit(); };
+    returnToStart = settings().getBoolValue ("returnToStart", true);
     recBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff5a2420));
     recBtn.setColour (juce::TextButton::buttonOnColourId, accent);
     recBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffff8a7d));
@@ -417,7 +422,7 @@ void MainComponent::resized()
     auto g1 = group (40 + 6 + 48 + 6 + 40 + 6 + 48);
     put (g1, rewindBtn, 40); put (g1, playBtn, 48); put (g1, stopBtn, 40); put (g1, recBtn, 48, 0);
 
-    timeBox = area.removeFromLeft (232);
+    timeBox = area.removeFromLeft (220);
     area.removeFromLeft (10);
 
     auto g3 = group (56 + 6 + 56 + 6 + 62);
@@ -428,11 +433,14 @@ void MainComponent::resized()
     g4.removeFromLeft (8);
     put (g4, monBtn, 48, 0);
 
-    auto g5 = group (32 + 6 + 32 + 6 + 66);
-    put (g5, zoomOutBtn, 32); put (g5, zoomInBtn, 32); put (g5, fitBtn, 66, 0);
+    auto g5 = group (32 + 6 + 32 + 6 + 62);
+    put (g5, zoomOutBtn, 32); put (g5, zoomInBtn, 32); put (g5, fitBtn, 62, 0);
 
-    auto g6 = group (96 + 6 + 74 + 6 + 74 + 6 + 62 + 6 + 66);
-    put (g6, addTrackBtn, 96); put (g6, importBtn, 74); put (g6, exportBtn, 74); put (g6, videoBtn, 62); put (g6, mixerBtn, 66, 0);
+    auto g6 = group (84 + 6 + 66 + 6 + 66 + 6 + 54 + 6 + 58);
+    put (g6, addTrackBtn, 84); put (g6, importBtn, 66); put (g6, exportBtn, 66); put (g6, videoBtn, 54); put (g6, mixerBtn, 58, 0);
+
+    auto g7 = group (44);
+    put (g7, exitBtn, 44, 0);
 
     layoutAll();
     repaint (0, 0, getWidth(), toolbarH);
@@ -560,14 +568,24 @@ void MainComponent::showError (const juce::String& msg)
 void MainComponent::toggleTransport()
 {
     if (engine.isRecording()) { finishRecording(); return; }
-    if (engine.isPlaying()) { engine.stop(); return; }
+    if (engine.isPlaying()) { stopPlayback(); return; }
+    playStartPos = engine.getPosition();   // da qui si ripartira' dopo lo stop
+    startedFromPlay = true;
     mixer->resetPeaks();
     engine.play();
 }
 
+void MainComponent::stopPlayback()
+{
+    const bool wasPlaying = engine.isPlaying();
+    engine.stop();
+    if (returnToStart && wasPlaying && startedFromPlay && engine.getAuditionClip() == 0) engine.setPosition (playStartPos);
+    startedFromPlay = false;
+}
+
 void MainComponent::stopAll()
 {
-    if (engine.isRecording()) finishRecording(); else engine.stop();
+    if (engine.isRecording()) finishRecording(); else stopPlayback();
 }
 
 void MainComponent::armSelectedTrack()
@@ -1222,7 +1240,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1316,6 +1334,12 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdNextMarker:    i.setInfo ("Marker successivo", "", "Marker", 0); i.addDefaultKeypress (juce::KeyPress::rightKey, juce::ModifierKeys::altModifier); break;
         case cmdExportMarkers: i.setInfo ("Esporta elenco marker (CSV)...", "", "Marker", 0); i.setActive (! project->getSession().markers.empty()); break;
         case cmdPdc:           i.setInfo ("Compensazione latenza plug-in", "", "Trasporto", 0); i.setTicked (engine.pdcOn.load()); break;
+        case cmdReturnToStart: i.setInfo ("Allo stop la testina torna al punto di partenza", "", "Trasporto", 0); i.setTicked (returnToStart); break;
+        case cmdQuit:          i.setInfo ("Esci", "", "File", 0);
+#if ! JUCE_MAC
+                               i.addDefaultKeypress ('q', cmd);
+#endif
+                               break;
         case cmdAddMasterPlugin: i.setInfo ("Aggiungi plug-in VST3 al master...", "", "Traccia", 0); break;
         case cmdDetachVideo:   i.setInfo (videoWindow != nullptr ? "Aggancia la finestra video" : "Stacca la finestra video", "", "Vista", 0);
                                i.addDefaultKeypress ('d', shift); i.setActive (project->getSession().video != nullptr); break;
@@ -1413,6 +1437,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNextMarker:    { const auto p = project->nextMarkerPos (engine.getPosition()); if (p >= 0) engine.setPosition (p); break; }
         case cmdExportMarkers: exportMarkersCsv(); break;
         case cmdPdc:           engine.pdcOn = ! engine.pdcOn.load(); break;
+        case cmdReturnToStart: returnToStart = ! returnToStart; settings().setValue ("returnToStart", returnToStart); settings().saveIfNeeded(); break;
+        case cmdQuit:          requestQuit(); break;
         case cmdAddMasterPlugin: pluginHost->pickAndAdd (project->getSession().master, this); break;
         case cmdDetachVideo:   setViewerDetached (videoWindow == nullptr); break;
         case cmdFitTracks:     timeline->fitTrackHeights(); break;
@@ -1496,7 +1522,11 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             if (recent.getNumItems() > 0) { recent.addSeparator(); recent.addCommandItem (&commandManager, cmdClearRecent); }
             m.addSubMenu ("Apri recente", recent, recent.getNumItems() > 0);
             m.addSeparator();
-            add ({ cmdSave, cmdSaveAs, cmdCollectMedia, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings });
+            add ({ cmdSave, cmdSaveAs, cmdCollectMedia, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings,
+#if ! JUCE_MAC
+                  0, cmdQuit
+#endif
+            });
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
@@ -1513,7 +1543,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, 0, cmdSessionSettings }); break;
-        case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig }); break;
+        case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig }); break;
         case 8: add ({ cmdShortcuts }); break;
         case 7: add ({ cmdSnap, cmdFollow, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer }); break;
         default: break;

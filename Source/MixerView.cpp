@@ -453,7 +453,8 @@ void ChannelStrip::updateMeter()
     {
         const float gr = live->grDb.exchange (0.0f);
         const float next = juce::jmax (gr, grDisp - 0.7f);
-        if (std::abs (next - grDisp) > 0.01f) { grDisp = next; repaint (grRect.expanded (0, 14)); }
+        const float nextHold = juce::jmax (gr, grHold - 0.04f);   // il valore numerico scende piano, cosi' si legge
+        if (std::abs (next - grDisp) > 0.01f || std::abs (nextHold - grHold) > 0.02f) { grDisp = next; grHold = nextHold; repaint (grRect.expanded (12, 18)); }
     }
 }
 
@@ -511,7 +512,16 @@ void ChannelStrip::paint (juce::Graphics& g)
         const float frac = juce::jlimit (0.0f, 1.0f, grDisp / 12.0f);
         g.setColour (yellow);
         g.fillRect (grRect.toFloat().reduced (1.0f).withHeight ((float) (grRect.getHeight() - 2) * frac));
+        for (int db = 3; db <= 12; db += 3)   // scala della riduzione: 3, 6, 9, 12 dB
+        {
+            const float ty = (float) grRect.getY() + 1.0f + (float) (grRect.getHeight() - 2) * (float) db / 12.0f;
+            g.setColour (dim.withAlpha (0.7f));
+            g.drawHorizontalLine ((int) ty, (float) grRect.getX() - 3.0f, (float) grRect.getX());
+        }
         drawCaption (g, "GR", juce::Rectangle<int> (grRect.getX() - 6, grRect.getBottom() + 1, grRect.getWidth() + 12, 12), juce::Justification::centred);
+        g.setColour (grHold > 0.1f ? yellow : dim);   // lettura numerica della riduzione
+        g.setFont (mono (9.0f));
+        g.drawText ((grHold > 0.05f ? "-" : "") + juce::String (grHold, 1), juce::Rectangle<int> (grRect.getX() - 10, grRect.getY() - 14, grRect.getWidth() + 20, 12), juce::Justification::centred);
     }
 
     if (! master && ! aux)
@@ -598,7 +608,7 @@ void ChannelStrip::resized()
     if (master)
     {
         r.removeFromRight (3);
-        grRect = r.removeFromRight (8).withTrimmedTop (LevelMeter::readoutHeight + 4).withTrimmedBottom (20);
+        grRect = r.removeFromRight (12).withTrimmedTop (LevelMeter::readoutHeight + 4).withTrimmedBottom (20);
     }
     fader.setBounds (r);
 }

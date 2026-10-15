@@ -139,6 +139,10 @@ private:
                       playBtn   { theme::IconButton::Icon::Play, theme::green },
                       stopBtn   { theme::IconButton::Icon::Stop, theme::blue },
                       recBtn    { theme::IconButton::Icon::Record, theme::accent };
+    juce::TextButton exitBtn { "ESCI" };
+    int64_t playStartPos = 0;          // dove e' partita l'ultima riproduzione
+    bool returnToStart = true, startedFromPlay = false;   // allo stop la testina torna al punto di partenza
+    void stopPlayback();
     juce::TextButton loopBtn   { "LOOP" }, snapBtn { "SNAP" }, followBtn { "SEGUI" },
                      monBtn    { "MON" },
                      zoomOutBtn { "-" }, zoomInBtn { "+" }, fitBtn { "ADATTA" },

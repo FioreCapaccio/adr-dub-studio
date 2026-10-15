@@ -103,7 +103,7 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
 {
     struct T { Tool t; const char* tip; };
     const T tools[] = {
-        { Tool::Select, "Selezione (V): seleziona, sposta e rifila i clip" },
+        { Tool::Select, "Selezione (V): seleziona, sposta e rifila i clip. Cmd + trascina (Ctrl su Windows) su una traccia: seleziona la porzione e la mette in loop" },
         { Tool::Razor,  "Lama (B): clic su un clip per dividerlo. Maiusc: divide tutte le tracce" },
         { Tool::Slip,   "Slip (Y): trascina per scorrere il contenuto dentro il clip senza spostarlo" },
         { Tool::Stretch, "Stretch (E): trascina il bordo di un clip per allungarlo o accorciarlo; l'audio si adatta senza cambiare il tono e il bordo si aggancia ai cue" },

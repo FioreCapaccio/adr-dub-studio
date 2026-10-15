@@ -93,7 +93,7 @@ private:
     // limiter (solo master)
     juce::TextButton limBtn { "LIMITER" };
     juce::Slider ceil { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
-    float grDisp = 0.0f;
+    float grDisp = 0.0f, grHold = 0.0f;   // riduzione di guadagno del limiter mostrata e picco mantenuto (dB)
     bool limActive = false;
 };
 

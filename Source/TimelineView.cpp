@@ -947,6 +947,20 @@ void TimelineView::paint (juce::Graphics& g)
             }
         }
 
+        // regione di loop: fascia azzurra su tutte le tracce
+        if (engine.getLoopEnd() > engine.getLoopStart())
+        {
+            const float lx0 = juce::jmax ((float) lanes.getX(), sampleToX (engine.getLoopStart())), lx1 = juce::jmin ((float) lanes.getRight(), sampleToX (engine.getLoopEnd()));
+            if (lx1 > lx0)
+            {
+                g.setColour (blue.withAlpha (engine.isLooping() ? 0.13f : 0.06f));
+                g.fillRect (lx0, (float) lanes.getY(), lx1 - lx0, (float) lanes.getHeight());
+                g.setColour (blue.withAlpha (engine.isLooping() ? 0.8f : 0.4f));
+                if (sampleToX (engine.getLoopStart()) >= (float) lanes.getX()) g.drawVerticalLine ((int) sampleToX (engine.getLoopStart()), (float) lanes.getY(), (float) lanes.getBottom());
+                if (sampleToX (engine.getLoopEnd()) <= (float) lanes.getRight()) g.drawVerticalLine ((int) sampleToX (engine.getLoopEnd()), (float) lanes.getY(), (float) lanes.getBottom());
+            }
+        }
+
         // intervallo di esportazione: fuori dall'intervallo la timeline e' oscurata
         if (project.exportOut > project.exportIn && project.exportIn >= 0)
         {
@@ -1488,6 +1502,14 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
         }
         else if (hit.track >= 0) showTrackMenu (hit.track);
         else showTrackMenu (-1);
+        return;
+    }
+
+    // Cmd (Ctrl su Windows) + trascina sulla timeline: seleziona la porzione che diventa la regione di loop
+    if (e.mods.isCommandDown() && (hit.type == HitType::Lane || hit.clip != 0) && tool == Tool::Select)
+    {
+        drag = Drag::RulerLoop;
+        loopAnchor = juce::jmax<int64_t> (0, xToSample (e.x));
         return;
     }
 
