@@ -4,6 +4,7 @@
 #include "AdrImport.h"
 #include "TimeStretch.h"
 #include "ExportEngine.h"
+#include "BuiltinFx.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
 class DelayTestProcessor : public juce::AudioProcessor
@@ -95,6 +96,7 @@ private:
     void check (const juce::StringArray& errs)
     {
         stepLimiter();
+        stepBuiltin();
         stepEditing();
         stepPdc();
         stepAux();
@@ -1314,6 +1316,115 @@ private:
         expect (ok && peakAt == 1000 && std::abs (peakV - amp) < 0.01f, "export: impulso al campione " + juce::String (peakAt) + " (atteso 1000)");
     }
 
+    // effetti integrati: ogni effetto deve fare il suo lavoro, lo stato deve tornare identico e l'host deve poterli inserire
+    void stepBuiltin()
+    {
+        using FX = fc::BuiltinFx;
+        constexpr double sr = 48000.0;
+        auto make = [&] (FX::Kind k, std::initializer_list<std::pair<const char*, float>> values)
+        {
+            auto fx = std::make_unique<FX> (k);
+            fx->setRateAndBufferSizeDetails (sr, 512);
+            fx->prepareToPlay (sr, 512);
+            for (auto& v : values)
+                if (auto* pr = fx->param (v.first)) pr->setValueNotifyingHost (pr->convertTo0to1 (v.second));
+            return fx;
+        };
+        // elabora in blocchi da 512; ritorna il picco assoluto negli ultimi `tailFrom` campioni
+        auto run = [&] (FX& fx, const std::vector<float>& in, juce::AudioBuffer<float>& out)
+        {
+            out.setSize (2, (int) in.size());
+            for (int i = 0; i < (int) in.size(); ++i) { out.setSample (0, i, in[(size_t) i]); out.setSample (1, i, in[(size_t) i]); }
+            juce::MidiBuffer midi;
+            for (int pos = 0; pos < (int) in.size(); pos += 512)
+            {
+                const int n = juce::jmin (512, (int) in.size() - pos);
+                juce::AudioBuffer<float> view (out.getArrayOfWritePointers(), 2, pos, n);
+                fx.processBlock (view, midi);
+            }
+        };
+        auto peak = [] (const juce::AudioBuffer<float>& b, int from, int to)
+        {
+            float p = 0.0f;
+            for (int i = from; i < to; ++i) p = juce::jmax (p, std::abs (b.getSample (0, i)));
+            return p;
+        };
+        auto sine = [&] (double hz, float amp, int n)
+        {
+            std::vector<float> v ((size_t) n);
+            for (int i = 0; i < n; ++i) v[(size_t) i] = amp * (float) std::sin (juce::MathConstants<double>::twoPi * hz * i / sr);
+            return v;
+        };
+        auto impulse = [] (int n) { std::vector<float> v ((size_t) n, 0.0f); v[0] = 1.0f; return v; };
+        juce::AudioBuffer<float> o;
+
+        { auto fx = make (FX::Filter, { { "hp", 300.0f }, { "lp", 4000.0f } });
+          run (*fx, sine (50.0, 0.8f, 48000), o);   const float low = peak (o, 24000, 48000);
+          run (*fx, sine (1000.0, 0.8f, 48000), o); const float mid = peak (o, 24000, 48000);
+          run (*fx, sine (12000.0, 0.8f, 48000), o); const float high = peak (o, 24000, 48000);
+          expect (low < 0.05f && mid > 0.72f && high < 0.1f, "filtro HP/LP: taglia 50 Hz e 12 kHz, passa 1 kHz (" + juce::String (low, 3) + " / " + juce::String (mid, 3) + " / " + juce::String (high, 3) + ")"); }
+
+        { auto fx = make (FX::DeEsser, { { "freq", 5000.0f }, { "thr", -30.0f }, { "max", 12.0f } });
+          run (*fx, sine (8000.0, 0.3f, 48000), o);  const float hf = peak (o, 24000, 48000);
+          fx->reset();
+          run (*fx, sine (200.0, 0.3f, 48000), o);   const float lf = peak (o, 24000, 48000);
+          expect (hf < 0.15f && lf > 0.29f, "de-esser: riduce 8 kHz (0.3 -> " + juce::String (hf, 3) + "), lascia 200 Hz (" + juce::String (lf, 3) + ")"); }
+
+        { auto fx = make (FX::Gate, { { "thr", -50.0f }, { "range", 40.0f }, { "att", 1.0f }, { "rel", 50.0f } });
+          run (*fx, sine (300.0, 0.001f, 48000), o); const float quiet = peak (o, 24000, 48000);
+          fx->reset();
+          run (*fx, sine (300.0, 0.5f, 48000), o);   const float loud = peak (o, 24000, 48000);
+          expect (quiet < 0.0002f && loud > 0.49f, "gate: segnale basso attenuato (" + juce::String (quiet, 5) + "), forte intatto (" + juce::String (loud, 3) + ")"); }
+
+        { auto fx = make (FX::Reverb, { { "mix", 100.0f }, { "size", 0.8f } });
+          auto pulse = [] (int n) { std::vector<float> v ((size_t) n, 0.0f); v[2400] = 1.0f; return v; };   // un po' di silenzio prima: il livello del riverbero sale in 10 ms
+          run (*fx, pulse (24000), o);
+          const float tail = peak (o, 7200, 24000);
+          auto dry = make (FX::Reverb, { { "mix", 0.0f } });
+          run (*dry, pulse (7200), o);
+          expect (tail > 0.001f && std::abs (o.getSample (0, 2400) - 1.0f) < 1.0e-3f && peak (o, 2401, 7200) < 1.0e-5f,
+                  "riverbero: coda presente (" + juce::String (tail, 4) + "), con mix 0 passa solo il secco"); }
+
+        { auto fx = make (FX::Delay, { { "time", 250.0f }, { "fb", 50.0f }, { "mix", 50.0f } });
+          run (*fx, impulse (48000), o);
+          expect (std::abs (o.getSample (0, 0) - 1.0f) < 1.0e-4f && std::abs (o.getSample (0, 12000) - 0.5f) < 1.0e-3f && peak (o, 24000, 24200) > 0.05f && std::abs (o.getSample (0, 6000)) < 1.0e-5f,
+                  "delay: eco a 250 ms (" + juce::String (o.getSample (0, 12000), 3) + ") e ripetizione con feedback"); }
+
+        { auto fx = make (FX::Saturator, { { "drive", 20.0f }, { "tone", 20000.0f }, { "mix", 100.0f }, { "out", 0.0f } });
+          run (*fx, sine (200.0, 0.1f, 4800), o);
+          const float sat = peak (o, 2400, 4800);
+          auto dry = make (FX::Saturator, { { "mix", 0.0f } });
+          run (*dry, sine (200.0, 0.1f, 4800), o);
+          expect (sat > 0.7f && sat <= 1.0f && std::abs (peak (o, 2400, 4800) - 0.1f) < 1.0e-4f, "saturazione: 0.1 -> " + juce::String (sat, 3) + ", con mix 0 invariato"); }
+
+        { auto fx = make (FX::Chorus, { { "rate", 1.0f }, { "depth", 5.0f }, { "mix", 100.0f } });
+          const auto in = sine (440.0, 0.5f, 48000);
+          run (*fx, in, o);
+          double diff = 0.0; bool finite = true;
+          for (int i = 24000; i < 48000; ++i) { diff += std::abs (o.getSample (0, i) - in[(size_t) i]); finite = finite && std::isfinite (o.getSample (0, i)); }
+          expect (finite && diff > 100.0 && peak (o, 24000, 48000) <= 0.52f, "chorus: modula il segnale senza superare il livello (differenza " + juce::String (diff, 0) + ")"); }
+
+        { auto a = make (FX::Reverb, { { "size", 0.9f }, { "mix", 60.0f } });
+          juce::MemoryBlock mb; a->getStateInformation (mb);
+          FX b (FX::Reverb); b.setStateInformation (mb.getData(), (int) mb.getSize());
+          const auto desc = FX::describe (FX::Delay);
+          std::unique_ptr<juce::XmlElement> xml (desc.createXml());
+          juce::PluginDescription back;
+          const bool descOk = xml != nullptr && back.loadFromXml (*xml) && FX::create (back) != nullptr && FX::create (back)->getKind() == FX::Delay;
+          expect (std::abs (b.param ("size")->convertFrom0to1 (b.param ("size")->getValue()) - 0.9f) < 1.0e-3f
+                  && std::abs (b.param ("mix")->convertFrom0to1 (b.param ("mix")->getValue()) - 60.0f) < 0.1f && descOk,
+                  "effetti integrati: stato e descrizione salvati e ripristinati"); }
+
+        {
+            auto live = std::make_shared<fc::TrackLive>();
+            bool called = false;
+            host.addBuiltin (live, FX::Gate, [&called] (juce::String) { called = true; });
+            auto chain = live->getChain();
+            expect (called && chain != nullptr && chain->slots.size() == 1 && chain->slots[0]->ready.load() && chain->slots[0]->name == "Gate / Expander",
+                    "host: effetto integrato inserito nella catena e pronto");
+        }
+    }
+
     void stepLimiter()
     {
         fc::TrackLive master;
@@ -1602,7 +1713,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "1.5.0"; }
+    const juce::String getApplicationVersion() override { return "1.6.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

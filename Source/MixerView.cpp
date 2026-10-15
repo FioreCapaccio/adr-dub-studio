@@ -365,7 +365,7 @@ void ChannelStrip::refreshInserts()
     {
         std::shared_ptr<InsertSlot> slot = (chain != nullptr && i < chain->slots.size()) ? chain->slots[i] : nullptr;
         inserts[i].setSlot (slot);
-        juce::String tip = slot == nullptr ? juce::String ("Clic per aggiungere un plug-in VST3")
+        juce::String tip = slot == nullptr ? juce::String ("Clic per aggiungere un effetto o un plug-in VST3")
                          : slot->error.isNotEmpty() ? slot->error
                          : slot->name + (slot->desc.manufacturerName.isNotEmpty() ? " (" + slot->desc.manufacturerName + ")" : juce::String())
                                + (slot->ready.load() && slot->plugin != nullptr && slot->plugin->getLatencySamples() > 0

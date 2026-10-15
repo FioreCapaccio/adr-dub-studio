@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioEngine.h"
+#include "BuiltinFx.h"
 #include "Theme.h"
 
 namespace fc
@@ -69,11 +70,14 @@ public:
     void closeAllWindows();
 
     void addFromFile (std::shared_ptr<TrackLive> live, const juce::File&, std::function<void (juce::String)> done = {});
+    /** Aggiunge in coda un effetto integrato. */
+    void addBuiltin (std::shared_ptr<TrackLive> live, BuiltinFx::Kind, std::function<void (juce::String)> done = {});
 
     static juce::Array<juce::File> findInstalledVST3();
 
 private:
-    juce::String prepareInstance (juce::AudioPluginInstance&);
+    juce::String prepareInstance (juce::AudioProcessor&);
+    void openPicker (std::shared_ptr<TrackLive> live, juce::Component* centreAround);
     void instantiate (std::shared_ptr<InsertSlot>, std::function<void (juce::String)> done);
     void append (TrackLive&, std::shared_ptr<InsertSlot>);
 

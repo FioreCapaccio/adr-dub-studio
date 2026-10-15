@@ -142,7 +142,7 @@ juce::Array<juce::File> PluginHost::findInstalledVST3()
 }
 
 //==============================================================================
-juce::String PluginHost::prepareInstance (juce::AudioPluginInstance& p)
+juce::String PluginHost::prepareInstance (juce::AudioProcessor& p)
 {
     // layout stereo sul bus principale, bus ausiliari (sidechain) disattivati
     auto layout = p.getBusesLayout();
@@ -163,32 +163,43 @@ juce::String PluginHost::prepareInstance (juce::AudioPluginInstance& p)
 
 void PluginHost::instantiate (std::shared_ptr<InsertSlot> slot, std::function<void (juce::String)> done)
 {
+    auto finish = [this, slot, done] (std::unique_ptr<juce::AudioProcessor> inst, const juce::String& err)
+    {
+        juce::String problem;
+        if (inst == nullptr) problem = err.isNotEmpty() ? err : juce::String ("Impossibile caricare il plug-in.");
+        else problem = prepareInstance (*inst);
+
+        if (problem.isEmpty())
+        {
+            if (slot->initialState.isNotEmpty())
+            {
+                juce::MemoryBlock mb;
+                if (mb.fromBase64Encoding (slot->initialState))
+                    inst->setStateInformation (mb.getData(), (int) mb.getSize());
+                slot->initialState.clear();
+            }
+            slot->plugin = std::move (inst);
+            slot->ready = true;
+        }
+        else
+            slot->error = problem;
+
+        if (onChanged) onChanged();
+        if (done) done (problem);
+    };
+
+    if (slot->desc.pluginFormatName == BuiltinFx::formatName)   // effetto integrato: nessun caricamento da file
+    {
+        finish (BuiltinFx::create (slot->desc), "Effetto integrato sconosciuto.");
+        return;
+    }
+
     auto flag = alive;
     formats.createPluginInstanceAsync (slot->desc, engine.getSampleRate(), kBlock,
-        [this, flag, slot, done] (std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+        [flag, finish] (std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
         {
             if (! *flag) return;
-            juce::String problem;
-            if (inst == nullptr) problem = err.isNotEmpty() ? err : juce::String ("Impossibile caricare il plug-in.");
-            else problem = prepareInstance (*inst);
-
-            if (problem.isEmpty())
-            {
-                if (slot->initialState.isNotEmpty())
-                {
-                    juce::MemoryBlock mb;
-                    if (mb.fromBase64Encoding (slot->initialState))
-                        inst->setStateInformation (mb.getData(), (int) mb.getSize());
-                    slot->initialState.clear();
-                }
-                slot->plugin = std::move (inst);
-                slot->ready = true;
-            }
-            else
-                slot->error = problem;
-
-            if (onChanged) onChanged();
-            if (done) done (problem);
+            finish (std::move (inst), err);
         });
 }
 
@@ -249,7 +260,44 @@ void PluginHost::addFromFile (std::shared_ptr<TrackLive> live, const juce::File&
     });
 }
 
+void PluginHost::addBuiltin (std::shared_ptr<TrackLive> live, BuiltinFx::Kind kind, std::function<void (juce::String)> done)
+{
+    auto slot = std::make_shared<InsertSlot>();
+    slot->desc = BuiltinFx::describe (kind);
+    slot->name = slot->desc.name;
+    instantiate (slot, [this, live, slot, done] (juce::String problem)
+    {
+        if (problem.isEmpty())
+        {
+            append (*live, slot);
+            if (onChanged) onChanged();
+        }
+        else if (onError) onError ("Errore su " + slot->name + ": " + problem);
+        if (done) done (problem);
+    });
+}
+
+/** Menu degli insert: effetti integrati, poi i VST3 installati. */
 void PluginHost::pickAndAdd (std::shared_ptr<TrackLive> live, juce::Component* centreAround)
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("Effetti integrati");
+    for (int k = 0; k < BuiltinFx::numKinds; ++k)
+        m.addItem (k + 1, BuiltinFx::kindName ((BuiltinFx::Kind) k) + "   -   " + BuiltinFx::kindHelp ((BuiltinFx::Kind) k));
+    m.addSeparator();
+    m.addItem (100, "Plug-in VST3 installati...");
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (centreAround),
+                     [this, live, centreAround, flag = std::weak_ptr<bool> (alive)] (int r)
+    {
+        auto a = flag.lock();
+        if (r == 0 || a == nullptr || ! *a) return;
+        if (r == 100) openPicker (live, centreAround);
+        else addBuiltin (live, (BuiltinFx::Kind) (r - 1));
+    });
+}
+
+void PluginHost::openPicker (std::shared_ptr<TrackLive> live, juce::Component* centreAround)
 {
     auto* picker = new PluginPicker (findInstalledVST3(), [this, live, flag = std::weak_ptr<bool> (alive)] (juce::File f)
     {
