@@ -240,7 +240,7 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
         {
             juce::PopupMenu m;
             m.addItem (1, "Master", true, live->outBus.load() == 0);
-            for (int g = 0; g < Session::kNumGroups; ++g) m.addItem (2 + g, "Gruppo " + juce::String (g + 1), true, live->outBus.load() == g + 1);
+            for (int g = 0; g < Session::kNumGroups; ++g) m.addItem (2 + g, juce::String (groupBusName (g)), true, live->outBus.load() == g + 1);
             juce::Component::SafePointer<ChannelStrip> safe (this);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&routeBtn), [safe] (int r)
             {
@@ -340,7 +340,7 @@ void ChannelStrip::syncFromLive()
         trackLimBtn.setButtonText (live->limiterOn.load() ? "LIM " + juce::String (live->ceilingDb.load(), 0) : juce::String ("LIM"));
         eqBtn.setToggleState ((live->eq.enabled.load() && ! live->eq.isNeutral()) || live->comp.enabled.load(), juce::dontSendNotification);
         repaint (0, 0, getWidth(), 30);
-        routeBtn.setButtonText (live->outBus.load() == 0 ? juce::String ("MASTER") : "GRUPPO " + juce::String (live->outBus.load()));
+        routeBtn.setButtonText (live->outBus.load() == 0 ? juce::String ("MASTER") : juce::String (groupBusName (live->outBus.load() - 1)));
         sendA.setValue (live->sendDb[0].load() <= -79.5f ? -60.0 : (double) live->sendDb[0].load(), juce::dontSendNotification);
         sendB.setValue (live->sendDb[1].load() <= -79.5f ? -60.0 : (double) live->sendDb[1].load(), juce::dontSendNotification);
     }
@@ -797,7 +797,7 @@ void MixerView::makeGroup (int k)
 {
     if (groupStrips[k] != nullptr) content.removeChildComponent (groupStrips[k].get());
     groupStrips[k] = std::make_unique<ChannelStrip> (project, host, project.getSession().group[(size_t) k], -10 - k, false, true);
-    groupStrips[k]->setInfo ("GRUPPO " + juce::String (k + 1), juce::Colour (0xffb58cff), false);
+    groupStrips[k]->setInfo (groupBusName (k), juce::Colour (0xffb58cff), false);
     content.addAndMakeVisible (*groupStrips[k]);
 }
 

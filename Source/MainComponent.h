@@ -175,6 +175,8 @@ private:
     std::vector<std::function<void()>> menuActions;   // azioni delle voci dinamiche (temi, layout) del menu Vista: id 30000 + indice
     int layoutIndex = 1;
     void applyLayout (int index, bool resizeTracks);
+    void exportCueSheet();
+    void newFromTemplate (int index);
     void importThemeFile (const juce::File&);
     void chooseThemeFile();
     juce::PopupMenu buildThemeMenu();

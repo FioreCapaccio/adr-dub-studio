@@ -15,7 +15,7 @@ SessionSettingsDialog::SessionSettingsDialog (const Project& p, std::function<vo
         addAndMakeVisible (l);
     };
     label (tcLbl, "FORMATO TIMECODE"); label (startLbl, "INIZIO SESSIONE (TC)"); label (preLbl, "PRE-ROLL (SECONDI)");
-    label (postLbl, "POST-ROLL (SECONDI)"); label (beepLbl, "BIP PRIMA DELL'INGRESSO"); label (sizeLbl, "DIALOGO SUL VIDEO (PX)");
+    label (postLbl, "POST-ROLL (SECONDI)"); label (beepLbl, "BIP PRIMA DELL'INGRESSO"); label (sizeLbl, "DIALOGO SUL VIDEO (PX)"); label (nameLbl, "NOME DEI TAKE");
 
     for (int i = 0; i < numTcFormats; ++i) tcFormat.addItem (tcFormats()[i].name, i + 1);
     tcFormat.setSelectedId (project.tcFormat + 1, juce::dontSendNotification);
@@ -32,17 +32,19 @@ SessionSettingsDialog::SessionSettingsDialog (const Project& p, std::function<vo
     dialogueSize.setValue (project.adrDialogueSize, juce::dontSendNotification);
     dialogueSize.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 22);
     dialogueSize.setTooltip ("Dimensione dei caratteri del dialogo sotto il video");
+    naming.setText (project.adrNaming, false);
+    naming.setTooltip ("Segnaposto: {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}");
     rulerTc.setToggleState (project.rulerTimecode, juce::dontSendNotification);
     streamer.setToggleState (project.adrStreamer, juce::dontSendNotification);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &tcFormat, &beeps, &start, &preRoll, &postRoll, &dialogueSize, &rulerTc, &streamer, &okBtn, &cancelBtn, &hint })
+    for (auto* c : std::initializer_list<juce::Component*> { &tcFormat, &beeps, &start, &preRoll, &postRoll, &dialogueSize, &naming, &rulerTc, &streamer, &okBtn, &cancelBtn, &hint })
         addAndMakeVisible (*c);
 
     hint.setFont (font (11.5f));
     hint.setColour (juce::Label::textColourId, dim);
     hint.setJustificationType (juce::Justification::topLeft);
     hint.setText ("L'inizio sessione e' il timecode della posizione zero della timeline: nelle sessioni Pro Tools di solito 01:00:00:00. "
-                  "I cue importati da Pro Tools (timecode assoluto) vengono posizionati sottraendo questo valore.", juce::dontSendNotification);
+                  "I cue importati da Pro Tools (timecode assoluto) vengono posizionati sottraendo questo valore.\n\nNome dei take: schema con {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}.", juce::dontSendNotification);
 
     tcFormat.onChange = [this] { updateStartHint(); };
     okBtn.onClick = [this] { close (true); };
@@ -61,6 +63,7 @@ void SessionSettingsDialog::close (bool ok)
     v.beeps = beeps.getSelectedId() - 1;
     v.streamer = streamer.getToggleState();
     v.dialogueSize = (int) dialogueSize.getValue();
+    v.naming = naming.getText().trim().isEmpty() ? juce::String ("{personaggio}_{scena}_{cue}_T{take}") : naming.getText().trim();
     v.tcStart = project.tcStartSec;
 
     if (ok)
@@ -97,6 +100,7 @@ void SessionSettingsDialog::resized()
     row (postLbl, postRoll);
     row (beepLbl, beeps);
     row (sizeLbl, dialogueSize);
+    row (nameLbl, naming);
     streamer.setBounds (r.removeFromTop (24));
     r.removeFromTop (6);
     auto bottom = r.removeFromBottom (34);

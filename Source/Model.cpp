@@ -306,6 +306,31 @@ int Project::addTrack()
     return id;
 }
 
+int Project::addTrackAs (const juce::String& name, int type, juce::Colour colour, int outBus)
+{
+    beginEdit();
+    const int id = addTrackInternal();
+    if (auto* t = findTrack (id))
+    {
+        t->name = name;
+        t->colour = colour;
+        applyTrackPreset (*t->live, type);
+        t->live->outBus = juce::jlimit (0, Session::kNumGroups, outBus);
+    }
+    selectedTrackId = id;
+    changed();
+    return id;
+}
+
+void Project::setTrackOutBus (int trackId, int bus)
+{
+    if (auto* t = findTrack (trackId))
+    {
+        t->live->outBus = juce::jlimit (0, Session::kNumGroups, bus);
+        liveChanged();
+    }
+}
+
 void Project::setTrackType (int trackId, int type)
 {
     if (auto* t = findTrack (trackId))
@@ -460,7 +485,8 @@ void Project::addRecordings (std::vector<RecItem> items, std::function<void (juc
                     auto* cue = findCue (cueId);
                     cue->activeTake = c.takeNo;
                     if (cue->status == 0 || cue->status == 3) cue->status = 1;
-                    if (items[i].takeName.isNotEmpty()) asset->name = items[i].takeName + "_T" + juce::String (c.takeNo);
+                    if (items[i].takeName.isNotEmpty())
+                        asset->name = items[i].takeName.contains ("{take}") ? items[i].takeName.replace ("{take}", juce::String (c.takeNo)) : items[i].takeName + "_T" + juce::String (c.takeNo);
                 }
                 findTrack (items[i].trackId)->clips.push_back (c);
                 selection.insert (c.id);
@@ -1175,6 +1201,7 @@ juce::var Project::toVar() const
     root->setProperty ("adrBeeps", adrBeeps);
     root->setProperty ("adrStreamer", adrStreamer);
     root->setProperty ("adrDialogueSize", adrDialogueSize);
+    root->setProperty ("adrNaming", adrNaming);
     root->setProperty ("exportIn", (juce::int64) exportIn);
     root->setProperty ("exportOut", (juce::int64) exportOut);
     root->setProperty ("limiterOn", session.master->limiterOn.load());
@@ -1347,7 +1374,7 @@ bool Project::saveCopy (const juce::File& f, juce::String& error) const
     return true;
 }
 
-void Project::newSession()
+void Project::newSession (bool withDefaultTrack)
 {
     session = Session();
     nextMarkerId = 1;
@@ -1356,8 +1383,9 @@ void Project::newSession()
     redoStack.clear();
     selection.clear();
     nextTrackId = 1;
-    addTrackInternal();   // una nuova sessione parte con una sola traccia
-    selectedTrackId = session.tracks.front().id;
+    if (withDefaultTrack) addTrackInternal();   // una nuova sessione parte con una sola traccia
+    selectedTrackId = session.tracks.empty() ? -1 : session.tracks.front().id;
+    adrNaming = "{personaggio}_{scena}_{cue}_T{take}";
     sessionFile = juce::File();
     publish();
     dirty = false;
@@ -1382,6 +1410,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
         const int pBeeps = (int) parsed.getProperty ("adrBeeps", 3);
         const bool pStreamer = (bool) parsed.getProperty ("adrStreamer", true);
         const int pDialogueSize = juce::jlimit (12, 120, (int) parsed.getProperty ("adrDialogueSize", 30));
+        const juce::String pNaming = parsed.getProperty ("adrNaming", "{personaggio}_{scena}_{cue}_T{take}").toString();
         const int64_t pExportIn = (juce::int64) parsed.getProperty ("exportIn", -1), pExportOut = (juce::int64) parsed.getProperty ("exportOut", -1);
         bool ok = parsed.isObject();
         if (! ok) errors = "File di sessione non valido.";
@@ -1590,7 +1619,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 tcFormat = juce::jlimit (0, numTcFormats - 1, ptcFormat);
                 tcStartSec = ptcStart;
                 rulerTimecode = prulerTc;
-                adrPreRoll = pPre; adrPostRoll = pPost; adrBeeps = pBeeps; adrStreamer = pStreamer; adrDialogueSize = pDialogueSize; exportIn = pExportIn; exportOut = pExportOut;
+                adrPreRoll = pPre; adrPostRoll = pPost; adrBeeps = pBeeps; adrStreamer = pStreamer; adrDialogueSize = pDialogueSize; adrNaming = pNaming; exportIn = pExportIn; exportOut = pExportOut;
                 publish();
                 dirty = false;
                 if (onSessionLoaded) onSessionLoaded();

@@ -5,6 +5,8 @@
 #include "TimeStretch.h"
 #include "ExportEngine.h"
 #include "BuiltinFx.h"
+#include "DubWorkflow.h"
+#include "CueSheet.h"
 #include "ThemeManager.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
@@ -99,6 +101,7 @@ private:
         stepLimiter();
         stepBuiltin();
         stepTheme();
+        stepWorkflow();
         stepEditing();
         stepPdc();
         stepAux();
@@ -190,7 +193,7 @@ private:
         juce::String err;
         project->getSession().group[2]->volumeDb = -3.0f;   // gruppi: i parametri e l'instradamento si salvano (un gruppo a 0 dB non cambia il mix)
         project->getSession().tracks[0].live->outBus = 4;
-        project->exportIn = 12000; project->exportOut = 96000; project->adrDialogueSize = 44;
+        project->exportIn = 12000; project->exportOut = 96000; project->adrDialogueSize = 44; project->adrNaming = "{progetto}-{cue}";
         { auto& t3 = project->edit().tracks[3]; fc::AutoPoint a; a.pos = 4800; a.db = -0.5f; t3.panAuto = { a }; a.db = -9.0f; t3.sendAAuto = { a }; t3.live->autoParam = fc::AutoSendA; }   // curve su una traccia vuota
         { auto& t3 = project->edit().tracks[3]; t3.live->trimDb = 7.5f; t3.live->trackType = fc::TrackEffects; t3.live->comp.enabled = true; t3.live->comp.ratio = 5.5f; t3.live->comp.thresholdDb = -33.0f; }
         project->getSession().tracks[3].live->limiterOn = true; project->getSession().tracks[3].live->ceilingDb = -3.0f;   // traccia 4 vuota: il mix non cambia
@@ -232,6 +235,7 @@ private:
                 expect (reload->getSession().tracks[3].live->trackType.load() == fc::TrackEffects && c3.enabled.load() && std::abs (c3.ratio.load() - 5.5f) < 1.0e-4f && std::abs (c3.thresholdDb.load() + 33.0f) < 1.0e-4f,
                         "tipo di traccia e compressore: salvati e ricaricati con la sessione");
             }
+            expect (reload->adrNaming == "{progetto}-{cue}", "schema dei nomi dei take: salvato e ricaricato con la sessione");
             expect (reload->getSession().tracks[3].live->limiterOn.load() && ! reload->getSession().tracks[0].live->limiterOn.load() && std::abs (reload->getSession().tracks[3].live->ceilingDb.load() + 3.0f) < 1.0e-4f,
                     "limiter di traccia: salvato e ricaricato (le altre tracce restano senza)");
             expect (reload->exportIn == 12000 && reload->exportOut == 96000 && reload->adrDialogueSize == 44, "intervallo di esportazione e dimensione del dialogo salvati con la sessione");
@@ -1100,8 +1104,8 @@ private:
         expect (l.trackType.load() == fc::TrackDialogue && l.eq.enabled.load() && l.eq.band[0].type.load() == fc::ParamEq::HighPass && std::abs (l.eq.band[0].freq.load() - 80.0f) < 0.1f
                     && l.comp.enabled.load() && std::abs (l.comp.ratio.load() - 3.0f) < 0.01f && l.limiterOn.load() && std::abs (l.ceilingDb.load() + 3.0f) < 0.01f,
                 "preset dialogo: passa-alto 80 Hz, compressore 3:1, limiter a -3 dB");
-        fc::applyTrackPreset (l, fc::TrackMusic);
-        expect (l.trackType.load() == fc::TrackMusic && std::abs (l.volumeDb.load() + 6.0f) < 0.01f && std::abs (l.comp.ratio.load() - 2.0f) < 0.01f, "preset musica: livello -6 dB, compressore 2:1");
+        fc::applyTrackPreset (l, fc::TrackME);
+        expect (l.trackType.load() == fc::TrackME && std::abs (l.volumeDb.load() + 6.0f) < 0.01f && std::abs (l.comp.ratio.load() - 2.0f) < 0.01f, "preset M&E: livello -6 dB, compressore 2:1");
         fc::applyTrackPreset (l, fc::TrackEffects);
         expect (l.trackType.load() == fc::TrackEffects && std::abs (l.comp.ratio.load() - 4.0f) < 0.01f && std::abs (l.volumeDb.load() + 3.0f) < 0.01f, "preset effetti: compressore 4:1, livello -3 dB");
         fc::applyTrackPreset (l, fc::TrackNone);
@@ -1116,8 +1120,8 @@ private:
         p.newSession();
         expect (p.getSession().tracks.size() == 1, "nuova sessione: una sola traccia");
         // setTrackType su una traccia del progetto
-        p.setTrackType (p.getSession().tracks[0].id, fc::TrackMusic);
-        expect (p.getSession().tracks[0].live->trackType.load() == fc::TrackMusic && p.getSession().tracks[0].live->comp.enabled.load(), "setTrackType applica la catena alla traccia");
+        p.setTrackType (p.getSession().tracks[0].id, fc::TrackME);
+        expect (p.getSession().tracks[0].live->trackType.load() == fc::TrackME && p.getSession().tracks[0].live->comp.enabled.load(), "setTrackType applica la catena alla traccia");
     }
 
     void stepTrimAndPeaks()
@@ -1335,6 +1339,62 @@ private:
             for (int i = 0; i < 8000; ++i) if (std::abs (b.getSample (0, i)) > peakV) { peakV = std::abs (b.getSample (0, i)); peakAt = i; }
         }
         expect (ok && peakAt == 1000 && std::abs (peakV - amp) < 0.01f, "export: impulso al campione " + juce::String (peakAt) + " (atteso 1000)");
+    }
+
+    // flusso di doppiaggio: modelli di sessione, ruoli, tracce per personaggio, nomi dei take, foglio cue
+    void stepWorkflow()
+    {
+        namespace dub = fc::dub;
+        fc::Project p (formats, 48000.0);
+        const auto& tpls = dub::templates();
+        expect (tpls.size() == 3, "modelli di sessione: " + juce::String ((int) tpls.size()) + " disponibili");
+        dub::applyTemplate (p, tpls[0]);
+        {
+            auto& tr = p.getSession().tracks;
+            expect (tr.size() == 4 && tr[0].live->trackType.load() == fc::TrackGuide && tr[0].live->outBus.load() == 4 && tr[1].live->trackType.load() == fc::TrackME && tr[1].live->outBus.load() == 2
+                        && tr[2].live->outBus.load() == 3 && tr[3].live->trackType.load() == fc::TrackDialogue && tr[3].live->outBus.load() == 1,
+                    "modello Doppiaggio: Guida/M&E/Effetti/Dialoghi sui bus 4/2/3/1");
+            expect (std::abs (tr[0].live->volumeDb.load() + 6.0f) < 0.01f && ! tr[0].live->eq.enabled.load() && tr[3].live->eq.enabled.load() && tr[3].live->comp.enabled.load(),
+                    "ruoli: la Guida resta pulita a -6 dB, i Dialoghi hanno la catena voce");
+            expect (juce::String (fc::groupBusName (0)) == "DIALOGHI" && fc::roleOutBus (fc::TrackGuide) == 4, "bus di gruppo con i nomi dei ruoli");
+        }
+        dub::applyTemplate (p, tpls[1]);
+        expect (p.getSession().tracks.size() == 3 && p.getSession().tracks[1].name == "ADR", "modello ADR: tre tracce, la seconda e' ADR");
+
+        // tracce per personaggio da un CSV
+        const juce::String csv = "N,TC IN,TC OUT,Personaggio,Scena,Dialogo\n1,00:01:15:13,00:01:17:20,Sam,12,\"Ciao, <mondo> & amici\"\n2,00:01:20:00,00:01:22:05,Anna,12,Ok\n3,00:01:30:00,00:01:31:00,sam,13,Ancora\n";
+        const auto rc = fc::adr::parse (csv);
+        juce::StringArray w;
+        p.tcFormat = 2;
+        const auto cues = fc::adr::toCues (rc, p, 48000.0, 4.0, w);
+        expect (cues.size() == 3, "CSV: tre cue letti");
+        dub::applyTemplate (p, tpls[2]);   // Dialoghi, M&E, Effetti
+        const int created = dub::createCharacterTracks (p, cues);
+        expect (created == 2 && p.getSession().tracks.size() == 5 && dub::createCharacterTracks (p, cues) == 0, "una traccia per personaggio (Sam, Anna), senza duplicati (" + juce::String (created) + " create)");
+        expect (dub::trackForCue (p, cues[0]) >= 0 && dub::trackForCue (p, cues[0]) == dub::trackForCue (p, cues[2]) && dub::trackForCue (p, cues[0]) != dub::trackForCue (p, cues[1]),
+                "il cue va sulla traccia del suo personaggio (anche con maiuscole diverse)");
+        {
+            const auto* t = p.findTrack (dub::trackForCue (p, cues[1]));
+            expect (t != nullptr && t->live->trackType.load() == fc::TrackDialogue && t->live->outBus.load() == 1, "traccia personaggio: ruolo Dialoghi sul bus Dialoghi");
+        }
+
+        // schema dei nomi
+        fc::AdrCue c;
+        c.character = "Sam"; c.scene = ""; c.reel = "R2"; c.number = 7;
+        expect (dub::expandNaming ("{personaggio}_{scena}_{cue}_T{take}", c, "Serie") == "Sam_7_T{take}", "nome take: campi vuoti senza trattini doppi (" + dub::expandNaming ("{personaggio}_{scena}_{cue}_T{take}", c, "Serie") + ")");
+        expect (dub::expandNaming ("{progetto}-{bobina}-{cue}/{take}", c, "Serie") == "Serie-R2-7{take}" || dub::expandNaming ("{progetto}-{bobina}-{cue}/{take}", c, "Serie").startsWith ("Serie-R2-7"),
+                "nome take: segnaposto progetto/bobina/cue");
+        expect (dub::expandNaming ("", c, "Serie") == "Sam_7_T{take}", "nome take: schema vuoto = predefinito");
+
+        // foglio cue
+        {
+            auto pp = std::make_unique<fc::Project> (formats, 48000.0);
+            pp->addCues (cues, true);
+            const auto html = fc::cuesheet::buildHtml (*pp, "Prova");
+            expect (html.contains ("Ciao, &lt;mondo&gt; &amp; amici") && html.contains ("<h2>Sam</h2>") && html.contains ("<h2>Anna</h2>") && html.contains ("3 cue: 3 da registrare")
+                        && html.contains (pp->formatTc (75.0 + 13.0 / 24.0)),
+                    "foglio cue: riepilogo, copione per personaggio, testo con caratteri speciali protetti");
+        }
     }
 
     // temi: lettura dei temi Reaper (colori BGR, zip), palette derivata coerente, applicazione e ricolorazione dei componenti
@@ -1840,7 +1900,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "1.9.1"; }
+    const juce::String getApplicationVersion() override { return "2.0.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

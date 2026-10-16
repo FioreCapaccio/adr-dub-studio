@@ -373,6 +373,9 @@ public:
 
     // tracce
     int addTrack();
+    /** Aggiunge una traccia gia' impostata: nome, ruolo (applica il preset), colore e bus di uscita (un solo passo di undo). */
+    int addTrackAs (const juce::String& name, int type, juce::Colour colour, int outBus);
+    void setTrackOutBus (int trackId, int bus);
     void removeTrack (int id);
     /** Applica a una traccia il preset del tipo scelto (EQ, compressore, limiter, livello) e ne ricorda il tipo. */
     void setTrackType (int trackId, int type);
@@ -467,6 +470,8 @@ public:
 
     int64_t exportIn = -1, exportOut = -1;   // intervallo di esportazione scelto sul righello (campioni, -1 = nessuno)
     int adrDialogueSize = 30;      // dimensione (px) del dialogo mostrato sotto il video
+    /** Schema dei nomi dei take registrati: {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}. */
+    juce::String adrNaming = "{personaggio}_{scena}_{cue}_T{take}";
     int selectedCueId = 0;         // cue ADR selezionato (stato dell'interfaccia)
     int adrTrackId = -1;           // traccia su cui si registra l'ADR (-1 = la traccia selezionata)
 
@@ -479,7 +484,7 @@ public:
     void setFile (const juce::File& f) { sessionFile = f; sendChangeMessage(); }
     void markDirty() { dirty = true; sendChangeMessage(); }
     void loadSession (const juce::File& f, std::function<void (juce::String)> done);
-    void newSession();
+    void newSession (bool withDefaultTrack = true);
 
 private:
     int addTrackInternal();

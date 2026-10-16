@@ -10,7 +10,7 @@ namespace fc
 class AdrImportDialog : public juce::Component
 {
 public:
-    struct Values { int tcFormat; double tcStart; double defaultDuration; bool replace; bool makeMarkers; };
+    struct Values { int tcFormat; double tcStart; double defaultDuration; bool replace; bool makeMarkers; bool makeTracks; };
 
     AdrImportDialog (const Project&, const adr::ImportResult&, std::function<void (const Values&)> onAccept);
     void paint (juce::Graphics& g) override { g.fillAll (theme::panel); }
@@ -24,7 +24,8 @@ private:
     juce::Label info, tcLbl, startLbl, durLbl;
     juce::ComboBox tcFormat;
     juce::TextEditor start, duration;
-    juce::ToggleButton replace { "Sostituisci i cue esistenti" }, markers { "Crea anche un marker per ogni cue (come le Memory Location)" };
+    juce::ToggleButton replace { "Sostituisci i cue esistenti" }, markers { "Crea anche un marker per ogni cue (come le Memory Location)" },
+                       characterTracks { "Crea una traccia Dialoghi per ogni personaggio" };
     juce::TextButton okBtn { "Importa" }, cancelBtn { "Annulla" };
     adr::ImportResult result;
 };

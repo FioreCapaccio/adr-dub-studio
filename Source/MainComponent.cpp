@@ -1,5 +1,7 @@
 #include "MainComponent.h"
 #include "ThemeManager.h"
+#include "DubWorkflow.h"
+#include "CueSheet.h"
 #include "VideoSupport.h"
 #include "Commands.h"
 #include "ExportDialog.h"
@@ -650,7 +652,7 @@ void MainComponent::finishRecording()
 
     juce::String takeName;
     if (const auto* cue = project->findCue (cueId))
-        takeName = juce::File::createLegalFileName ((cue->character.isEmpty() ? juce::String ("ADR") : cue->character) + "_" + cue->scene + "_" + juce::String (cue->number));
+        takeName = dub::expandNaming (project->adrNaming, *cue, project->getFile() == juce::File() ? juce::String ("Sessione") : project->getFile().getFileNameWithoutExtension());
     std::vector<Project::RecItem> items;
     for (auto& r : results) items.push_back ({ r.trackId, r.file, r.startPos, r.latency, cueId, takeName });
 
@@ -809,12 +811,13 @@ void MainComponent::showSessionSettings()
         p.adrBeeps = v.beeps;
         p.adrStreamer = v.streamer;
         p.adrDialogueSize = v.dialogueSize;
+        p.adrNaming = v.naming;
         safe->adrViewerKey.clear();
         p.markDirty();
         safe->repaint();
         safe->timeline->repaint();
     });
-    dlg->setSize (520, 510);
+    dlg->setSize (520, 580);
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (dlg);
     lo.dialogTitle = "Impostazioni sessione: timecode e ADR";
@@ -1247,7 +1250,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1320,6 +1323,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAdrExportCsv:  i.setInfo ("Esporta cue sheet (CSV)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportPT:   i.setInfo ("Esporta cue come marker Pro Tools (testo)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportBwf:  i.setInfo ("Esporta take attivi (BWF con timecode)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdAdrCueSheet:   i.setInfo ("Foglio cue e copione per personaggio (stampabile)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdSessionSettings: i.setInfo ("Impostazioni sessione: timecode e ADR...", "", "File", 0); break;
         case cmdRulerTc:       i.setInfo ("Righello in timecode", "", "Vista", 0); i.setTicked (project->rulerTimecode); break;
         case cmdShortcuts:     i.setInfo ("Guida rapida e scorciatoie...", "", "Aiuto", 0); i.addDefaultKeypress ('?', 0); break;
@@ -1426,6 +1430,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrExportCsv:  exportAdrCsv(); break;
         case cmdAdrExportPT:   exportAdrProTools(); break;
         case cmdAdrExportBwf:  exportAdrBwf(); break;
+        case cmdAdrCueSheet:   exportCueSheet(); break;
         case cmdRulerTc:       project->rulerTimecode = ! project->rulerTimecode; project->markDirty(); timeline->repaint(); break;
         case cmdShortcuts:     showShortcuts(); break;
         case cmdCollectMedia:  collectMedia(); break;
@@ -1471,6 +1476,11 @@ bool MainComponent::perform (const InvocationInfo& info)
 
 void MainComponent::menuItemSelected (int id, int)
 {
+    if (id >= 31000 && id < 31100)
+    {
+        newFromTemplate (id - 31000);
+        return;
+    }
     if (id >= 30000)
     {
         const size_t i = (size_t) (id - 30000);
@@ -1618,7 +1628,15 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     {
         case 0:
         {
-            add ({ cmdNew, cmdOpen });
+            add ({ cmdNew });
+            {
+                juce::PopupMenu models;
+                const auto& list = dub::templates();
+                for (size_t i = 0; i < list.size(); ++i)
+                    models.addItem (31000 + (int) i, juce::String (list[i].name) + "   -   " + list[i].description);
+                m.addSubMenu ("Nuovo da modello", models);
+            }
+            add ({ cmdOpen });
             juce::PopupMenu recent;
             const auto list = juce::StringArray::fromLines (settings().getValue ("recent", ""));
             for (int i = 0; i < list.size(); ++i)
@@ -1646,7 +1664,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 m.addItem (1000 + (int) i, marks[i].name + "   " + project->formatTc ((double) marks[i].pos / project->getSampleRate()));
             break;
         }
-        case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, 0, cmdSessionSettings }); break;
+        case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdSessionSettings }); break;
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig }); break;
         case 8: add ({ cmdShortcuts }); break;
         case 7:
@@ -1863,6 +1881,7 @@ void MainComponent::importAdrDialog()
             auto cues = adr::toCues (result, p, p.getSampleRate(), v.defaultDuration, warnings);
             const auto firstPos = cues.empty() ? int64_t (0) : cues.front().inPos;
             if (v.makeMarkers) for (auto& c : cues) p.addMarker (c.inPos, c.character + " " + juce::String (c.scene));
+            if (v.makeTracks) { const int n = dub::createCharacterTracks (p, cues); if (n > 0) warnings.add (juce::String (n) + " tracce Dialoghi create (una per personaggio)."); }
             p.addCues (cues, v.replace);
             if (! p.getSession().cues.empty()) { p.selectedCueId = p.getSession().cues.front().id; p.sendChangeMessage(); }
             (void) firstPos;
@@ -1871,7 +1890,7 @@ void MainComponent::importAdrDialog()
             if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Importazione ADR", msg);
         });
-        dlg->setSize (560, 470);
+        dlg->setSize (560, 500);
         juce::DialogWindow::LaunchOptions lo;
         lo.content.setOwned (dlg);
         lo.dialogTitle = "Importa cue ADR";
@@ -1891,7 +1910,8 @@ void MainComponent::recordAdrCue (int cueId)
     const auto* cue = project->findCue (cueId);
     if (cue == nullptr) { showError ("Seleziona un cue nell'elenco ADR."); return; }
 
-    const int trackId = project->findTrack (project->adrTrackId) != nullptr ? project->adrTrackId : project->selectedTrackId;
+    int trackId = project->findTrack (project->adrTrackId) != nullptr ? project->adrTrackId : project->selectedTrackId;
+    if (const int forCharacter = dub::trackForCue (*project, *cue); forCharacter >= 0 && project->findTrack (project->adrTrackId) == nullptr) trackId = forCharacter;   // traccia del personaggio, se non ne hai scelta una a mano
     if (project->findTrack (trackId) == nullptr) { showError ("Crea o seleziona la traccia su cui registrare l'ADR."); return; }
     if (! engine.ensureInput())
     {
@@ -1940,6 +1960,39 @@ void MainComponent::recordAdrCue (int cueId)
 namespace
 {
 juce::String csvField (const juce::String& s) { return "\"" + s.replace ("\"", "\"\"").replaceCharacters ("\r\n", "  ") + "\""; }
+}
+
+void MainComponent::exportCueSheet()
+{
+    const auto base = (project->getFile() == juce::File() ? juce::String ("ADR") : project->getFile().getFileNameWithoutExtension()) + "_foglio_cue";
+    chooser = std::make_unique<juce::FileChooser> ("Salva il foglio cue (si apre nel browser: stampa o salva come PDF)",
+                                                   juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("html"), "*.html");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [safe, base] (const juce::FileChooser& fc)
+    {
+        auto f = fc.getResult();
+        if (safe == nullptr || f == juce::File()) return;
+        f = f.withFileExtension ("html");
+        if (! f.replaceWithText (cuesheet::buildHtml (*safe->project, "Foglio cue - " + base.replace ("_foglio_cue", "")))) { safe->showError ("Impossibile scrivere il file."); return; }
+        juce::URL (f).launchInDefaultBrowser();
+    });
+}
+
+void MainComponent::newFromTemplate (int index)
+{
+    const auto& list = dub::templates();
+    if (index < 0 || index >= (int) list.size()) return;
+    juce::Component::SafePointer<MainComponent> safe (this);
+    confirmDiscard ([safe, index]
+    {
+        if (safe == nullptr) return;
+        safe->engine.stop();
+        safe->engine.setPosition (0);
+        dub::applyTemplate (*safe->project, dub::templates()[(size_t) index]);
+        safe->pendingFit = true;
+        safe->layoutAll();
+    });
 }
 
 void MainComponent::exportAdrCsv()

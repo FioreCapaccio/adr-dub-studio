@@ -57,8 +57,13 @@ AdrImportDialog::AdrImportDialog (const Project& p, const adr::ImportResult& r, 
     duration.setJustification (juce::Justification::centred);
     replace.setToggleState (project.getSession().cues.empty(), juce::dontSendNotification);
     markers.setToggleState (false, juce::dontSendNotification);
+    {
+        std::set<juce::String> names;
+        for (auto& c : result.cues) if (c.character.trim().isNotEmpty()) names.insert (c.character.trim().toLowerCase());
+        characterTracks.setToggleState (names.size() >= 2, juce::dontSendNotification);   // utile quando ci sono piu' personaggi
+    }
 
-    for (auto* c : std::initializer_list<juce::Component*> { &tcFormat, &start, &duration, &replace, &markers, &okBtn, &cancelBtn })
+    for (auto* c : std::initializer_list<juce::Component*> { &tcFormat, &start, &duration, &replace, &markers, &characterTracks, &okBtn, &cancelBtn })
         addAndMakeVisible (*c);
     okBtn.onClick = [this] { close (true); };
     cancelBtn.onClick = [this] { close (false); };
@@ -71,6 +76,7 @@ void AdrImportDialog::close (bool ok)
     v.defaultDuration = juce::jlimit (0.5, 60.0, duration.getText().replaceCharacter (',', '.').getDoubleValue());
     v.replace = replace.getToggleState();
     v.makeMarkers = markers.getToggleState();
+    v.makeTracks = characterTracks.getToggleState();
     v.tcStart = project.tcStartSec;
     if (ok)
     {
@@ -104,6 +110,7 @@ void AdrImportDialog::resized()
     row (durLbl, duration);
     replace.setBounds (r.removeFromTop (24));
     markers.setBounds (r.removeFromTop (24));
+    characterTracks.setBounds (r.removeFromTop (24));
     auto bottom = r.removeFromBottom (34);
     cancelBtn.setBounds (bottom.removeFromRight (100));
     bottom.removeFromRight (8);
