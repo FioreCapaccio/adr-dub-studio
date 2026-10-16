@@ -119,7 +119,7 @@ private:
 class MixerView : public juce::Component, public juce::ChangeListener, public juce::Timer
 {
 public:
-    static constexpr int stripW = 108;
+    static inline int stripW = 108;   // larghezza di una striscia: cambia con il layout (Vista > Layout)
 
     MixerView (Project&, PluginHost&, Loudness::Meter&, SpectrumView::Reader, std::function<double()> sampleRate);
     ~MixerView() override;

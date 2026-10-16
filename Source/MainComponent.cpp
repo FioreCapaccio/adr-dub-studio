@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "ThemeManager.h"
 #include "VideoSupport.h"
 #include "Commands.h"
 #include "ExportDialog.h"
@@ -12,6 +13,8 @@ using namespace theme;
 
 namespace
 {
+struct LayoutPreset { const char* id; const char* name; int headerW, stripW, trackH; };
+const LayoutPreset kLayouts[] = { { "compact", "Compatto", 244, 100, 72 }, { "standard", "Standard", 264, 108, 96 }, { "large", "Ampio", 300, 124, 128 } };
 
 
 juce::File settingsFile()
@@ -174,6 +177,10 @@ MainComponent::MainComponent()
     exitBtn.setTooltip ("Esci dal programma (chiede se salvare le modifiche)");
     exitBtn.onClick = [this] { requestQuit(); };
     returnToStart = settings().getBoolValue ("returnToStart", true);
+    {
+        const auto saved = settings().getValue ("layout", "standard");
+        for (int i = 0; i < (int) std::size (kLayouts); ++i) if (saved == kLayouts[i].id) { applyLayout (i, false); break; }
+    }
     recBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff5a2420));
     recBtn.setColour (juce::TextButton::buttonOnColourId, accent);
     recBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffff8a7d));
@@ -269,7 +276,7 @@ void MainComponent::paint (juce::Graphics& g)
     for (auto& c : capsules)
     {
         auto f = c.toFloat();
-        g.setColour (juce::Colour (0xff111316));
+        g.setColour (well);
         g.fillRoundedRectangle (f, 10.0f);
         g.setColour (border);
         g.drawRoundedRectangle (f.reduced (0.5f), 10.0f, 1.0f);
@@ -279,7 +286,7 @@ void MainComponent::paint (juce::Graphics& g)
     {
         const bool rec = engine.isRecording();
         auto f = timeBox.toFloat();
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff050607), 0.0f, f.getY(), juce::Colour (0xff0d0f11), 0.0f, f.getBottom(), false));
+        g.setGradientFill (juce::ColourGradient (well.darker (0.5f), 0.0f, f.getY(), well, 0.0f, f.getBottom(), false));
         g.fillRoundedRectangle (f, 10.0f);
         g.setColour (rec ? accent : border);
         g.drawRoundedRectangle (f.reduced (0.5f), 10.0f, rec ? 2.0f : 1.0f);
@@ -361,7 +368,7 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
     g.setFont (font (14.0f, true));
     g.drawText (label.isEmpty() ? juce::String ("Caricamento in corso...") : label, box.reduced (22, 12).removeFromTop (24), juce::Justification::centredLeft, true);
     auto bar = box.reduced (22, 0).withTrimmedTop (44).withHeight (14).toFloat();
-    g.setColour (juce::Colour (0xff0a0b0d));
+    g.setColour (well);
     g.fillRoundedRectangle (bar, 7.0f);
     g.setGradientFill (juce::ColourGradient (blue.brighter (0.2f), bar.getX(), 0.0f, green, bar.getRight(), 0.0f, false));
     g.fillRoundedRectangle (bar.withWidth (juce::jmax (14.0f, bar.getWidth() * juce::jlimit (0.0f, 1.0f, p))), 7.0f);
@@ -1464,6 +1471,13 @@ bool MainComponent::perform (const InvocationInfo& info)
 
 void MainComponent::menuItemSelected (int id, int)
 {
+    if (id >= 30000)
+    {
+        const size_t i = (size_t) (id - 30000);
+        if (i < menuActions.size())
+            juce::MessageManager::callAsync ([action = menuActions[i]] { action(); });
+        return;
+    }
     if (id >= 2000 && id < 2100)
     {
         const auto list = juce::StringArray::fromLines (settings().getValue ("recent", ""));
@@ -1493,6 +1507,96 @@ void MainComponent::exportMarkersCsv()
             csv << m.name.replace (";", ",") << ";" << safe->project->formatTc ((double) m.pos / rate) << ";" << juce::String ((double) m.pos / rate, 3) << "\n";
         if (! f.withFileExtension ("csv").replaceWithText (csv)) safe->showError ("Impossibile scrivere il file.");
     });
+}
+
+//==============================================================================
+// Temi e layout
+//==============================================================================
+juce::PopupMenu MainComponent::buildThemeMenu()
+{
+    juce::PopupMenu sub;
+    const auto current = ThemeManager::currentId();
+    auto addAction = [this] (juce::PopupMenu& menu, const juce::String& label, bool ticked, std::function<void()> f)
+    {
+        menu.addItem (30000 + (int) menuActions.size(), label, true, ticked);
+        menuActions.push_back (std::move (f));
+    };
+
+    for (auto& t : ThemeManager::builtins())
+        addAction (sub, t.name, current == t.id, [id = t.id] { ThemeManager::select (id); });
+
+    const auto imported = ThemeManager::imported();
+    if (! imported.empty())
+    {
+        sub.addSeparator();
+        for (auto& t : imported)
+            addAction (sub, t.name, current == t.id, [id = t.id] { ThemeManager::select (id); });
+    }
+
+    sub.addSeparator();
+    juce::PopupMenu found;
+    for (auto& f : reaper::findInstalledThemes())
+        addAction (found, f.getFileNameWithoutExtension(), false, [this, f] { importThemeFile (f); });
+    if (found.getNumItems() == 0) found.addItem (29999, "Nessun tema trovato nella cartella di Reaper", false);
+    sub.addSubMenu (juce::String::fromUTF8 ("Temi di Reaper installati"), found);
+    addAction (sub, "Importa un tema Reaper...", false, [this] { chooseThemeFile(); });
+
+    // rimuovere un tema importato (solo se e' quello in uso)
+    for (auto& t : imported)
+        if (t.id == current)
+        {
+            sub.addSeparator();
+            addAction (sub, "Rimuovi \"" + t.name + "\" dall'elenco", false, [t] { ThemeManager::remove (t); ThemeManager::select ("dark"); });
+        }
+    return sub;
+}
+
+void MainComponent::importThemeFile (const juce::File& f)
+{
+    ThemeEntry t;
+    juce::String err;
+    if (! ThemeManager::importReaperTheme (f, t, err)) { showError ("Tema non importato: " + err); return; }
+    ThemeManager::select (t.id);
+}
+
+void MainComponent::chooseThemeFile()
+{
+    auto start = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    const auto installed = reaper::findInstalledThemes();
+    if (installed.size() > 0) start = installed[0].getParentDirectory();
+    chooser = std::make_unique<juce::FileChooser> ("Scegli un tema di Reaper (.ReaperThemeZip o .ReaperTheme)", start, "*.ReaperThemeZip;*.ReaperTheme;*.zip");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe] (const juce::FileChooser& fc)
+    {
+        if (safe != nullptr && fc.getResult() != juce::File()) safe->importThemeFile (fc.getResult());
+    });
+}
+
+juce::PopupMenu MainComponent::buildLayoutMenu()
+{
+    juce::PopupMenu sub;
+    for (int i = 0; i < (int) std::size (kLayouts); ++i)
+    {
+        sub.addItem (30000 + (int) menuActions.size(), kLayouts[i].name, true, i == layoutIndex);
+        menuActions.push_back ([this, i] { applyLayout (i, true); });
+    }
+    return sub;
+}
+
+void MainComponent::applyLayout (int index, bool resizeTracks)
+{
+    index = juce::jlimit (0, (int) std::size (kLayouts) - 1, index);
+    layoutIndex = index;
+    TimelineView::headerW = kLayouts[index].headerW;
+    MixerView::stripW = kLayouts[index].stripW;
+    if (timeline == nullptr) return;   // all'avvio: si imposta solo la misura, i componenti non ci sono ancora
+    if (resizeTracks) timeline->setAllTrackHeights (kLayouts[index].trackH);
+    settings().setValue ("layout", juce::String (kLayouts[index].id));
+    settings().saveIfNeeded();
+    resized();
+    timeline->resized();
+    mixer->resized();
+    repaint();
 }
 
 juce::StringArray MainComponent::getMenuBarNames()
@@ -1545,7 +1649,13 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, 0, cmdSessionSettings }); break;
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig }); break;
         case 8: add ({ cmdShortcuts }); break;
-        case 7: add ({ cmdSnap, cmdFollow, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer }); break;
+        case 7:
+            add ({ cmdSnap, cmdFollow, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer });
+            menuActions.clear();
+            m.addSeparator();
+            m.addSubMenu ("Tema", buildThemeMenu());
+            m.addSubMenu ("Layout", buildLayoutMenu());
+            break;
         default: break;
     }
     return m;

@@ -172,6 +172,13 @@ private:
     juce::TooltipWindow tooltipWindow { this, 450 };
 
     std::unique_ptr<juce::FileChooser> chooser;
+    std::vector<std::function<void()>> menuActions;   // azioni delle voci dinamiche (temi, layout) del menu Vista: id 30000 + indice
+    int layoutIndex = 1;
+    void applyLayout (int index, bool resizeTracks);
+    void importThemeFile (const juce::File&);
+    void chooseThemeFile();
+    juce::PopupMenu buildThemeMenu();
+    juce::PopupMenu buildLayoutMenu();
     std::unique_ptr<ExportJob> exportJob;
     std::unique_ptr<VideoExportJob> videoJob;
 

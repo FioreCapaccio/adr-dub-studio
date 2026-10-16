@@ -5,27 +5,40 @@
 namespace fc::theme
 {
 // superfici
-inline const juce::Colour bg        { 0xff0e0f12 };
-inline const juce::Colour panel     { 0xff16181c };
-inline const juce::Colour panelHi   { 0xff22252b };
-inline const juce::Colour panelTop  { 0xff1c1f24 };
-inline const juce::Colour lane      { 0xff131519 };
-inline const juce::Colour laneAlt   { 0xff171a1e };
-inline const juce::Colour grid      { 0xff262930 };
-inline const juce::Colour border    { 0xff2b2f37 };
+inline juce::Colour bg        { 0xff0e0f12 };
+inline juce::Colour panel     { 0xff16181c };
+inline juce::Colour panelHi   { 0xff22252b };
+inline juce::Colour panelTop  { 0xff1c1f24 };
+inline juce::Colour lane      { 0xff131519 };
+inline juce::Colour laneAlt   { 0xff171a1e };
+inline juce::Colour grid      { 0xff262930 };
+inline juce::Colour border    { 0xff2b2f37 };
 // testo
-inline const juce::Colour text      { 0xffe9ebef };
-inline const juce::Colour dim       { 0xff848b97 };
+inline juce::Colour text      { 0xffe9ebef };
+inline juce::Colour dim       { 0xff848b97 };
 // accenti: il rosso e' riservato a registrazione e testina, il blu agli stati attivi
-inline const juce::Colour accent    { 0xffff5a47 };
-inline const juce::Colour blue      { 0xff3d8bfd };
-inline const juce::Colour playhead  { 0xffff4136 };
-inline const juce::Colour green     { 0xff4cd27a };
-inline const juce::Colour yellow    { 0xffffc94d };
-inline const juce::Colour muteCol   { 0xff3d8bfd };
-inline const juce::Colour soloCol   { 0xffffc94d };
+inline juce::Colour accent    { 0xffff5a47 };
+inline juce::Colour blue      { 0xff3d8bfd };
+inline juce::Colour playhead  { 0xffff4136 };
+inline juce::Colour green     { 0xff4cd27a };
+inline juce::Colour yellow    { 0xffffc94d };
+inline juce::Colour muteCol   { 0xff3d8bfd };
+inline juce::Colour soloCol   { 0xffffc94d };
 
-inline const juce::Colour trackPalette[] = {
+// derivati dalla palette (ricalcolati da apply()): fondi incassati, controlli in rilievo, manopole, cursori, popup
+inline juce::Colour well        { 0xff08090b };   // sfondo incassato (misuratori, caselle di valore, aree scure)
+inline juce::Colour raised      { 0xff23262c };   // corpo di piccoli controlli e tasti spenti
+inline juce::Colour raisedHi    { 0xff2b2f37 };
+inline juce::Colour knobHi      { 0xff3a3e46 };   // gradiente delle manopole e delle impugnature
+inline juce::Colour knobLo      { 0xff1a1c20 };
+inline juce::Colour capHi       { 0xff7a808c };   // cursore del fader
+inline juce::Colour capLo       { 0xff3b3f47 };
+inline juce::Colour scrollThumb { 0xff4a505b };
+inline juce::Colour popupBg     { 0xff1f2227 };
+inline juce::Colour tooltipBg   { 0xff2a2e35 };
+inline juce::Colour hilite      { 0xff8ab4ff };   // azzurro chiaro per selezioni e contorni attivi
+
+inline juce::Colour trackPalette[] = {
     juce::Colour (0xffe5584c), juce::Colour (0xffe9944a), juce::Colour (0xffe7c44a), juce::Colour (0xff6fbf73),
     juce::Colour (0xff4aa8c9), juce::Colour (0xff6f7be0), juce::Colour (0xffb36fd6), juce::Colour (0xffd66fa3)
 };
@@ -135,10 +148,91 @@ private:
 };
 
 //==============================================================================
+/** Insieme dei colori di base di un tema. Il valore predefinito e' il tema scuro dell'app. */
+struct Palette
+{
+    juce::String name { "Scuro" };
+    juce::Colour bg { 0xff0e0f12 }, panel { 0xff16181c }, panelHi { 0xff22252b }, panelTop { 0xff1c1f24 },
+                 lane { 0xff131519 }, laneAlt { 0xff171a1e }, grid { 0xff262930 }, border { 0xff2b2f37 },
+                 text { 0xffe9ebef }, dim { 0xff848b97 }, accent { 0xffff5a47 }, blue { 0xff3d8bfd },
+                 playhead { 0xffff4136 }, green { 0xff4cd27a }, yellow { 0xffffc94d }, muteCol { 0xff3d8bfd }, soloCol { 0xffffc94d };
+
+    static Palette dark() { return {}; }
+    static Palette light()
+    {
+        Palette p;
+        p.name = "Chiaro";
+        p.bg = juce::Colour (0xffcfd3da);      p.panel = juce::Colour (0xffe8eaee);   p.panelHi = juce::Colour (0xfff7f8fa);
+        p.panelTop = juce::Colour (0xffeceef2); p.lane = juce::Colour (0xfff4f5f7);    p.laneAlt = juce::Colour (0xffeceef1);
+        p.grid = juce::Colour (0xffd3d6dc);     p.border = juce::Colour (0xffb9bec7);  p.text = juce::Colour (0xff1b1e24);
+        p.dim = juce::Colour (0xff5d6471);      p.accent = juce::Colour (0xffe03a28);  p.blue = juce::Colour (0xff2f6fe0);
+        p.playhead = juce::Colour (0xffe02f26); p.green = juce::Colour (0xff1f9d55);   p.yellow = juce::Colour (0xffc98a00);
+        p.muteCol = p.blue;                     p.soloCol = juce::Colour (0xffd9a100);
+        return p;
+    }
+    static Palette highContrast()
+    {
+        Palette p;
+        p.name = "Alto contrasto";
+        p.bg = juce::Colour (0xff000000);      p.panel = juce::Colour (0xff0a0a0a);   p.panelHi = juce::Colour (0xff1a1a1a);
+        p.panelTop = juce::Colour (0xff101010); p.lane = juce::Colour (0xff000000);    p.laneAlt = juce::Colour (0xff0a0a0a);
+        p.grid = juce::Colour (0xff3a3a3a);     p.border = juce::Colour (0xff8a8a8a);  p.text = juce::Colour (0xffffffff);
+        p.dim = juce::Colour (0xffc0c0c0);      p.accent = juce::Colour (0xffff4d3a);  p.blue = juce::Colour (0xff4da3ff);
+        p.playhead = juce::Colour (0xffff3b30); p.green = juce::Colour (0xff3dff8a);   p.yellow = juce::Colour (0xffffe14d);
+        p.muteCol = p.blue;                     p.soloCol = juce::Colour (0xffffe14d);
+        return p;
+    }
+
+    /** Copia dei colori attuali (i token vivi dell'app). */
+    static Palette current();
+
+    juce::var toVar() const
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("name", name);
+        auto put = [o] (const char* k, juce::Colour c) { o->setProperty (k, c.toDisplayString (true)); };
+        put ("bg", bg); put ("panel", panel); put ("panelHi", panelHi); put ("panelTop", panelTop); put ("lane", lane); put ("laneAlt", laneAlt);
+        put ("grid", grid); put ("border", border); put ("text", text); put ("dim", dim); put ("accent", accent); put ("blue", blue);
+        put ("playhead", playhead); put ("green", green); put ("yellow", yellow); put ("muteCol", muteCol); put ("soloCol", soloCol);
+        return juce::var (o);
+    }
+    static Palette fromVar (const juce::var& v)
+    {
+        Palette p;
+        if (! v.isObject()) return p;
+        if (v.hasProperty ("name")) p.name = v["name"].toString();
+        auto get = [&v] (const char* k, juce::Colour& c)
+        {
+            if (v.hasProperty (k)) c = juce::Colour::fromString (v[k].toString());
+        };
+        get ("bg", p.bg); get ("panel", p.panel); get ("panelHi", p.panelHi); get ("panelTop", p.panelTop); get ("lane", p.lane); get ("laneAlt", p.laneAlt);
+        get ("grid", p.grid); get ("border", p.border); get ("text", p.text); get ("dim", p.dim); get ("accent", p.accent); get ("blue", p.blue);
+        get ("playhead", p.playhead); get ("green", p.green); get ("yellow", p.yellow); get ("muteCol", p.muteCol); get ("soloCol", p.soloCol);
+        return p;
+    }
+};
+
+inline Palette Palette::current()
+{
+    Palette p;
+    p.bg = theme::bg; p.panel = theme::panel; p.panelHi = theme::panelHi; p.panelTop = theme::panelTop; p.lane = theme::lane; p.laneAlt = theme::laneAlt;
+    p.grid = theme::grid; p.border = theme::border; p.text = theme::text; p.dim = theme::dim; p.accent = theme::accent; p.blue = theme::blue;
+    p.playhead = theme::playhead; p.green = theme::green; p.yellow = theme::yellow; p.muteCol = theme::muteCol; p.soloCol = theme::soloCol;
+    return p;
+}
+
+class StudioLookAndFeel;
+inline StudioLookAndFeel* currentLaf = nullptr;
+
+//==============================================================================
 class StudioLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    StudioLookAndFeel()
+    StudioLookAndFeel() { currentLaf = this; refreshColours(); }
+    ~StudioLookAndFeel() override { if (currentLaf == this) currentLaf = nullptr; }
+
+    /** Riassegna i colori standard di JUCE dai token del tema (dopo un cambio di tema). */
+    void refreshColours()
     {
         setColour (juce::ResizableWindow::backgroundColourId, bg);
         setColour (juce::TextButton::buttonColourId, panelHi);
@@ -146,19 +240,29 @@ public:
         setColour (juce::TextButton::textColourOffId, text);
         setColour (juce::TextButton::textColourOnId, juce::Colours::white);
         setColour (juce::Label::textColourId, text);
-        setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff1f2227));
+        setColour (juce::PopupMenu::backgroundColourId, popupBg);
         setColour (juce::PopupMenu::highlightedBackgroundColourId, blue);
         setColour (juce::PopupMenu::textColourId, text);
-        setColour (juce::AlertWindow::backgroundColourId, juce::Colour (0xff1f2227));
+        setColour (juce::AlertWindow::backgroundColourId, popupBg);
         setColour (juce::AlertWindow::textColourId, text);
         setColour (juce::AlertWindow::outlineColourId, border);
         setColour (juce::TextEditor::backgroundColourId, bg);
         setColour (juce::TextEditor::textColourId, text);
         setColour (juce::TextEditor::outlineColourId, border);
         setColour (juce::TextEditor::focusedOutlineColourId, blue);
-        setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a505b));
+        setColour (juce::ScrollBar::thumbColourId, scrollThumb);
         setColour (juce::DocumentWindow::backgroundColourId, bg);
-        setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (0xff2a2e35));
+        setColour (juce::TooltipWindow::backgroundColourId, tooltipBg);
+        setColour (juce::ComboBox::backgroundColourId, well);
+        setColour (juce::ComboBox::textColourId, text);
+        setColour (juce::ComboBox::outlineColourId, border);
+        setColour (juce::ComboBox::arrowColourId, dim);
+        setColour (juce::ComboBox::buttonColourId, panelHi);
+        setColour (juce::ToggleButton::textColourId, text);
+        setColour (juce::ToggleButton::tickColourId, text);
+        setColour (juce::ListBox::textColourId, text);
+        setColour (juce::Slider::textBoxTextColourId, text);
+        setColour (juce::Slider::textBoxOutlineColourId, border);
         setColour (juce::TooltipWindow::textColourId, text);
         setColour (juce::TooltipWindow::outlineColourId, border);
     }
@@ -194,11 +298,11 @@ public:
     void drawScrollbar (juce::Graphics& g, juce::ScrollBar&, int x, int y, int w, int h, bool vertical,
                         int thumbStart, int thumbSize, bool over, bool down) override
     {
-        g.setColour (juce::Colour (0xff0b0c0e));
+        g.setColour (well);
         g.fillRect (x, y, w, h);
         juce::Rectangle<float> thumb = vertical ? juce::Rectangle<float> ((float) x + 3.0f, (float) thumbStart, (float) w - 6.0f, (float) thumbSize)
                                                 : juce::Rectangle<float> ((float) thumbStart, (float) y + 3.0f, (float) thumbSize, (float) h - 6.0f);
-        g.setColour (juce::Colour (0xff4a505b).brighter (down ? 0.3f : over ? 0.15f : 0.0f));
+        g.setColour (scrollThumb.brighter (down ? 0.3f : over ? 0.15f : 0.0f));
         g.fillRoundedRectangle (thumb, 3.0f);
     }
 
@@ -213,7 +317,7 @@ public:
         }
 
         const float cx = (float) x + (float) width * 0.5f;
-        g.setColour (juce::Colour (0xff08090b));
+        g.setColour (well);
         g.fillRoundedRectangle (cx - 3.0f, (float) y, 6.0f, (float) height, 3.0f);
         g.setColour (border);
         g.drawRoundedRectangle (cx - 3.0f, (float) y, 6.0f, (float) height, 3.0f, 1.0f);
@@ -269,8 +373,8 @@ public:
         juce::Rectangle<float> cap (cx - capW * 0.5f, sliderPos - capH * 0.5f, capW, capH);
         g.setColour (juce::Colours::black.withAlpha (0.5f));
         g.fillRoundedRectangle (cap.translated (0.0f, 1.5f), 4.0f);
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff7a808c), cap.getX(), cap.getY(),
-                                                 juce::Colour (0xff3b3f47), cap.getX(), cap.getBottom(), false));
+        g.setGradientFill (juce::ColourGradient (capHi, cap.getX(), cap.getY(),
+                                                 capLo, cap.getX(), cap.getBottom(), false));
         g.fillRoundedRectangle (cap, 4.0f);
         g.setColour (juce::Colours::black.withAlpha (0.7f));
         g.drawRoundedRectangle (cap, 4.0f, 1.0f);
@@ -319,8 +423,8 @@ public:
         const float rBody = R - 8.0f;
         g.setColour (juce::Colours::black.withAlpha (0.45f));
         g.fillEllipse (centre.x - rBody, centre.y - rBody + 1.5f, rBody * 2.0f, rBody * 2.0f);
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3a3e46), centre.x, centre.y - rBody,
-                                                 juce::Colour (0xff1a1c20), centre.x, centre.y + rBody, false));
+        g.setGradientFill (juce::ColourGradient (knobHi, centre.x, centre.y - rBody,
+                                                 knobLo, centre.x, centre.y + rBody, false));
         g.fillEllipse (centre.x - rBody, centre.y - rBody, rBody * 2.0f, rBody * 2.0f);
         g.setColour (juce::Colours::black.withAlpha (0.7f));
         g.drawEllipse (centre.x - rBody, centre.y - rBody, rBody * 2.0f, rBody * 2.0f, 1.0f);
@@ -341,5 +445,62 @@ public:
         }
     }
 };
+
+
+//==============================================================================
+inline std::vector<juce::Colour> snapshot()
+{
+    return { bg, panel, panelHi, panelTop, lane, laneAlt, grid, border, text, dim, accent, blue, playhead, green, yellow, muteCol, soloCol,
+             well, raised, raisedHi, scrollThumb, popupBg, tooltipBg, hilite };
+}
+
+/** Sostituisce, nei colori impostati sui componenti con setColour(), quelli uguali a un vecchio token con il token nuovo. */
+inline void retheme (juce::Component& c, const std::vector<juce::Colour>& oldT, const std::vector<juce::Colour>& newT)
+{
+    std::vector<std::pair<int, juce::Colour>> changes;
+    auto& props = c.getProperties();
+    for (int i = 0; i < props.size(); ++i)
+    {
+        const auto name = props.getName (i).toString();
+        if (! name.startsWith ("jcclr_")) continue;
+        const auto& v = props.getValueAt (i);
+        if (! v.isInt()) continue;
+        const auto argb = (juce::uint32) (int) v;
+        for (size_t k = 0; k < oldT.size(); ++k)
+            if (oldT[k].getARGB() == argb) { if (oldT[k] != newT[k]) changes.emplace_back (name.substring (6).getHexValue32(), newT[k]); break; }
+    }
+    for (auto& ch : changes) c.setColour (ch.first, ch.second);
+    for (auto* child : c.getChildren()) retheme (*child, oldT, newT);
+}
+
+/** Applica un tema: aggiorna i token, ricalcola i derivati, riallinea i colori di JUCE e ridisegna tutte le finestre aperte. */
+inline void apply (const Palette& p)
+{
+    const auto oldT = snapshot();
+    bg = p.bg; panel = p.panel; panelHi = p.panelHi; panelTop = p.panelTop; lane = p.lane; laneAlt = p.laneAlt;
+    grid = p.grid; border = p.border; text = p.text; dim = p.dim; accent = p.accent; blue = p.blue;
+    playhead = p.playhead; green = p.green; yellow = p.yellow; muteCol = p.muteCol; soloCol = p.soloCol;
+
+    const bool light = p.bg.getPerceivedBrightness() > 0.55f;
+    auto mix = [] (juce::Colour a, juce::Colour b, float t) { return a.interpolatedWith (b, t); };
+    well = mix (p.bg, juce::Colours::black, light ? 0.10f : 0.45f);
+    raised = p.panelHi;
+    raisedHi = p.border;
+    scrollThumb = mix (p.panelHi, p.text, 0.28f);
+    popupBg = mix (p.panelTop, p.panelHi, 0.5f);
+    tooltipBg = p.panelHi;
+    hilite = light ? p.blue.darker (0.2f) : p.blue.brighter (0.45f);
+
+    const auto newT = snapshot();
+    if (currentLaf != nullptr) currentLaf->refreshColours();
+    auto& desktop = juce::Desktop::getInstance();
+    for (int i = 0; i < desktop.getNumComponents(); ++i)
+        if (auto* c = desktop.getComponent (i))
+        {
+            retheme (*c, oldT, newT);
+            c->sendLookAndFeelChange();
+            c->repaint();
+        }
+}
 
 } // namespace fc::theme

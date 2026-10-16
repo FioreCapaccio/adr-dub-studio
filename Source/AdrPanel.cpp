@@ -194,7 +194,7 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
 
     for (auto* e : { &edChar, &edScene, &edReel, &edIn, &edOut, &edDialogue, &edNotes })
     {
-        e->setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0e0f12));
+        e->setColour (juce::TextEditor::backgroundColourId, bg);
         e->onReturnKey = [this] { commitDetails(); };
         e->onFocusLost = [this] { commitDetails(); };
         addAndMakeVisible (*e);
@@ -373,7 +373,7 @@ public:
         row = r; column = c;
         setFont (c == 3 ? theme::font (13.0f, true) : theme::font (13.0f));
         setColour (juce::Label::textColourId, sel ? juce::Colours::white : col);
-        setColour (juce::Label::backgroundWhenEditingColourId, juce::Colour (0xff0e0f12));
+        setColour (juce::Label::backgroundWhenEditingColourId, bg);
         setColour (juce::Label::textWhenEditingColourId, theme::text);
         setBorderSize ({ 0, 8, 0, 4 });
         if (! isBeingEdited() && getText() != txt) setText (txt, juce::dontSendNotification);

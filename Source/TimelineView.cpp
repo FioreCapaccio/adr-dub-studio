@@ -235,7 +235,7 @@ void TimelineView::drawExportBar (juce::Graphics& g)
     const auto lanes = laneArea();
     const juce::Rectangle<int> bar (headerW, 0, lanes.getWidth(), exportH);
     const juce::Colour orange (0xffff9f43);
-    g.setColour (juce::Colour (0xff0d0e11));
+    g.setColour (well);
     g.fillRect (bar);
     g.setColour (border);
     g.drawHorizontalLine (exportH - 1, (float) headerW, (float) bar.getRight());
@@ -377,7 +377,7 @@ void TimelineView::drawHeaderMeter (juce::Graphics& g, int ti)
     auto xOf = [&] (float db) { return r.getX() + r.getWidth() * juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f); };
     const float barH = scale ? 5.0f : 3.5f;
 
-    g.setColour (juce::Colour (0xff08090b));
+    g.setColour (well);
     g.fillRoundedRectangle (r.getX() - 1.0f, r.getY() - 1.0f, r.getWidth() + 2.0f, barH * 2.0f + 3.0f, 2.5f);
     const float ys[2] = { r.getY(), r.getY() + barH + 1.0f };
     const float dbs[2] = { m.dbL, m.dbR };
@@ -453,7 +453,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
 
     auto drawBtn = [&] (juce::Rectangle<int> b, const char* label, bool on, juce::Colour onCol)
     {
-        const auto body = draw3dButton (g, b.toFloat().expanded (0.0f, 1.0f), on ? onCol : juce::Colour (0xff2b2f37), 4.0f, on, false, onCol.brighter (0.4f));
+        const auto body = draw3dButton (g, b.toFloat().expanded (0.0f, 1.0f), on ? onCol : raisedHi, 4.0f, on, false, onCol.brighter (0.4f));
         g.setColour (on ? juce::Colours::black.withAlpha (0.85f) : dim);
         g.setFont (font (11.5f, true));
         g.drawText (label, body.toNearestInt(), juce::Justification::centred);
@@ -484,7 +484,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         arc.addCentredArc (cx, cy, 18.5f, 18.5f, 0.0f, angleOf (0.0f), angleOf (trim), true);
         g.setColour ((trim > 0.05f ? juce::Colour (0xffff9f43) : (trim < -0.05f ? blue : dim)).withAlpha (0.85f));
         g.strokePath (arc, juce::PathStrokeType (2.2f));
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4a505b), cx, cy - 12.0f, juce::Colour (0xff23262c), cx, cy + 12.0f, false));
+        g.setGradientFill (juce::ColourGradient (scrollThumb, cx, cy - 12.0f, raised, cx, cy + 12.0f, false));
         g.fillEllipse (cx - 12.0f, cy - 12.0f, 24.0f, 24.0f);
         g.setColour (juce::Colours::black.withAlpha (0.6f));
         g.drawEllipse (cx - 12.0f, cy - 12.0f, 24.0f, 24.0f, 1.0f);
@@ -504,7 +504,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         {
             const auto pr = paramRect (ti).toFloat();
             const int mode = t.live->autoMode.load();
-            g.setColour (mode == 0 ? juce::Colour (0xff23262c) : (mode == 2 ? accent : green).withAlpha (0.28f));
+            g.setColour (mode == 0 ? raised : (mode == 2 ? accent : green).withAlpha (0.28f));
             g.fillRoundedRectangle (pr, 9.0f);
             g.setColour (mode == 0 ? border : (mode == 2 ? accent : green).withAlpha (0.9f));
             g.drawRoundedRectangle (pr.reduced (0.5f), 9.0f, 1.0f);
@@ -517,7 +517,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         {
             const int mode = t.live->autoMode.load();
             const auto ar = autoRect (ti).toFloat();
-            const juce::Colour ac = mode == 2 ? accent : (mode == 1 ? green : juce::Colour (0xff23262c));
+            const juce::Colour ac = mode == 2 ? accent : (mode == 1 ? green : raised);
             g.setColour (mode == 0 ? ac : ac.withAlpha (0.28f));
             g.fillRoundedRectangle (ar, 9.0f);
             g.setColour (mode == 0 ? border : ac.withAlpha (0.9f));
@@ -529,7 +529,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
 
         static const char* inputNames[] = { "IN 1", "IN 2", "IN 1+2" };
         const auto ir = inputRect (ti).toFloat();
-        g.setColour (armed ? accent.withAlpha (0.22f) : juce::Colour (0xff23262c));
+        g.setColour (armed ? accent.withAlpha (0.22f) : raised);
         g.fillRoundedRectangle (ir, 9.0f);
         g.setColour (armed ? accent.withAlpha (0.7f) : border);
         g.drawRoundedRectangle (ir.reduced (0.5f), 9.0f, 1.0f);
@@ -555,7 +555,7 @@ void TimelineView::drawVideoLane (juce::Graphics& g)
     const auto lanes = laneArea();
     const double rate = project.getSampleRate();
 
-    g.setColour (juce::Colour (0xff0d0e11));
+    g.setColour (well);
     g.fillRect (headerW, rulerH, lanes.getWidth() + sbSize, videoH);
     {
         juce::Graphics::ScopedSaveState ss (g);
@@ -564,7 +564,7 @@ void TimelineView::drawVideoLane (juce::Graphics& g)
         const double off = v->offsetSec;
         const float x0 = sampleToX ((int64_t) std::llround (off * rate)), x1 = sampleToX ((int64_t) std::llround ((off + v->duration) * rate));
         const juce::Rectangle<float> block (x0, (float) rulerH + 4.0f, x1 - x0, (float) videoH - 8.0f);
-        g.setColour (juce::Colour (0xff1d2026));
+        g.setColour (raised.darker (0.2f));
         g.fillRoundedRectangle (block, 4.0f);
 
         if (! v->thumbs.empty() && v->thumbs.front().isValid())
@@ -593,7 +593,7 @@ void TimelineView::drawVideoLane (juce::Graphics& g)
                                                      juce::Colours::black.withAlpha (0.35f), 0.0f, block.getBottom(), false));
             g.fillRect (block);
         }
-        g.setColour (juce::Colour (0xff8ab4ff).withAlpha (0.8f));
+        g.setColour (hilite.withAlpha (0.8f));
         g.drawRoundedRectangle (block.reduced (0.5f), 4.0f, 1.0f);
 
         if (std::abs (off) > 0.0004)
@@ -603,7 +603,7 @@ void TimelineView::drawVideoLane (juce::Graphics& g)
             juce::Rectangle<float> pill (juce::jmax (block.getX(), (float) headerW) + 6.0f, block.getY() + 5.0f, w, 16.0f);
             g.setColour (juce::Colours::black.withAlpha (0.7f));
             g.fillRoundedRectangle (pill, 8.0f);
-            g.setColour (juce::Colour (0xff8ab4ff));
+            g.setColour (hilite);
             g.setFont (font (10.5f, true));
             g.drawText (label, pill.toNearestInt(), juce::Justification::centred);
         }
@@ -615,7 +615,7 @@ void TimelineView::drawVideoLane (juce::Graphics& g)
     g.setColour (border);
     g.drawHorizontalLine (rulerH + videoH - 1, 0.0f, (float) (getWidth() - sbSize));
     g.drawVerticalLine (headerW - 1, (float) rulerH, (float) (rulerH + videoH));
-    g.setColour (juce::Colour (0xff8ab4ff));
+    g.setColour (hilite);
     g.fillRect (0, rulerH, 5, videoH - 1);
     g.setColour (text);
     g.setFont (font (13.0f, true));

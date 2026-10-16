@@ -164,7 +164,7 @@ void SpectrumView::paint (juce::Graphics& g)
     g.drawRoundedRectangle (b, 8.0f, 1.0f);
 
     const auto p = plot();
-    g.setColour (juce::Colour (0xff08090b));
+    g.setColour (well);
     g.fillRect (p);
 
     // griglia: frequenze e livelli
@@ -196,7 +196,7 @@ void SpectrumView::paint (juce::Graphics& g)
         g.reduceClipRegion (p.toNearestInt());
         g.setGradientFill (juce::ColourGradient (blue.withAlpha (0.55f), 0.0f, p.getY(), blue.withAlpha (0.05f), 0.0f, p.getBottom(), false));
         g.fillPath (fill);
-        g.setColour (juce::Colour (0xff8ab4ff));
+        g.setColour (hilite);
         g.strokePath (line, juce::PathStrokeType (1.3f));
 
         if (showPeaks)

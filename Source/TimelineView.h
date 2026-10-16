@@ -15,7 +15,8 @@ class TimelineView : public juce::Component,
                      public juce::FileDragAndDropTarget
 {
 public:
-    static constexpr int headerW = 264, knobW = 50, exportH = 12, rulerH = 44, sbSize = 12, videoH = 66, minTrackH = 48, maxTrackH = 400;
+    static inline int headerW = 264;   // larghezza dell'intestazione delle tracce: cambia con il layout (Vista > Layout)
+    static constexpr int knobW = 50, exportH = 12, rulerH = 44, sbSize = 12, videoH = 66, minTrackH = 48, maxTrackH = 400;
 
     TimelineView (Project&, AudioEngine&);
     ~TimelineView() override;

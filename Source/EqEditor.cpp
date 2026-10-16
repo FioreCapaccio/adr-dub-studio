@@ -60,7 +60,7 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
         if (c.mid > c.lo && c.mid < c.hi) c.s->setSkewFactorFromMidPoint (c.mid);
         c.s->setTextValueSuffix (c.suffix);
         c.s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 20);
-        c.s->setColour (juce::Slider::thumbColourId, juce::Colour (0xff8ab4ff));
+        c.s->setColour (juce::Slider::thumbColourId, hilite);
         c.s->onValueChange = [this, c] { if (! loading) { (live->comp.*(c.p)).store ((float) c.s->getValue()); project.liveChanged(); repaint(); } };
         c.l->setText (c.name, juce::dontSendNotification);
         c.l->setFont (font (10.0f, true));
@@ -280,7 +280,7 @@ void EqEditor::paint (juce::Graphics& g)
     g.drawText ("EQ E COMPRESSORE", 16, 0, 230, 46, juce::Justification::centredLeft);
 
     const auto p = plot();
-    g.setColour (juce::Colour (0xff08090b));
+    g.setColour (well);
     g.fillRoundedRectangle (p, 6.0f);
 
     // griglia
@@ -325,7 +325,7 @@ void EqEditor::paint (juce::Graphics& g)
         g.reduceClipRegion (p.toNearestInt());
         g.setColour ((en ? blue : dim).withAlpha (0.22f));
         g.fillPath (area);
-        g.setColour (en ? juce::Colour (0xff8ab4ff) : dim);
+        g.setColour (en ? hilite : dim);
         g.strokePath (curve, juce::PathStrokeType (2.0f));
     }
 
@@ -354,7 +354,7 @@ void EqEditor::paint (juce::Graphics& g)
         auto f = compBox.toFloat();
         g.setColour (panelTop);
         g.fillRoundedRectangle (f, 8.0f);
-        g.setColour ((live->comp.enabled.load() ? juce::Colour (0xff8ab4ff) : dim).withAlpha (0.8f));
+        g.setColour ((live->comp.enabled.load() ? hilite : dim).withAlpha (0.8f));
         g.fillRect (f.getX() + 8.0f, f.getY(), f.getWidth() - 16.0f, 2.0f);
         g.setColour (border);
         g.drawRoundedRectangle (f, 8.0f, 1.0f);

@@ -29,7 +29,7 @@ void LevelMeter::paint (juce::Graphics& g)
         // valore numerico del picco massimo (clic per azzerare); rosso se ha superato 0 dBFS
         auto ro = b.removeFromTop ((float) readoutHeight).reduced (1.0f, 1.0f);
         const bool over = peakMaxDb > 0.0f;
-        g.setColour (over ? accent.withAlpha (0.9f) : juce::Colour (0xff08090b));
+        g.setColour (over ? accent.withAlpha (0.9f) : well);
         g.fillRoundedRectangle (ro, 3.0f);
         g.setColour (over ? accent : border);
         g.drawRoundedRectangle (ro.reduced (0.5f), 3.0f, 1.0f);
@@ -60,7 +60,7 @@ void LevelMeter::paint (juce::Graphics& g)
                         juce::Justification::centredLeft, false);
         }
     }
-    g.setColour (juce::Colour (0xff08090b));
+    g.setColour (well);
     g.fillRoundedRectangle (b, 3.0f);
     g.setColour (border);
     g.drawRoundedRectangle (b.reduced (0.5f), 3.0f, 1.0f);
@@ -103,7 +103,7 @@ void InsertButton::paint (juce::Graphics& g)
     auto r = getLocalBounds().toFloat().reduced (1.0f, 0.5f);
     if (slot == nullptr)
     {
-        g.setColour (juce::Colour (0xff111316));
+        g.setColour (well);
         g.fillRoundedRectangle (r, 4.0f);
         g.setColour (border.withAlpha (0.8f));
         g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
@@ -117,13 +117,13 @@ void InsertButton::paint (juce::Graphics& g)
     const bool ready = slot->ready.load();
     const bool byp = slot->bypass.load();
 
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2e323a), 0.0f, r.getY(), juce::Colour (0xff22252b), 0.0f, r.getBottom(), false));
+    g.setGradientFill (juce::ColourGradient (panelHi.brighter (0.12f), 0.0f, r.getY(), panelHi, 0.0f, r.getBottom(), false));
     g.fillRoundedRectangle (r, 4.0f);
     g.setColour (err ? accent.withAlpha (0.7f) : border);
     g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
 
     const auto led = juce::Rectangle<float> (r.getX() + 6.0f, r.getCentreY() - 3.0f, 6.0f, 6.0f);
-    g.setColour (err ? accent : (! ready ? yellow : (byp ? juce::Colour (0xff5a5f6a) : green)));
+    g.setColour (err ? accent : (! ready ? yellow : (byp ? dim : green)));
     g.fillEllipse (led);
 
     g.setColour (byp || err ? dim : text);
@@ -191,7 +191,7 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
 
     dbLabel.setJustificationType (juce::Justification::centred);
     dbLabel.setFont (mono (12.0f));
-    dbLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xff0a0b0d));
+    dbLabel.setColour (juce::Label::backgroundColourId, well);
     addAndMakeVisible (dbLabel);
     meter.setShowScale (true);
     meter.setTooltip ("Picco massimo (dBFS). Clic per azzerare");
@@ -507,7 +507,7 @@ void ChannelStrip::paint (juce::Graphics& g)
         g.setFont (mono (10.5f));
         g.drawText ((live->limiterOn.load() ? juce::String (live->ceilingDb.load(), 1) + " dB" : juce::String ("OFF")), ceilLabel, juce::Justification::centred);
 
-        g.setColour (juce::Colour (0xff08090b));
+        g.setColour (well);
         g.fillRoundedRectangle (grRect.toFloat(), 2.0f);
         const float frac = juce::jlimit (0.0f, 1.0f, grDisp / 12.0f);
         g.setColour (yellow);
@@ -692,7 +692,7 @@ void LoudnessPanel::paint (juce::Graphics& g)
             c = std::abs (dev) <= (float) std_.tolerance ? green : (std::abs (dev) <= (float) std_.tolerance + 1.5f ? yellow : accent);
 
         auto f = bigBox.toFloat();
-        g.setColour (juce::Colour (0xff08090b));
+        g.setColour (well);
         g.fillRoundedRectangle (f, 8.0f);
         g.setColour (hasTarget && integ > -99.0f ? c.withAlpha (0.7f) : border);
         g.drawRoundedRectangle (f.reduced (0.5f), 8.0f, 1.0f);
@@ -717,7 +717,7 @@ void LoudnessPanel::paint (juce::Graphics& g)
         g.setFont (mono (11.0f));
         g.drawText (fmt (mom), barBox.withHeight (13), juce::Justification::centredRight);
 
-        g.setColour (juce::Colour (0xff08090b));
+        g.setColour (well);
         g.fillRoundedRectangle (f, 3.0f);
         if (hasTarget)
         {

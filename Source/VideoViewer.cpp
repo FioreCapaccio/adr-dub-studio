@@ -34,7 +34,7 @@ VideoViewer::VideoViewer()
     offsetLabel.setEditable (false, true, false);
     offsetLabel.setJustificationType (juce::Justification::centred);
     offsetLabel.setFont (mono (13.0f));
-    offsetLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xff0a0b0d));
+    offsetLabel.setColour (juce::Label::backgroundColourId, well);
     offsetLabel.setColour (juce::Label::outlineColourId, border);
     offsetLabel.setColour (juce::Label::textColourId, text);
     offsetLabel.setTooltip ("Offset del video in millisecondi: positivo = video in ritardo rispetto all'audio. Doppio clic per scrivere un valore.");
@@ -227,7 +227,7 @@ void VideoViewer::sync (double t, bool playing)
 
 void VideoViewer::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff0a0b0d));
+    g.fillAll (well);
 
     // barra superiore
     auto top = getLocalBounds().removeFromTop (topH);
@@ -235,7 +235,7 @@ void VideoViewer::paint (juce::Graphics& g)
     g.fillRect (top);
     g.setColour (border);
     g.drawHorizontalLine (topH - 1, 0.0f, (float) getWidth());
-    g.setColour (juce::Colour (0xff8ab4ff));
+    g.setColour (hilite);
     g.fillRoundedRectangle (12.0f, 11.0f, 4.0f, 12.0f, 2.0f);
     g.setColour (text);
     g.setFont (font (12.0f, true));
@@ -274,7 +274,7 @@ void VideoViewer::paint (juce::Graphics& g)
     if (adr.active)
     {
         auto st = adrStrip();
-        g.setColour (juce::Colour (0xff101216));
+        g.setColour (well);
         g.fillRect (st);
         g.setColour (adr.recording ? accent : border);
         g.drawHorizontalLine (st.getY(), 0.0f, (float) getWidth());
@@ -284,7 +284,7 @@ void VideoViewer::paint (juce::Graphics& g)
         g.drawText (adr.title, inner.removeFromTop (16), juce::Justification::centredLeft, true);
         // streamer: nei 3 secondi prima dell'ingresso una linea attraversa la striscia, poi la barra si riempie fino all'uscita
         auto bar = inner.removeFromBottom (8).toFloat();
-        g.setColour (juce::Colour (0xff0a0b0d));
+        g.setColour (well);
         g.fillRoundedRectangle (bar, 3.0f);
         if (adr.streamer)
         {
@@ -328,7 +328,7 @@ void VideoViewer::paint (juce::Graphics& g)
     g.setColour (border);
     g.drawHorizontalLine (bar.getY(), 0.0f, (float) getWidth());
 
-    g.setColour (juce::Colour (0xff08090b));
+    g.setColour (well);
     g.fillRoundedRectangle (juce::Rectangle<float> (12.0f, (float) bar.getY() + 10.0f, 150.0f, (float) bar.getHeight() - 20.0f), 6.0f);
     g.setColour (playhead);
     g.setFont (mono (18.0f));

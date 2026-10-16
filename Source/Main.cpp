@@ -5,6 +5,7 @@
 #include "TimeStretch.h"
 #include "ExportEngine.h"
 #include "BuiltinFx.h"
+#include "ThemeManager.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
 class DelayTestProcessor : public juce::AudioProcessor
@@ -97,6 +98,7 @@ private:
     {
         stepLimiter();
         stepBuiltin();
+        stepTheme();
         stepEditing();
         stepPdc();
         stepAux();
@@ -1316,6 +1318,84 @@ private:
         expect (ok && peakAt == 1000 && std::abs (peakV - amp) < 0.01f, "export: impulso al campione " + juce::String (peakAt) + " (atteso 1000)");
     }
 
+    // temi: lettura dei temi Reaper (colori BGR, zip), palette derivata coerente, applicazione e ricolorazione dei componenti
+    void stepTheme()
+    {
+        namespace rp = fc::reaper;
+        expect (rp::fromColorRef (255) == juce::Colour (255, 0, 0) && rp::fromColorRef (0x00ff0000) == juce::Colour (0, 0, 255)
+                && rp::fromColorRef ((int) 0x8000ff00u) == juce::Colour (0, 255, 0), "tema Reaper: COLORREF letto come BGR, byte alti ignorati");
+
+        const juce::String ini = "[REAPER]\nui_img=x\n[color theme]\ncol_mixerbg=3355443\ncol_main_text2=9211020\ncol_main_text=2236958\ncol_tr1_bg=4342338\n"
+                                 "col_tr2_bg=4539717\narrange_vgrid=4605510\ngenlist_selbg=6840646\ncol_main_bg=-2135838293\ncol_arrangebg=4539717\n[other]\ncol_mixerbg=1\n";
+        const auto colors = rp::parseColorTheme (ini);
+        expect (colors.size() == 9 && colors.at ("col_mixerbg") == 3355443 && colors.count ("ui_img") == 0, "tema Reaper: legge solo la sezione [color theme] (" + juce::String ((int) colors.size()) + " chiavi)");
+
+        auto p = rp::paletteFromColors (colors, "Prova");
+        expect (p.panel == juce::Colour (0x33, 0x33, 0x33) && p.lane == juce::Colour (0x42, 0x42, 0x42) && p.laneAlt == juce::Colour (0x45, 0x45, 0x45),
+                "tema Reaper: pannello e tracce presi dal tema");
+        expect (rp::contrastRatio (p.text, p.panel) >= 4.5f && rp::contrastRatio (p.dim, p.panel) >= 2.0f, "tema Reaper: testo leggibile sul pannello (contrasto " + juce::String (rp::contrastRatio (p.text, p.panel), 1) + ")");
+        expect (p.blue != fc::theme::Palette::dark().blue && rp::contrastRatio (p.blue, p.panel) >= 1.5f && rp::contrastRatio (p.blue, juce::Colours::white) >= 3.0f, "tema Reaper: accento dal colore di selezione, visibile sul pannello e con testo bianco leggibile");
+
+        // tracce chiare su pannelli scuri (come il tema Default 5): le tracce chiare vengono scartate, il testo resta leggibile
+        auto mixed = colors;
+        mixed["col_tr1_bg"] = 0x00c6c6c4; mixed["col_tr2_bg"] = 0x00bab8b8; mixed["col_arrangebg"] = 0x00c0c0be;
+        const auto pm = rp::paletteFromColors (mixed, "Misto");
+        expect (pm.lane.getPerceivedBrightness() < 0.5f && pm.laneAlt.getPerceivedBrightness() < 0.5f, "tema Reaper: tracce chiare su pannelli scuri non usate");
+
+        // tema chiaro
+        rp::ColorMap lightMap;
+        lightMap["col_mixerbg"] = 0x00e0e0e0; lightMap["col_main_text"] = 0x00202020;
+        const auto pl = rp::paletteFromColors (lightMap, "Luce");
+        expect (pl.text.getPerceivedBrightness() < 0.5f && rp::contrastRatio (pl.text, pl.panel) >= 4.5f, "tema Reaper: tema chiaro con testo scuro");
+
+        // niente colori: palette completa dal tema scuro
+        const auto empty = rp::paletteFromColors ({}, "Vuoto");
+        expect (empty.panel == fc::theme::Palette::dark().panel, "tema Reaper: senza chiavi resta il tema scuro");
+
+        // file: zip (.ReaperThemeZip) con il .ReaperTheme nella radice, file semplice, file non valido
+        auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("adr_theme_test");
+        dir.deleteRecursively();
+        dir.createDirectory();
+        {
+            juce::ZipFile::Builder zb;
+            const juce::String png = "not really a png";
+            zb.addEntry (new juce::MemoryInputStream (png.toRawUTF8(), png.getNumBytesAsUTF8(), true), 5, "Prova_unpacked/tcp_bg.png", juce::Time::getCurrentTime());
+            zb.addEntry (new juce::MemoryInputStream (ini.toRawUTF8(), ini.getNumBytesAsUTF8(), true), 5, "Prova_unpacked.ReaperTheme", juce::Time::getCurrentTime());
+            juce::FileOutputStream out (dir.getChildFile ("Prova.ReaperThemeZip"));
+            zb.writeToStream (out, nullptr);
+        }
+        dir.getChildFile ("Semplice.ReaperTheme").replaceWithText (ini);
+        dir.getChildFile ("Rotto.ReaperTheme").replaceWithText ("questo non e' un tema");
+        fc::theme::Palette lp;
+        juce::String err;
+        expect (rp::loadThemeFile (dir.getChildFile ("Prova.ReaperThemeZip"), lp, err) && lp.panel == p.panel && lp.name == "Prova", "tema Reaper: zip caricato (nome '" + lp.name + "')");
+        expect (rp::loadThemeFile (dir.getChildFile ("Semplice.ReaperTheme"), lp, err) && lp.name == "Semplice", "tema Reaper: file .ReaperTheme semplice caricato");
+        expect (! rp::loadThemeFile (dir.getChildFile ("Rotto.ReaperTheme"), lp, err) && err.isNotEmpty(), "tema Reaper: file non valido rifiutato (" + err + ")");
+        dir.deleteRecursively();
+
+        // salvataggio JSON
+        const auto back = fc::theme::Palette::fromVar (juce::JSON::parse (juce::JSON::toString (p.toVar())));
+        expect (back.panel == p.panel && back.text == p.text && back.blue == p.blue && back.name == "Prova", "tema: palette salvata e riletta identica");
+
+        // applicazione dal vivo: token, derivati e colori impostati sui componenti
+        const auto before = fc::theme::Palette::current();
+        fc::theme::apply (before);   // i derivati partono dalla formula (i valori iniziali sono letterali)
+        juce::Label label;
+        label.setColour (juce::Label::textColourId, fc::theme::dim);
+        label.setColour (juce::Label::backgroundColourId, juce::Colour (0xff123456));   // colore non del tema: non va toccato
+        juce::Component holder;
+        holder.addAndMakeVisible (label);
+        holder.addToDesktop (juce::ComponentPeer::windowIsTemporary);
+        const auto wellBefore = fc::theme::well;
+        fc::theme::apply (fc::theme::Palette::light());
+        expect (fc::theme::bg == fc::theme::Palette::light().bg && fc::theme::well != wellBefore, "tema: apply aggiorna i token e i derivati");
+        expect (label.findColour (juce::Label::textColourId) == fc::theme::dim && label.findColour (juce::Label::backgroundColourId) == juce::Colour (0xff123456),
+                "tema: i colori dei componenti seguono il tema, quelli estranei no");
+        fc::theme::apply (before);
+        expect (fc::theme::bg == before.bg && fc::theme::well == wellBefore && label.findColour (juce::Label::textColourId) == before.dim, "tema: tema precedente ripristinato");
+        holder.removeFromDesktop();
+    }
+
     // effetti integrati: ogni effetto deve fare il suo lavoro, lo stato deve tornare identico e l'host deve poterli inserire
     void stepBuiltin()
     {
@@ -1741,7 +1821,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "1.8.0"; }
+    const juce::String getApplicationVersion() override { return "1.9.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -1759,6 +1839,7 @@ public:
             return;
         }
         juce::LookAndFeel::setDefaultLookAndFeel (&laf);
+        fc::ThemeManager::applySaved();   // tema scelto l'ultima volta (prima di creare la finestra)
         window = std::make_unique<MainWindow> (getApplicationName());
         window->main().importFromCommandLine (juce::StringArray::fromTokens (commandLine, true));
     }
