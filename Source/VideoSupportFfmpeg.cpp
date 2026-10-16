@@ -147,6 +147,14 @@ bool extractAudio (const juce::File& video, const juce::File& wavOut, juce::Stri
     return true;
 }
 
+bool burnInSupported() { return false; }
+
+bool muxAudioBurnIn (const juce::File&, const juce::File&, const juce::File&, double, const BurnIn&, const std::function<bool (double)>&, juce::String& error, double, double)
+{
+    error = "Il burn-in e' disponibile solo su macOS.";
+    return false;
+}
+
 bool muxAudio (const juce::File& video, const juce::File& audio, const juce::File& out, double videoOffsetSec,
                const std::function<bool (double)>& progress, juce::String& error, double rangeStartSec, double rangeEndSec)
 {

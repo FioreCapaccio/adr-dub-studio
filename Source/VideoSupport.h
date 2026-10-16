@@ -31,6 +31,22 @@ std::vector<juce::Image> thumbnails (const juce::File&, double interval, int cou
 bool muxAudio (const juce::File& video, const juce::File& audio, const juce::File& out, double videoOffsetSec,
                const std::function<bool (double)>& progress, juce::String& error, double rangeStartSec = 0.0, double rangeEndSec = -1.0);
 
+/** Testo da incidere sul video per la revisione (burn-in): timecode in alto a sinistra, personaggio in alto a destra, battuta in basso. */
+struct BurnInLine { double from = 0.0, to = 0.0; juce::String character, text; int number = 0; };   // secondi della timeline
+struct BurnIn
+{
+    bool timecode = true, cues = true;
+    std::function<juce::String (double)> timecodeAt;   // secondi della timeline -> timecode
+    std::vector<BurnInLine> lines;
+};
+
+/** Vero se il backend sa incidere il burn-in (oggi solo macOS con AVFoundation). */
+bool burnInSupported();
+
+/** Come muxAudio, ma ricodifica il video (H.264) incidendo il burn-in su ogni fotogramma. */
+bool muxAudioBurnIn (const juce::File& video, const juce::File& audio, const juce::File& out, double videoOffsetSec, const BurnIn&,
+                     const std::function<bool (double)>& progress, juce::String& error, double rangeStartSec = 0.0, double rangeEndSec = -1.0);
+
 /** macOS: decodifica l'audio di un video (qualunque contenitore, .mov compreso) con AVFoundation, gia' alla frequenza richiesta,
     mono o stereo. Ritorna false se non e' disponibile (altri sistemi) o se fallisce. progress: 0..1. */
 bool decodeAudioNative (const juce::File&, double targetRate, juce::AudioBuffer<float>& out, const std::function<void (float)>& progress, juce::String& error);

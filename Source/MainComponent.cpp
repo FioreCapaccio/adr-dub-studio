@@ -70,18 +70,22 @@ class VideoExportJob : public juce::ThreadWithProgressWindow
 {
 public:
     /** from/to: intervallo della timeline in campioni (to <= from = tutto il video). */
-    VideoExportJob (Session s, double r, juce::File v, double off, juce::File o, int64_t from, int64_t to, std::function<void (bool, juce::String)> d)
+    VideoExportJob (Session s, double r, juce::File v, double off, juce::File o, int64_t from, int64_t to, std::shared_ptr<video::BurnIn> b, std::function<void (bool, juce::String)> d)
         : juce::ThreadWithProgressWindow ("Esportazione video con mix...", true, true),
-          session (std::move (s)), rate (r), videoFile (std::move (v)), offset (off), outFile (std::move (o)), rangeFrom (from), rangeTo (to), done (std::move (d)) {}
+          session (std::move (s)), rate (r), videoFile (std::move (v)), offset (off), outFile (std::move (o)), rangeFrom (from), rangeTo (to), burn (std::move (b)), done (std::move (d)) {}
 
     void run() override
     {
         auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("arotron_mix", ".wav");
         juce::String msg;
+        for (auto& t : session.tracks) if (t.live->trackType.load() == TrackGuide) t.live->mute = true;   // la Guida (dialogo originale) non entra nel video consegnato
         ok = renderMixdown (session, rate, tmp, [this] (double p) { setProgress (p * 0.4); return ! threadShouldExit(); }, msg, rangeFrom, rangeTo);
         if (ok)
-            ok = video::muxAudio (videoFile, tmp, outFile, offset, [this] (double p) { setProgress (0.4 + 0.6 * p); return ! threadShouldExit(); }, msg,
-                                  rangeTo > rangeFrom ? (double) rangeFrom / rate : 0.0, rangeTo > rangeFrom ? (double) rangeTo / rate : -1.0);
+        {
+            auto prog = [this] (double p) { setProgress (0.4 + 0.6 * p); return ! threadShouldExit(); };
+            const double a = rangeTo > rangeFrom ? (double) rangeFrom / rate : 0.0, b = rangeTo > rangeFrom ? (double) rangeTo / rate : -1.0;
+            ok = burn != nullptr ? video::muxAudioBurnIn (videoFile, tmp, outFile, offset, *burn, prog, msg, a, b) : video::muxAudio (videoFile, tmp, outFile, offset, prog, msg, a, b);
+        }
         tmp.deleteFile();
         message = ok ? "Video esportato in " + outFile.getFullPathName() : msg;
     }
@@ -95,6 +99,7 @@ private:
     double offset = 0.0;
     juce::File outFile;
     int64_t rangeFrom = 0, rangeTo = -1;
+    std::shared_ptr<video::BurnIn> burn;
     std::function<void (bool, juce::String)> done;
     bool ok = false;
     juce::String message;
@@ -1051,14 +1056,14 @@ void MainComponent::exportVideoDialog()
     // con un intervallo scelto sul righello si chiede se esportare solo quello
     const bool hasSel = project->exportOut > project->exportIn && project->exportIn >= 0;
     juce::Component::SafePointer<MainComponent> safe (this);
-    auto choose = [safe, video] (bool useRange)
+    auto chooseFile = [safe, video] (bool useRange, bool burnIn)
     {
         if (safe == nullptr) return;
-        const auto def = video->file.getParentDirectory().getChildFile (video->file.getFileNameWithoutExtension() + (useRange ? "_intervallo" : "_mix")).withFileExtension ("mov");
+        const auto def = video->file.getParentDirectory().getChildFile (video->file.getFileNameWithoutExtension() + (burnIn ? "_revisione" : (useRange ? "_intervallo" : "_mix"))).withFileExtension ("mov");
         safe->chooser = std::make_unique<juce::FileChooser> ("Esporta video con mix", def, "*.mov");
         safe->chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                                         | juce::FileBrowserComponent::warnAboutOverwriting,
-                                    [safe, video, useRange] (const juce::FileChooser& fc)
+                                    [safe, video, useRange, burnIn] (const juce::FileChooser& fc)
     {
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
@@ -1066,8 +1071,17 @@ void MainComponent::exportVideoDialog()
         if (f == video->file) { safe->showError ("Scegli un nome diverso da quello del video originale."); return; }
 
         const int64_t from = useRange ? safe->project->exportIn : 0, to = useRange ? safe->project->exportOut : -1;
+        std::shared_ptr<video::BurnIn> burn;
+        if (burnIn)
+        {
+            burn = std::make_shared<video::BurnIn>();
+            const double rate = safe->project->getSampleRate();
+            burn->timecodeAt = [fmt = safe->project->tcFmt(), start = safe->project->tcStartSec] (double t) { return secondsToTimecode (t + start, fmt); };
+            for (auto& c : safe->project->getSession().cues)
+                burn->lines.push_back ({ (double) c.inPos / rate - 1.0, (double) c.outPos / rate, c.character, c.dialogue, c.number });   // la battuta appare 1 s prima dell'ingresso
+        }
         safe->videoJob = std::make_unique<VideoExportJob> (safe->project->getSession().cloneDetached(), safe->project->getSampleRate(),
-                                                           video->file, video->offsetSec, f, from, to, [safe] (bool ok, juce::String msg)
+                                                           video->file, video->offsetSec, f, from, to, burn, [safe] (bool ok, juce::String msg)
         {
             juce::MessageManager::callAsync ([safe, ok, msg]
             {
@@ -1079,6 +1093,20 @@ void MainComponent::exportVideoDialog()
         });
         safe->videoJob->launchThread();
     });
+    };
+
+    // con il burn-in (timecode, personaggio e battuta incisi sul video) il video viene ricodificato: si chiede prima
+    auto choose = [safe, chooseFile] (bool useRange)
+    {
+        if (safe == nullptr) return;
+        if (! video::burnInSupported()) { chooseFile (useRange, false); return; }
+        auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, "Esporta video con mix",
+            "Vuoi incidere sul video il timecode, il personaggio e la battuta di ogni cue (per la revisione)?\n\nCon il burn-in il video viene ricodificato in H.264: ci vuole piu' tempo.",
+            "Con burn-in", "Solo il mix", "Annulla");
+        juce::NativeMessageBox::showAsync (opts, [chooseFile, useRange] (int r)
+        {
+            if (r == 0) chooseFile (useRange, true); else if (r == 1) chooseFile (useRange, false);
+        });
     };
 
     if (! hasSel) { choose (false); return; }
@@ -1105,7 +1133,7 @@ void MainComponent::exportDialog()
     const auto selLabel = hasSel ? project->formatTc ((double) project->exportIn / rate) + " - " + project->formatTc ((double) project->exportOut / rate) : juce::String();
     auto* dlg = new ExportDialog (hasLoop, engine.getLoopStart(), engine.getLoopEnd(), hasSel, project->exportIn, project->exportOut, selLabel,
                                   [safe] (const ExportOptions& o) { if (safe != nullptr) safe->runExport (o); });
-    dlg->setSize (520, 600);
+    dlg->setSize (520, 620);
 
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (dlg);
@@ -1149,14 +1177,14 @@ void MainComponent::runExport (const ExportOptions& o)
         safe->exportJob->launchThread();
     };
 
-    if (o.stems)
+    if (o.stems || o.delivery)
     {
-        chooser = std::make_unique<juce::FileChooser> ("Cartella per gli stem", juce::File::getSpecialLocation (juce::File::userDesktopDirectory), "");
+        chooser = std::make_unique<juce::FileChooser> (o.delivery ? "Cartella per la consegna" : "Cartella per gli stem", juce::File::getSpecialLocation (juce::File::userDesktopDirectory), "");
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-                              [start, base] (const juce::FileChooser& fc)
+                              [start, base, o] (const juce::FileChooser& fc)
         {
             auto dir = fc.getResult();
-            if (dir != juce::File()) start (dir.getChildFile (base + "_stems"));
+            if (dir != juce::File()) start (dir.getChildFile (base + (o.delivery ? "_consegna" : "_stems")));
         });
         return;
     }

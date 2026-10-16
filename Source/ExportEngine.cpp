@@ -1,4 +1,5 @@
 #include "ExportEngine.h"
+#include "TrackPresets.h"
 
 namespace fc
 {
@@ -220,6 +221,91 @@ bool convertTemp (const juce::File& temp, double rate, const ExportOptions& o, d
 } // namespace
 
 //==============================================================================
+namespace
+{
+struct MixInfo
+{
+    Measure m;
+    double gainDb = 0.0, gr = 0.0, peakDb = -120.0, tpDb = -120.0, lufs = -100.0, ceiling = -1.0;
+    bool limited = false;
+};
+
+/** Mixdown con bus master verso 'dest', con misura, normalizzazione e limiter di true-peak. base/span: parte della barra di avanzamento. */
+bool doMixdown (const Session& s, double rate, const ExportOptions& o, int64_t start, int64_t total, const juce::File& dest, double base, double span,
+                const std::function<bool (double)>& progress, MixInfo& mi, juce::String& err)
+{
+    const auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("arotron_mix", ".wav");
+    auto p1 = [&] (double p) { return ! progress || progress (base + span * 0.55 * p); };
+    if (! renderToTemp (s, rate, start, total, true, temp, &mi.m, p1, err)) { temp.deleteFile(); return false; }
+
+    mi.peakDb = juce::Decibels::gainToDecibels (mi.m.peak, -120.0f);
+    mi.tpDb = juce::Decibels::gainToDecibels (mi.m.truePeak, -120.0f);
+    if (o.norm == ExportOptions::Norm::Peak && mi.m.peak > 0.0f) mi.gainDb = o.normTarget - mi.peakDb;
+    else if (o.norm == ExportOptions::Norm::Lufs && mi.m.lufs > -99.0) mi.gainDb = o.normTarget - mi.m.lufs;
+
+    // tetto: dopo la normalizzazione a LUFS un limiter true-peak impedisce di superare il ceiling
+    mi.ceiling = juce::jmin (o.ceilingDb, -0.1);
+    mi.limited = o.norm == ExportOptions::Norm::Lufs && (mi.tpDb + mi.gainDb) > mi.ceiling;
+
+    auto p2 = [&] (double p) { return ! progress || progress (p); };
+    const bool ok = convertTemp (temp, rate, o, juce::Decibels::decibelsToGain ((float) mi.gainDb), mi.limited,
+                                 (double) juce::Decibels::decibelsToGain ((float) mi.ceiling), dest, base + span * 0.55, span * 0.45, p2, err, mi.gr);
+    temp.deleteFile();
+    if (! ok) return false;
+    mi.lufs = mi.m.lufs > -99.0 ? mi.m.lufs + mi.gainDb : -100.0;
+    return true;
+}
+
+/** Stem gia' preparato (le altre tracce sono in mute) senza bus master, con un guadagno fisso (1 = nessuno). */
+bool doStem (const Session& s, double rate, const ExportOptions& o, int64_t start, int64_t total, double gainLin, const juce::File& dest, double base, double span,
+             const std::function<bool (double)>& progress, Measure* measure, juce::String& err)
+{
+    const auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("arotron_stem", ".wav");
+    auto sub = [&] (double p) { return ! progress || progress (base + span * 0.6 * p); };
+    if (! renderToTemp (s, rate, start, total, false, temp, measure, sub, err)) { temp.deleteFile(); return false; }
+    double gr = 0.0;
+    auto sub2 = [&] (double p) { return ! progress || progress (p); };
+    const bool ok = convertTemp (temp, rate, o, gainLin, false, 1.0, dest, base + span * 0.6, span * 0.4, sub2, err, gr);
+    temp.deleteFile();
+    return ok;
+}
+
+juce::String htmlEsc (const juce::String& s) { return s.replace ("&", "&amp;").replace ("<", "&lt;").replace (">", "&gt;"); }
+
+juce::String reportHtml (const ExportOptions& o, const std::vector<ExportItem>& items, const MixInfo& mi, int unrouted, double seconds, const juce::String& baseName)
+{
+    juce::String h;
+    h << "<!DOCTYPE html><html lang=\"it\"><head><meta charset=\"utf-8\"><title>Rapporto di consegna</title><style>"
+         "body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111;margin:24px}h1{font-size:21px;margin:0 0 4px}.meta{color:#555;font-size:12px;margin-bottom:14px}"
+         "table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #bbb;padding:6px 8px;text-align:left}th{background:#eee}td.r{text-align:right;font-variant-numeric:tabular-nums}"
+         ".warn{color:#a30;margin-top:12px;font-size:13px}</style></head><body><h1>Rapporto di consegna - " << htmlEsc (baseName) << "</h1><div class=\"meta\">"
+      << htmlEsc (juce::Time::getCurrentTime().formatted ("%d/%m/%Y %H:%M")) << " &middot; " << o.format.toUpperCase() << " " << o.bitDepth << " bit &middot; "
+      << (o.outRate > 0.0 ? juce::String (o.outRate / 1000.0, 1) + " kHz" : juce::String ("frequenza della sessione")) << " &middot; durata " << juce::String (seconds, 1) << " s"
+      << (o.presetName.isNotEmpty() ? " &middot; preset: " + htmlEsc (o.presetName) : juce::String()) << "</div>"
+      << "<table><tr><th>File</th><th>Picco (dBFS)</th><th>True peak (dBTP)</th><th>Loudness (LUFS)</th><th>LRA (LU)</th></tr>";
+    for (auto& it : items)
+        h << "<tr><td>" << htmlEsc (juce::File (it.file).getFileName()) << "</td><td class=\"r\">" << juce::String (it.peakDb, 1) << "</td><td class=\"r\">" << juce::String (it.truePeakDb, 1)
+          << "</td><td class=\"r\">" << (it.lufs > -99.0 ? juce::String (it.lufs, 1) : juce::String ("n/d")) << "</td><td class=\"r\">" << (it.lra > 0.0 ? juce::String (it.lra, 1) : juce::String ("-")) << "</td></tr>";
+    h << "</table>";
+    if (o.norm == ExportOptions::Norm::Lufs) h << "<p>Normalizzazione del MIX a " << juce::String (o.normTarget, 1) << " LUFS (guadagno " << (mi.gainDb >= 0 ? "+" : "") << juce::String (mi.gainDb, 1)
+                                                  << " dB, tetto true-peak " << juce::String (mi.ceiling, 1) << " dBTP" << (mi.limited ? ", limiter intervenuto" : "") << "). Gli stem hanno lo stesso guadagno.</p>";
+    h << "<p style=\"font-size:12px;color:#555\">Misura di loudness: programma intero secondo ITU-R BS.1770 / EBU R128 (non limitata al solo dialogo). Gli stem sono presi prima del bus master.</p>";
+    if (unrouted > 0) h << "<div class=\"warn\">" << unrouted << " tracce con clip non sono assegnate a un bus di ruolo (Dialoghi / M&amp;E / Effetti): compaiono solo nel MIX.</div>";
+    h << "</body></html>";
+    return h;
+}
+
+/** Copia della sessione pronta per l'esportazione: la Guida (dialogo originale) resta fuori se richiesto. */
+Session prepare (const Session& source, const ExportOptions& o)
+{
+    Session s = source.cloneDetached();
+    if (o.excludeGuide)
+        for (auto& t : s.tracks)
+            if (t.live->trackType.load() == TrackGuide) t.live->mute = true;
+    return s;
+}
+} // namespace
+
 ExportResult exportSession (const Session& session, double rate, const ExportOptions& o, const juce::File& target,
                             const juce::String& baseName, const std::function<bool (double)>& progress)
 {
@@ -233,36 +319,85 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
     }
     if (total <= 0) { res.message = "L'intervallo da esportare e' vuoto."; return res; }
 
-    const auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory);
+    const Session base = prepare (session, o);
     const auto ext = "." + o.format;
+    auto isGuide = [&o] (const Track& t) { return o.excludeGuide && t.live->trackType.load() == TrackGuide; };
 
-    //---------------------------------------------------------------- stem
+    //---------------------------------------------------------------- pacchetto di consegna: MIX + stem per ruolo + rapporto
+    if (o.delivery)
+    {
+        target.createDirectory();
+        struct Role { int bus; const char* tag; };
+        const Role roles[] = { { 1, "DIA" }, { 2, "ME" }, { 3, "FX" } };
+        std::vector<int> active;   // ruoli che hanno almeno una traccia con clip
+        int unrouted = 0;
+        for (auto& t : base.tracks)
+        {
+            if (t.clips.empty() || isGuide (t)) continue;
+            const int b = t.live->outBus.load();
+            if (b >= 1 && b <= 3) { if (std::find (active.begin(), active.end(), b) == active.end()) active.push_back (b); }
+            else ++unrouted;
+        }
+        std::sort (active.begin(), active.end());
+        const int steps = 1 + (int) active.size();
+        const double span = 1.0 / (double) steps;
+        juce::String err;
+
+        MixInfo mi;
+        const auto mixFile = target.getChildFile (juce::File::createLegalFileName (baseName + "_MIX") + ext);
+        if (! doMixdown (base, rate, o, start, total, mixFile, 0.0, span, progress, mi, err)) { res.message = err; return res; }
+        const double seconds = (double) total / rate;
+        std::vector<ExportItem> items;
+        items.push_back ({ mixFile.getFullPathName(), mi.peakDb + mi.gainDb - (mi.limited ? mi.gr : 0.0), juce::jmin (mi.tpDb + mi.gainDb, mi.limited ? mi.ceiling : 1000.0), mi.lufs, mi.m.lra });
+        res.files.add (mixFile.getFullPathName());
+
+        const double gainLin = (double) juce::Decibels::decibelsToGain ((float) mi.gainDb);
+        int step = 1;
+        for (int b : active)
+        {
+            Session s = base.cloneDetached();
+            for (auto& t : s.tracks) { if (t.live->outBus.load() != b) t.live->mute = true; t.live->solo = false; }
+            const char* tag = roles[b - 1].tag;
+            const auto dest = target.getChildFile (juce::File::createLegalFileName (baseName + "_" + tag) + ext);
+            Measure m;
+            if (! doStem (s, rate, o, start, total, gainLin, dest, span * step, span, progress, &m, err)) { res.message = err; return res; }
+            ++step;
+            items.push_back ({ dest.getFullPathName(), juce::Decibels::gainToDecibels (m.peak, -120.0f) + mi.gainDb, juce::Decibels::gainToDecibels (m.truePeak, -120.0f) + mi.gainDb,
+                               m.lufs > -99.0 ? m.lufs + mi.gainDb : -100.0, m.lra });
+            res.files.add (dest.getFullPathName());
+        }
+
+        const auto report = target.getChildFile (juce::File::createLegalFileName (baseName + "_rapporto") + ".html");
+        report.replaceWithText (reportHtml (o, items, mi, unrouted, seconds, baseName));
+        res.items = items;
+        res.reportFile = report.getFullPathName();
+        res.ok = true;
+        res.gainDb = mi.gainDb; res.limiterGrDb = mi.gr;
+        res.peakDb = items.front().peakDb; res.truePeakDb = items.front().truePeakDb; res.lufs = mi.lufs; res.lra = mi.m.lra;
+        res.message = "Consegna esportata in " + target.getFullPathName() + "\n" + juce::String ((int) items.size()) + " file (MIX" + (active.empty() ? juce::String() : juce::String (" + ") + juce::String ((int) active.size()) + " stem")
+                      + ") e rapporto.\nMIX: " + (mi.lufs > -99.0 ? juce::String (mi.lufs, 1) + " LUFS" : juce::String ("n/d")) + ", true-peak " + juce::String (items.front().truePeakDb, 1) + " dBTP";
+        if (unrouted > 0) res.message << "\nATTENZIONE: " << unrouted << " tracce non sono sul bus di un ruolo e sono solo nel MIX.";
+        return res;
+    }
+
+    //---------------------------------------------------------------- stem per traccia
     if (o.stems)
     {
         target.createDirectory();
         int index = 0, count = 0;
-        for (auto& t : session.tracks) if (! t.clips.empty()) ++count;
+        for (auto& t : base.tracks) if (! t.clips.empty() && ! isGuide (t)) ++count;
         if (count == 0) { res.message = "Nessuna traccia con clip da esportare."; return res; }
 
-        for (size_t ti = 0; ti < session.tracks.size(); ++ti)
+        for (size_t ti = 0; ti < base.tracks.size(); ++ti)
         {
-            if (session.tracks[ti].clips.empty()) continue;
-            Session s = session.cloneDetached();
+            if (base.tracks[ti].clips.empty() || isGuide (base.tracks[ti])) continue;
+            Session s = base.cloneDetached();
             for (size_t k = 0; k < s.tracks.size(); ++k) { s.tracks[k].live->mute = (k != ti); s.tracks[k].live->solo = false; }
 
-            const auto temp = tempDir.getNonexistentChildFile ("arotron_stem", ".wav");
-            juce::String err;
-            const double base = (double) index / (double) count, span = 1.0 / (double) count;
-            auto sub = [&] (double p) { return ! progress || progress (base + span * 0.6 * p); };
-            if (! renderToTemp (s, rate, start, total, false, temp, nullptr, sub, err)) { temp.deleteFile(); res.message = err; return res; }
-
-            const auto name = juce::File::createLegalFileName (baseName + "_" + juce::String (++index).paddedLeft ('0', 2) + "_" + session.tracks[ti].name);
+            const auto name = juce::File::createLegalFileName (baseName + "_" + juce::String (++index).paddedLeft ('0', 2) + "_" + base.tracks[ti].name);
             const auto dest = target.getChildFile (name + ext);
-            double gr = 0.0;
-            auto sub2 = [&] (double p) { return ! progress || progress (p); };
-            ExportOptions oo = o;
-            if (! convertTemp (temp, rate, oo, 1.0, false, 1.0, dest, base + span * 0.6, span * 0.4, sub2, err, gr)) { temp.deleteFile(); res.message = err; return res; }
-            temp.deleteFile();
+            juce::String err;
+            if (! doStem (s, rate, o, start, total, 1.0, dest, (double) (index - 1) / (double) count, 1.0 / (double) count, progress, nullptr, err)) { res.message = err; return res; }
             res.files.add (dest.getFullPathName());
         }
         res.ok = true;
@@ -271,57 +406,25 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
     }
 
     //---------------------------------------------------------------- mixdown
-    const auto temp = tempDir.getNonexistentChildFile ("arotron_mix", ".wav");
-    Measure m;
+    MixInfo mi;
     juce::String err;
-    const bool needsMeasure = true;   // le misure servono sempre per il resoconto
-    auto p1 = [&] (double p) { return ! progress || progress (p * 0.55); };
-    if (! renderToTemp (session, rate, start, total, true, temp, needsMeasure ? &m : nullptr, p1, err))
-    {
-        temp.deleteFile();
-        res.message = err;
-        return res;
-    }
-
-    // guadagno di normalizzazione
-    double gainDb = 0.0;
-    const double peakDb = juce::Decibels::gainToDecibels (m.peak, -120.0f);
-    const double tpDb = juce::Decibels::gainToDecibels (m.truePeak, -120.0f);
-    if (o.norm == ExportOptions::Norm::Peak && m.peak > 0.0f)
-        gainDb = o.normTarget - peakDb;
-    else if (o.norm == ExportOptions::Norm::Lufs && m.lufs > -99.0)
-        gainDb = o.normTarget - m.lufs;
-
-    // tetto: dopo la normalizzazione a LUFS un limiter true-peak impedisce di superare il ceiling
-    const double ceiling = juce::jmin (o.ceilingDb, -0.1);
-    const bool useLimiter = o.norm == ExportOptions::Norm::Lufs && (tpDb + gainDb) > ceiling;
-    double gr = 0.0;
-
-    auto p2 = [&] (double p) { return ! progress || progress (p); };
-    if (! convertTemp (temp, rate, o, juce::Decibels::decibelsToGain ((float) gainDb), useLimiter,
-                       (double) juce::Decibels::decibelsToGain ((float) ceiling), target, 0.55, 0.45, p2, err, gr))
-    {
-        temp.deleteFile();
-        res.message = err;
-        return res;
-    }
-    temp.deleteFile();
+    if (! doMixdown (base, rate, o, start, total, target, 0.0, 1.0, progress, mi, err)) { res.message = err; return res; }
 
     res.ok = true;
     res.files.add (target.getFullPathName());
-    res.gainDb = gainDb;
-    res.limiterGrDb = gr;
-    res.peakDb = peakDb + gainDb - (useLimiter ? gr : 0.0);
-    res.truePeakDb = juce::jmin (tpDb + gainDb, useLimiter ? ceiling : 1000.0);
-    res.lufs = m.lufs > -99.0 ? m.lufs + gainDb - (useLimiter ? gr * 0.0 : 0.0) : -100.0;
-    res.lra = m.lra;
+    res.gainDb = mi.gainDb;
+    res.limiterGrDb = mi.gr;
+    res.peakDb = mi.peakDb + mi.gainDb - (mi.limited ? mi.gr : 0.0);
+    res.truePeakDb = juce::jmin (mi.tpDb + mi.gainDb, mi.limited ? mi.ceiling : 1000.0);
+    res.lufs = mi.lufs;
+    res.lra = mi.m.lra;
 
     juce::String msg = "Esportato in " + target.getFullPathName();
     msg << "\nLoudness integrato: " << (res.lufs > -99.0 ? juce::String (res.lufs, 1) + " LUFS" : juce::String ("n/d"))
         << "   LRA: " << juce::String (res.lra, 1) << " LU"
         << "\nPicco: " << juce::String (res.peakDb, 1) << " dBFS   True-peak: " << juce::String (res.truePeakDb, 1) << " dBTP";
-    if (std::abs (gainDb) > 0.005) msg << "\nGuadagno di normalizzazione: " << (gainDb >= 0 ? "+" : "") << juce::String (gainDb, 1) << " dB";
-    if (useLimiter) msg << "\nLimiter true-peak intervenuto (riduzione massima " << juce::String (gr, 1) << " dB)";
+    if (std::abs (mi.gainDb) > 0.005) msg << "\nGuadagno di normalizzazione: " << (mi.gainDb >= 0 ? "+" : "") << juce::String (mi.gainDb, 1) << " dB";
+    if (mi.limited) msg << "\nLimiter true-peak intervenuto (riduzione massima " << juce::String (mi.gr, 1) << " dB)";
     if (res.peakDb > 0.0) msg << "\nATTENZIONE: il picco supera 0 dBFS, il file puo' distorcere.";
     res.message = msg;
     return res;

@@ -7,7 +7,7 @@ using namespace theme;
 
 namespace
 {
-struct Preset { const char* name; const char* fmt; int depth; double rate; int norm; double value; double ceiling; bool dither; bool stems; };
+struct Preset { const char* name; const char* fmt; int depth; double rate; int norm; double value; double ceiling; bool dither; bool stems; bool delivery = false; };
 // norm: 0 nessuna, 1 picco, 2 LUFS
 const Preset presets[] = {
     { "Master (WAV 24 bit)",                    "wav", 24, 0.0,     0, 0.0,   -1.0, false, false },
@@ -16,6 +16,9 @@ const Preset presets[] = {
     { "Podcast (-16 LUFS, WAV 16 bit)",         "wav", 16, 44100.0, 2, -16.0, -1.0, true,  false },
     { "CD (16 bit, 44,1 kHz, picco -0,3 dB)",   "wav", 16, 44100.0, 1, -0.3,  -1.0, true,  false },
     { "Stem (un file per traccia)",             "wav", 24, 0.0,     0, 0.0,   -1.0, false, true  },
+    { "Consegna doppiaggio: MIX + stem DIA/ME/FX (-23 LUFS)", "wav", 24, 48000.0, 2, -23.0, -1.0, false, false, true },
+    { "TV USA, ATSC A/85 (-24 LUFS, -2 dBTP)",  "wav", 24, 48000.0, 2, -24.0, -2.0, false, false },
+    { "Streaming, dialoghi (-27 LUFS, -2 dBTP): verifica le specifiche", "wav", 24, 48000.0, 2, -27.0, -2.0, false, false },
     { "Personalizzato",                         "wav", 24, 0.0,     0, 0.0,   -1.0, true,  false }
 };
 constexpr int numPresets = (int) (sizeof (presets) / sizeof (presets[0]));
@@ -55,6 +58,9 @@ ExportDialog::ExportDialog (bool loop, int64_t loopStart, int64_t loopEnd, bool 
     }
     addAndMakeVisible (dither);
     addAndMakeVisible (stems);
+    addAndMakeVisible (excludeGuide);
+    addAndMakeVisible (delivery);
+    excludeGuide.setToggleState (true, juce::dontSendNotification);
 
     summary.setFont (font (11.5f));
     summary.setColour (juce::Label::textColourId, dim);
@@ -68,7 +74,9 @@ ExportDialog::ExportDialog (bool loop, int64_t loopStart, int64_t loopEnd, bool 
     value.onTextChange = [this] { if (! applying) markCustom(); updateEnabled(); };
     ceiling.onTextChange = [this] { if (! applying) markCustom(); };
     dither.onClick = [this] { if (! applying) markCustom(); };
-    stems.onClick = [this] { if (! applying) markCustom(); updateEnabled(); };
+    stems.onClick = [this] { if (stems.getToggleState()) delivery.setToggleState (false, juce::dontSendNotification); if (! applying) markCustom(); updateEnabled(); };
+    delivery.onClick = [this] { if (delivery.getToggleState()) stems.setToggleState (false, juce::dontSendNotification); if (! applying) markCustom(); updateEnabled(); };
+    excludeGuide.onClick = [this] { if (! applying) markCustom(); };
     exportBtn.onClick = [this] { close (true); };
     cancelBtn.onClick = [this] { close (false); };
 
@@ -89,6 +97,7 @@ void ExportDialog::applyPreset (int idx)
     ceiling.setText (juce::String (p.ceiling, 1), juce::dontSendNotification);
     dither.setToggleState (p.dither, juce::dontSendNotification);
     stems.setToggleState (p.stems, juce::dontSendNotification);
+    delivery.setToggleState (p.delivery, juce::dontSendNotification);
     applying = false;
     updateEnabled();
 }
@@ -103,7 +112,7 @@ void ExportDialog::markCustom()
 void ExportDialog::updateEnabled()
 {
     const int n = norm.getSelectedId() - 1;
-    const bool isStem = stems.getToggleState();
+    const bool isStem = stems.getToggleState(), isDelivery = delivery.getToggleState();
     norm.setEnabled (! isStem);
     value.setEnabled (n > 0 && ! isStem);
     ceiling.setEnabled (n == 2 && ! isStem);
@@ -114,14 +123,15 @@ void ExportDialog::updateEnabled()
     if (format.getSelectedId() == 3 && depth.getSelectedId() == 3) depth.setSelectedId (2, juce::dontSendNotification);
 
     juce::String s;
-    if (isStem) s = "Ogni traccia con clip viene esportata in un file separato, dopo fader e inserti ma senza limiter e plug-in del master. "
+    if (isDelivery) s = "In una sola esportazione: il MIX (con il bus master) e uno stem per ogni bus di ruolo (Dialoghi, M&E, Effetti), tutti con lo stesso guadagno, piu' un rapporto HTML con picco, true-peak e loudness di ogni file. Scegli la cartella di destinazione.";
+    else if (isStem) s = "Ogni traccia con clip viene esportata in un file separato, dopo fader e inserti ma senza limiter e plug-in del master. "
                     "I file sono allineati tra loro.";
     else if (n == 2) s = "Il programma viene misurato e riportato all'obiettivo. Se questo fa superare il tetto di true-peak interviene un limiter trasparente.";
     else if (n == 1) s = "Il guadagno viene regolato in modo che il picco massimo arrivi al valore indicato.";
     else s = "Nessuna modifica di livello: il file e' il mix cosi' come lo senti.";
     if (depth.getSelectedId() == 1) s << " A 16 bit viene aggiunto un leggero dither per evitare la distorsione di quantizzazione.";
     summary.setText (s, juce::dontSendNotification);
-    exportBtn.setButtonText (isStem ? "Scegli cartella..." : "Esporta...");
+    exportBtn.setButtonText (isStem || isDelivery ? "Scegli cartella..." : "Esporta...");
 }
 
 ExportOptions ExportDialog::collect() const
@@ -144,6 +154,9 @@ ExportOptions ExportDialog::collect() const
     o.ceilingDb = juce::jlimit (-12.0, -0.1, o.ceilingDb);
     o.dither = dither.getToggleState();
     o.stems = stems.getToggleState();
+    o.delivery = delivery.getToggleState();
+    o.excludeGuide = excludeGuide.getToggleState();
+    if (preset.getSelectedId() - 1 != customPreset) o.presetName = preset.getText();
     return o;
 }
 
@@ -159,6 +172,8 @@ void ExportDialog::save() const
     s.setValue ("export.ceiling", ceiling.getText());
     s.setValue ("export.dither", dither.getToggleState());
     s.setValue ("export.stems", stems.getToggleState());
+    s.setValue ("export.delivery", delivery.getToggleState());
+    s.setValue ("export.excludeGuide", excludeGuide.getToggleState());
     s.saveIfNeeded();
 }
 
@@ -183,6 +198,8 @@ void ExportDialog::load()
     ceiling.setText (s.getValue ("export.ceiling", "-1.0"), juce::dontSendNotification);
     dither.setToggleState (s.getBoolValue ("export.dither", true), juce::dontSendNotification);
     stems.setToggleState (s.getBoolValue ("export.stems", false), juce::dontSendNotification);
+    delivery.setToggleState (s.getBoolValue ("export.delivery", false), juce::dontSendNotification);
+    excludeGuide.setToggleState (s.getBoolValue ("export.excludeGuide", true), juce::dontSendNotification);
     range.setSelectedId (hasSelRegion ? 3 : 1, juce::dontSendNotification);
     applying = false;
 }
@@ -219,6 +236,8 @@ void ExportDialog::resized()
     row (ceilLbl, ceiling);
     dither.setBounds (r.removeFromTop (24));
     stems.setBounds (r.removeFromTop (24));
+    delivery.setBounds (r.removeFromTop (24));
+    excludeGuide.setBounds (r.removeFromTop (24));
     r.removeFromTop (6);
     auto bottom = r.removeFromBottom (34);
     summary.setBounds (r);

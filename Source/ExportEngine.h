@@ -18,7 +18,13 @@ struct ExportOptions
     double ceilingDb = -1.0;          // tetto di true-peak: se la normalizzazione lo supera interviene un limiter
     bool dither = true;               // dither TPDF a 16 bit
     bool stems = false;               // un file per traccia (senza bus master)
+    bool excludeGuide = true;         // le tracce con ruolo Guida (dialogo originale) non entrano in mix e stem
+    bool delivery = false;            // pacchetto di consegna: MIX + stem per ruolo (Dialoghi, M&E, Effetti) + rapporto; target = cartella
+    juce::String presetName;          // nome del preset (solo per il rapporto)
 };
+
+/** Un file del pacchetto di consegna con le sue misure (dopo il guadagno di normalizzazione). */
+struct ExportItem { juce::String file; double peakDb = -120.0, truePeakDb = -120.0, lufs = -100.0, lra = 0.0; };
 
 struct ExportResult
 {
@@ -27,6 +33,8 @@ struct ExportResult
     juce::StringArray files;
     double peakDb = -120.0, truePeakDb = -120.0, lufs = -100.0, lra = 0.0;   // misurati sul file finale (non per gli stem)
     double gainDb = 0.0, limiterGrDb = 0.0;
+    std::vector<ExportItem> items;    // pacchetto di consegna
+    juce::String reportFile;          // rapporto di consegna (HTML)
 };
 
 /** Esporta la sessione. target: il file (mixdown) oppure la cartella (stem). baseName: prefisso dei nomi degli stem. */

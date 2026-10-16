@@ -90,50 +90,61 @@ std::vector<juce::Image> thumbnails (const juce::File& f, double interval, int c
     return out;
 }
 
+namespace
+{
+/** Composizione con il video (spostato dell'offset) e l'audio del mix; la composizione parte da rangeStartSec se c'e' un intervallo. nil + error se fallisce. */
+AVMutableComposition* makeComposition (const juce::File& video, const juce::File& audio, double videoOffsetSec, double rangeStartSec, double rangeEndSec, juce::String& error)
+{
+    AVURLAsset* v = [AVURLAsset URLAssetWithURL: urlFor (video) options: nil];
+    AVURLAsset* a = [AVURLAsset URLAssetWithURL: urlFor (audio) options: nil];
+    AVAssetTrack* vt = [[v tracksWithMediaType: AVMediaTypeVideo] firstObject];
+    AVAssetTrack* at = [[a tracksWithMediaType: AVMediaTypeAudio] firstObject];
+    if (vt == nil) { error = "Il file video non contiene video."; return nil; }
+    if (at == nil) { error = "Il file audio del mix non e' leggibile."; return nil; }
+
+    AVMutableComposition* comp = [AVMutableComposition composition];
+    NSError* err = nil;
+
+    // offset: > 0 il video parte dopo l'audio, < 0 si tagliano i primi fotogrammi del video
+    // con un intervallo la composizione parte da rangeStartSec: il tempo nel video e' (tempo timeline - offset)
+    const bool ranged = rangeEndSec > rangeStartSec;
+    const double rs = ranged ? rangeStartSec : 0.0;
+    CMTime vSrcStart = kCMTimeZero, vAt = kCMTimeZero, vLen = v.duration;
+    const double srcStartSec = juce::jmax (0.0, rs - videoOffsetSec), atSec = juce::jmax (0.0, videoOffsetSec - rs);
+    if (atSec > 0.0) vAt = CMTimeMakeWithSeconds (atSec, 600);
+    if (srcStartSec > 0.0) vSrcStart = CMTimeMakeWithSeconds (srcStartSec, 600);
+    double lenSec = CMTimeGetSeconds (v.duration) - srcStartSec;
+    if (ranged) lenSec = juce::jmin (lenSec, (rangeEndSec - rangeStartSec) - atSec);
+    if (lenSec <= 0.0) { error = ranged ? "L'intervallo scelto non contiene video." : "L'offset del video supera la sua durata."; return nil; }
+    if (ranged || srcStartSec > 0.0) vLen = CMTimeMakeWithSeconds (lenSec, 600);
+    const CMTime endOfVideo = CMTimeAdd (vAt, vLen);
+
+    AVMutableCompositionTrack* cv = [comp addMutableTrackWithMediaType: AVMediaTypeVideo preferredTrackID: kCMPersistentTrackID_Invalid];
+    if (! [cv insertTimeRange: CMTimeRangeMake (vSrcStart, vLen) ofTrack: vt atTime: vAt error: &err])
+    {
+        error = juce::String::fromUTF8 (err.localizedDescription.UTF8String);
+        return nil;
+    }
+    cv.preferredTransform = vt.preferredTransform;
+
+    AVMutableCompositionTrack* ca = [comp addMutableTrackWithMediaType: AVMediaTypeAudio preferredTrackID: kCMPersistentTrackID_Invalid];
+    const CMTime aDur = CMTimeMinimum (a.duration, endOfVideo);
+    if (! [ca insertTimeRange: CMTimeRangeMake (kCMTimeZero, aDur) ofTrack: at atTime: kCMTimeZero error: &err])
+    {
+        error = juce::String::fromUTF8 (err.localizedDescription.UTF8String);
+        return nil;
+    }
+    return comp;
+}
+} // namespace
+
 bool muxAudio (const juce::File& video, const juce::File& audio, const juce::File& out, double videoOffsetSec,
                const std::function<bool (double)>& progress, juce::String& error, double rangeStartSec, double rangeEndSec)
 {
     @autoreleasepool
     {
-        AVURLAsset* v = [AVURLAsset URLAssetWithURL: urlFor (video) options: nil];
-        AVURLAsset* a = [AVURLAsset URLAssetWithURL: urlFor (audio) options: nil];
-        AVAssetTrack* vt = [[v tracksWithMediaType: AVMediaTypeVideo] firstObject];
-        AVAssetTrack* at = [[a tracksWithMediaType: AVMediaTypeAudio] firstObject];
-        if (vt == nil) { error = "Il file video non contiene video."; return false; }
-        if (at == nil) { error = "Il file audio del mix non e' leggibile."; return false; }
-
-        AVMutableComposition* comp = [AVMutableComposition composition];
-        NSError* err = nil;
-
-        // offset: > 0 il video parte dopo l'audio, < 0 si tagliano i primi fotogrammi del video
-        // con un intervallo la composizione parte da rangeStartSec: il tempo nel video e' (tempo timeline - offset)
-        const bool ranged = rangeEndSec > rangeStartSec;
-        const double rs = ranged ? rangeStartSec : 0.0;
-        CMTime vSrcStart = kCMTimeZero, vAt = kCMTimeZero, vLen = v.duration;
-        const double srcStartSec = juce::jmax (0.0, rs - videoOffsetSec), atSec = juce::jmax (0.0, videoOffsetSec - rs);
-        if (atSec > 0.0) vAt = CMTimeMakeWithSeconds (atSec, 600);
-        if (srcStartSec > 0.0) vSrcStart = CMTimeMakeWithSeconds (srcStartSec, 600);
-        double lenSec = CMTimeGetSeconds (v.duration) - srcStartSec;
-        if (ranged) lenSec = juce::jmin (lenSec, (rangeEndSec - rangeStartSec) - atSec);
-        if (lenSec <= 0.0) { error = ranged ? "L'intervallo scelto non contiene video." : "L'offset del video supera la sua durata."; return false; }
-        if (ranged || srcStartSec > 0.0) vLen = CMTimeMakeWithSeconds (lenSec, 600);
-        const CMTime endOfVideo = CMTimeAdd (vAt, vLen);
-
-        AVMutableCompositionTrack* cv = [comp addMutableTrackWithMediaType: AVMediaTypeVideo preferredTrackID: kCMPersistentTrackID_Invalid];
-        if (! [cv insertTimeRange: CMTimeRangeMake (vSrcStart, vLen) ofTrack: vt atTime: vAt error: &err])
-        {
-            error = juce::String::fromUTF8 (err.localizedDescription.UTF8String);
-            return false;
-        }
-        cv.preferredTransform = vt.preferredTransform;
-
-        AVMutableCompositionTrack* ca = [comp addMutableTrackWithMediaType: AVMediaTypeAudio preferredTrackID: kCMPersistentTrackID_Invalid];
-        const CMTime aDur = CMTimeMinimum (a.duration, endOfVideo);
-        if (! [ca insertTimeRange: CMTimeRangeMake (kCMTimeZero, aDur) ofTrack: at atTime: kCMTimeZero error: &err])
-        {
-            error = juce::String::fromUTF8 (err.localizedDescription.UTF8String);
-            return false;
-        }
+        AVMutableComposition* comp = makeComposition (video, audio, videoOffsetSec, rangeStartSec, rangeEndSec, error);
+        if (comp == nil) return false;
 
         AVAssetExportSession* s = [[AVAssetExportSession alloc] initWithAsset: comp presetName: AVAssetExportPresetPassthrough];
         if (s == nil) { error = "Impossibile creare la sessione di esportazione."; return false; }
@@ -166,6 +177,213 @@ bool muxAudio (const juce::File& video, const juce::File& audio, const juce::Fil
     return true;
 }
 
+//==============================================================================
+// Burn-in: ogni fotogramma viene decodificato, scritto sopra con CoreText e ricodificato in H.264; l'audio e' il mix (AAC).
+namespace
+{
+NSString* ns (const juce::String& s) { return [NSString stringWithUTF8String: s.toRawUTF8()]; }
+
+CTLineRef makeLine (NSString* text, const char* fontName, CGFloat size, CGColorRef colour)
+{
+    CTFontRef font = CTFontCreateWithName ((__bridge CFStringRef) [NSString stringWithUTF8String: fontName], size, nullptr);
+    NSDictionary* attrs = @{ (__bridge id) kCTFontAttributeName: (__bridge id) font, (__bridge id) kCTForegroundColorAttributeName: (__bridge id) colour };
+    NSAttributedString* as = [[NSAttributedString alloc] initWithString: text attributes: attrs];
+    CTLineRef line = CTLineCreateWithAttributedString ((__bridge CFAttributedStringRef) as);
+    CFRelease (font);
+    return line;
+}
+
+/** Scrive un testo su una scatola scura semitrasparente. anchor: 0 sinistra, 1 centro, 2 destra rispetto a x. Ritorna l'altezza usata. */
+CGFloat drawBoxedText (CGContextRef ctx, NSString* text, const char* fontName, CGFloat size, CGFloat x, CGFloat yTop, int anchor, CGFloat width, CGFloat height)
+{
+    CGColorRef white = CGColorCreateGenericRGB (1, 1, 1, 1);
+    CTLineRef line = makeLine (text, fontName, size, white);
+    CGFloat asc = 0, desc = 0, lead = 0;
+    const CGFloat tw = (CGFloat) CTLineGetTypographicBounds (line, &asc, &desc, &lead);
+    const CGFloat pad = size * 0.45, bw = tw + pad * 2, bh = asc + desc + pad;
+    CGFloat bx = anchor == 0 ? x : (anchor == 1 ? x - bw / 2 : x - bw);
+    const CGFloat by = height - yTop - bh;   // origine in basso a sinistra
+    CGContextSetRGBFillColor (ctx, 0, 0, 0, 0.62);
+    CGPathRef path = CGPathCreateWithRoundedRect (CGRectMake (bx, by, bw, bh), size * 0.28, size * 0.28, nullptr);
+    CGContextAddPath (ctx, path);
+    CGContextFillPath (ctx);
+    CGPathRelease (path);
+    CGContextSetTextPosition (ctx, bx + pad, by + pad * 0.5 + desc);
+    CTLineDraw (line, ctx);
+    CFRelease (line);
+    CGColorRelease (white);
+    (void) width;
+    return bh;
+}
+
+/** Spezza il testo in righe che stanno nella larghezza data. */
+std::vector<juce::String> wrapText (const juce::String& text, const char* fontName, CGFloat size, CGFloat maxWidth)
+{
+    std::vector<juce::String> lines;
+    auto words = juce::StringArray::fromTokens (text.replace ("\n", " "), " ", "");
+    words.removeEmptyStrings();
+    CGColorRef c = CGColorCreateGenericRGB (1, 1, 1, 1);
+    juce::String cur;
+    for (auto& w : words)
+    {
+        const juce::String trial = cur.isEmpty() ? w : cur + " " + w;
+        CTLineRef l = makeLine (ns (trial), fontName, size, c);
+        const bool fits = CTLineGetTypographicBounds (l, nullptr, nullptr, nullptr) <= maxWidth;
+        CFRelease (l);
+        if (fits || cur.isEmpty()) cur = trial; else { lines.push_back (cur); cur = w; }
+    }
+    if (cur.isNotEmpty()) lines.push_back (cur);
+    CGColorRelease (c);
+    return lines;
+}
+
+void drawBurnIn (CVPixelBufferRef pb, double timelineSec, const BurnIn& b)
+{
+    CVPixelBufferLockBaseAddress (pb, 0);
+    const size_t w = CVPixelBufferGetWidth (pb), h = CVPixelBufferGetHeight (pb);
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate (CVPixelBufferGetBaseAddress (pb), w, h, 8, CVPixelBufferGetBytesPerRow (pb), cs,
+                                              kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+    CGColorSpaceRelease (cs);
+    if (ctx != nullptr)
+    {
+        const CGFloat fs = (CGFloat) h * 0.034, margin = (CGFloat) h * 0.03;
+        if (b.timecode && b.timecodeAt)
+            drawBoxedText (ctx, ns (b.timecodeAt (timelineSec)), "Menlo-Bold", fs * 1.1, margin, margin, 0, (CGFloat) w, (CGFloat) h);
+
+        const BurnInLine* active = nullptr;
+        if (b.cues)
+            for (auto& l : b.lines) if (timelineSec >= l.from && timelineSec < l.to) { active = &l; break; }
+        if (active != nullptr)
+        {
+            juce::String who = active->character.isEmpty() ? juce::String() : active->character;
+            if (active->number > 0) who << (who.isEmpty() ? "" : "  ") << "#" << active->number;
+            if (who.isNotEmpty()) drawBoxedText (ctx, ns (who), "HelveticaNeue-Bold", fs, (CGFloat) w - margin, margin, 2, (CGFloat) w, (CGFloat) h);
+
+            const auto lines = wrapText (active->text, "HelveticaNeue-Bold", fs * 1.25, (CGFloat) w * 0.86);
+            CGFloat y = (CGFloat) h - margin - (CGFloat) lines.size() * fs * 1.95;
+            for (auto& ln : lines)
+            {
+                y += drawBoxedText (ctx, ns (ln), "HelveticaNeue-Bold", fs * 1.25, (CGFloat) w / 2, y, 1, (CGFloat) w, (CGFloat) h) + fs * 0.12;
+            }
+        }
+        CGContextRelease (ctx);
+    }
+    CVPixelBufferUnlockBaseAddress (pb, 0);
+}
+} // namespace
+
+bool burnInSupported() { return true; }
+
+bool muxAudioBurnIn (const juce::File& video, const juce::File& audio, const juce::File& out, double videoOffsetSec, const BurnIn& burn,
+                     const std::function<bool (double)>& progress, juce::String& error, double rangeStartSec, double rangeEndSec)
+{
+    @autoreleasepool
+    {
+        AVMutableComposition* comp = makeComposition (video, audio, videoOffsetSec, rangeStartSec, rangeEndSec, error);
+        if (comp == nil) return false;
+        const double timeOffset = rangeEndSec > rangeStartSec ? rangeStartSec : 0.0;   // tempo della timeline all'istante 0 della composizione
+
+        AVAssetTrack* cvt = [[comp tracksWithMediaType: AVMediaTypeVideo] firstObject];
+        AVAssetTrack* cat = [[comp tracksWithMediaType: AVMediaTypeAudio] firstObject];
+        NSError* err = nil;
+        AVAssetReader* reader = [[AVAssetReader alloc] initWithAsset: comp error: &err];
+        if (reader == nil) { error = "Impossibile leggere il video: " + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
+
+        AVAssetReaderTrackOutput* vOut = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack: cvt
+                                                                                    outputSettings: @{ (id) kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA) }];
+        AVAssetReaderTrackOutput* aOut = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack: cat
+                                                                                    outputSettings: @{ AVFormatIDKey: @(kAudioFormatLinearPCM), AVLinearPCMBitDepthKey: @16, AVLinearPCMIsFloatKey: @NO,
+                                                                                                       AVLinearPCMIsBigEndianKey: @NO, AVLinearPCMIsNonInterleaved: @NO, AVNumberOfChannelsKey: @2 }];
+        [reader addOutput: vOut];
+        [reader addOutput: aOut];
+
+        out.deleteFile();
+        AVAssetWriter* writer = [AVAssetWriter assetWriterWithURL: urlFor (out) fileType: AVFileTypeQuickTimeMovie error: &err];
+        if (writer == nil) { error = "Impossibile creare il file: " + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
+
+        const int w = (int) cvt.naturalSize.width, h = (int) cvt.naturalSize.height;
+        const double bitsPerSecond = juce::jlimit (4.0e6, 40.0e6, (double) w * h * 4.0);
+        AVAssetWriterInput* vIn = [AVAssetWriterInput assetWriterInputWithMediaType: AVMediaTypeVideo
+                                                                     outputSettings: @{ AVVideoCodecKey: AVVideoCodecTypeH264, AVVideoWidthKey: @(w), AVVideoHeightKey: @(h),
+                                                                                        AVVideoCompressionPropertiesKey: @{ AVVideoAverageBitRateKey: @((int) bitsPerSecond),
+                                                                                                                            AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel } }];
+        vIn.transform = cvt.preferredTransform;
+        vIn.expectsMediaDataInRealTime = NO;
+        AVAssetWriterInputPixelBufferAdaptor* adaptor = [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput: vIn
+                                                                                                                         sourcePixelBufferAttributes: @{ (id) kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+                                                                                                                                                         (id) kCVPixelBufferWidthKey: @(w), (id) kCVPixelBufferHeightKey: @(h) }];
+        AVAssetWriterInput* aIn = [AVAssetWriterInput assetWriterInputWithMediaType: AVMediaTypeAudio
+                                                                     outputSettings: @{ AVFormatIDKey: @(kAudioFormatMPEG4AAC), AVNumberOfChannelsKey: @2, AVSampleRateKey: @48000, AVEncoderBitRateKey: @192000 }];
+        aIn.expectsMediaDataInRealTime = NO;
+        [writer addInput: vIn];
+        [writer addInput: aIn];
+
+        if (! [reader startReading]) { error = "Impossibile leggere il video: " + juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String); return false; }
+        if (! [writer startWriting]) { error = "Impossibile scrivere il video: " + juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String); return false; }
+        [writer startSessionAtSourceTime: kCMTimeZero];
+
+        const double totalSec = juce::jmax (0.001, CMTimeGetSeconds (comp.duration));
+        bool vDone = false, aDone = false, cancelled = false, failed = false;
+        while (! (vDone && aDone) && ! failed)
+        {
+            bool worked = false;
+            if (! vDone && vIn.isReadyForMoreMediaData)
+            {
+                worked = true;
+                CMSampleBufferRef sb = [vOut copyNextSampleBuffer];
+                if (sb == nullptr) { [vIn markAsFinished]; vDone = true; }
+                else
+                {
+                    const CMTime pts = CMSampleBufferGetPresentationTimeStamp (sb);
+                    if (CVImageBufferRef pb = CMSampleBufferGetImageBuffer (sb))
+                    {
+                        drawBurnIn (pb, CMTimeGetSeconds (pts) + timeOffset, burn);
+                        if (! [adaptor appendPixelBuffer: pb withPresentationTime: pts]) failed = true;
+                    }
+                    CFRelease (sb);
+                    if (progress && ! progress (juce::jlimit (0.0, 1.0, CMTimeGetSeconds (pts) / totalSec))) { cancelled = true; break; }
+                }
+            }
+            if (! aDone && aIn.isReadyForMoreMediaData)
+            {
+                worked = true;
+                CMSampleBufferRef sb = [aOut copyNextSampleBuffer];
+                if (sb == nullptr) { [aIn markAsFinished]; aDone = true; }
+                else { if (! [aIn appendSampleBuffer: sb]) failed = true; CFRelease (sb); }
+            }
+            if (! worked) usleep (2000);
+        }
+
+        if (cancelled)
+        {
+            [reader cancelReading];
+            [writer cancelWriting];
+            out.deleteFile();
+            error = "Esportazione annullata.";
+            return false;
+        }
+        if (failed || writer.status == AVAssetWriterStatusFailed)
+        {
+            error = writer.error != nil ? juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String) : juce::String ("Esportazione video non riuscita.");
+            [reader cancelReading];
+            [writer cancelWriting];
+            out.deleteFile();
+            return false;
+        }
+
+        dispatch_semaphore_t sem = dispatch_semaphore_create (0);
+        [writer finishWritingWithCompletionHandler: ^{ dispatch_semaphore_signal (sem); }];
+        dispatch_semaphore_wait (sem, DISPATCH_TIME_FOREVER);
+        if (writer.status != AVAssetWriterStatusCompleted)
+        {
+            error = writer.error != nil ? juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String) : juce::String ("Esportazione video non riuscita.");
+            out.deleteFile();
+            return false;
+        }
+    }
+    return true;
+}
 
 bool decodeAudioNative (const juce::File& f, double targetRate, juce::AudioBuffer<float>& out, const std::function<void (float)>& progress, juce::String& error)
 {

@@ -33,7 +33,9 @@ private:
     juce::Label presetLbl, formatLbl, depthLbl, rateLbl, rangeLbl, normLbl, valueLbl, ceilLbl;
     juce::ComboBox preset, format, depth, rate, range, norm;
     juce::TextEditor value, ceiling;
-    juce::ToggleButton dither { "Dither a 16 bit" }, stems { "Un file per traccia (stem, senza bus master)" };
+    juce::ToggleButton dither { "Dither a 16 bit" }, stems { "Un file per traccia (stem, senza bus master)" },
+                       excludeGuide { "Escludi la traccia Guida (dialogo originale)" },
+                       delivery { "Pacchetto di consegna: MIX + stem Dialoghi / M&E / Effetti + rapporto" };
     juce::TextButton exportBtn { "Esporta..." }, cancelBtn { "Annulla" };
     juce::Label summary;
     bool applying = false;

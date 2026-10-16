@@ -102,6 +102,7 @@ private:
         stepBuiltin();
         stepTheme();
         stepWorkflow();
+        stepDelivery();
         stepEditing();
         stepPdc();
         stepAux();
@@ -1341,6 +1342,75 @@ private:
         expect (ok && peakAt == 1000 && std::abs (peakV - amp) < 0.01f, "export: impulso al campione " + juce::String (peakAt) + " (atteso 1000)");
     }
 
+    // consegna: pacchetto MIX + stem per ruolo + rapporto, esclusione della Guida
+    void stepDelivery()
+    {
+        namespace dub = fc::dub;
+        auto makeAsset = [] (float amp)
+        {
+            auto a = std::make_shared<fc::Asset>();
+            a->name = "t";
+            const int n = 2 * 48000;
+            a->audio.setSize (2, n);
+            for (int i = 0; i < n; ++i)
+            {
+                const float v = amp * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 1000.0 * i / 48000.0);
+                a->audio.setSample (0, i, v);
+                a->audio.setSample (1, i, v);
+            }
+            a->buildPeaks();
+            return a;
+        };
+        fc::Project p (formats, 48000.0);
+        dub::applyTemplate (p, dub::templates()[0]);   // Guida, M&E, Effetti, Dialoghi
+        p.addTrack();                                   // quinta traccia: nessun bus di ruolo
+        const float amps[] = { 0.5f, 0.2f, 0.05f, 0.1f, 0.03f };
+        auto& tr = p.edit().tracks;
+        for (size_t i = 0; i < tr.size(); ++i)
+        {
+            tr[i].live->eq.enabled = false; tr[i].live->comp.enabled = false; tr[i].live->limiterOn = false; tr[i].live->volumeDb = 0.0f;
+            fc::Clip c; c.id = 9000 + (int) i; c.asset = makeAsset (amps[i]); c.start = 0; c.length = 2 * 48000;
+            tr[i].clips = { c };
+        }
+        p.edit().master->limiterOn = false;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("arotron_delivery_test");
+        dir.deleteRecursively();
+        auto go = [&] (const fc::ExportOptions& o, const juce::File& f) { return fc::exportSession (p.getSession(), 48000.0, o, f, "prova", [] (double) { return true; }); };
+        auto peakDb = [&] (const juce::File& f) { float pk = 0; measureFileLufs (formats, f, &pk); return pk; };
+
+        fc::ExportOptions o;
+        o.bitDepth = 24; o.delivery = true; o.excludeGuide = true; o.presetName = "Prova";
+        const auto r = go (o, dir);
+        const auto mix = dir.getChildFile ("prova_MIX.wav"), dia = dir.getChildFile ("prova_DIA.wav"), me = dir.getChildFile ("prova_ME.wav"), fx = dir.getChildFile ("prova_FX.wav");
+        expect (r.ok && r.items.size() == 4 && mix.existsAsFile() && dia.existsAsFile() && me.existsAsFile() && fx.existsAsFile() && juce::File (r.reportFile).existsAsFile(),
+                "consegna: MIX, DIA, ME, FX e rapporto creati (" + juce::String ((int) r.items.size()) + " file) " + r.message);
+        auto near = [] (float db, float amp) { return std::abs (db - juce::Decibels::gainToDecibels (amp)) < 0.3f; };
+        expect (near (peakDb (mix), 0.38f), "consegna: il MIX non contiene la Guida (picco " + juce::String (peakDb (mix), 2) + " dB, atteso " + juce::String (juce::Decibels::gainToDecibels (0.38f), 2) + ")");
+        expect (near (peakDb (dia), 0.1f) && near (peakDb (me), 0.2f) && near (peakDb (fx), 0.05f), "consegna: ogni stem contiene solo il suo bus (" + juce::String (peakDb (dia), 1) + " / " + juce::String (peakDb (me), 1) + " / " + juce::String (peakDb (fx), 1) + " dB)");
+        const auto report = juce::File (r.reportFile).loadFileAsString();
+        expect (report.contains ("prova_MIX.wav") && report.contains ("prova_DIA.wav") && report.contains ("1 tracce con clip non sono assegnate") && report.contains ("Prova"),
+                "consegna: il rapporto elenca i file e segnala la traccia senza bus di ruolo");
+
+        // normalizzazione: il MIX arriva all'obiettivo e gli stem hanno lo stesso guadagno
+        fc::ExportOptions n = o; n.norm = fc::ExportOptions::Norm::Lufs; n.normTarget = -23.0; n.ceilingDb = -1.0;
+        const auto dir2 = dir.getChildFile ("norm");
+        const auto rn = go (n, dir2);
+        const float lufs = measureFileLufs (formats, dir2.getChildFile ("prova_MIX.wav"), nullptr);
+        expect (rn.ok && std::abs (lufs + 23.0f) < 0.4f && std::abs ((peakDb (dir2.getChildFile ("prova_DIA.wav")) - peakDb (dia)) - (float) rn.gainDb) < 0.2f,
+                "consegna: MIX a -23 LUFS (" + juce::String (lufs, 2) + ") e stem con lo stesso guadagno (" + juce::String (rn.gainDb, 1) + " dB)");
+
+        // senza esclusione la Guida entra nel mix; mixdown normale e stem per traccia la rispettano
+        fc::ExportOptions plain; plain.bitDepth = 24; plain.excludeGuide = false;
+        go (plain, dir.getChildFile ("con_guida.wav"));
+        plain.excludeGuide = true;
+        go (plain, dir.getChildFile ("senza_guida.wav"));
+        expect (near (peakDb (dir.getChildFile ("con_guida.wav")), 0.88f) && near (peakDb (dir.getChildFile ("senza_guida.wav")), 0.38f), "export: l'opzione Escludi la Guida cambia il mix (" + juce::String (peakDb (dir.getChildFile ("con_guida.wav")), 1) + " / " + juce::String (peakDb (dir.getChildFile ("senza_guida.wav")), 1) + " dB)");
+        fc::ExportOptions st; st.bitDepth = 24; st.stems = true;
+        const auto rs = go (st, dir.getChildFile ("stems"));
+        expect (rs.ok && rs.files.size() == 4, "export: gli stem per traccia saltano la Guida (" + juce::String (rs.files.size()) + " file)");
+        dir.deleteRecursively();
+    }
+
     // flusso di doppiaggio: modelli di sessione, ruoli, tracce per personaggio, nomi dei take, foglio cue
     void stepWorkflow()
     {
@@ -1868,6 +1938,48 @@ private:
                     wavR.deleteFile(); movR.deleteFile();
                 }
 
+                // burn-in: timecode in alto a sinistra e battuta in basso incisi sul video dell'intervallo 5-9 s
+                if (fc::video::burnInSupported())
+                {
+                    auto wavB = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_vburn.wav");
+                    auto movP = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_vplain.mov");
+                    auto movB = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_vburn.mov");
+                    juce::String msgB;
+                    bool okB = fc::renderMixdown (project->getSession(), 48000.0, wavB, [] (double) { return true; }, msgB, 5 * 48000, 9 * 48000);
+                    okB = okB && fc::video::muxAudio (videoFile, wavB, movP, 0.2, [] (double) { return true; }, msgB, 5.0, 9.0);
+                    fc::video::BurnIn burn;
+                    burn.timecodeAt = [] (double t) { return "01:00:" + juce::String ((int) t).paddedLeft ('0', 2) + ":00"; };
+                    burn.lines.push_back ({ 5.0, 9.0, "Sam", "Questa e' la battuta di prova per il burn-in", 3 });
+                    okB = okB && fc::video::muxAudioBurnIn (videoFile, wavB, movB, 0.2, burn, [] (double) { return true; }, msgB, 5.0, 9.0);
+                    const auto infoB = fc::video::probe (movB);
+                    expect (okB && infoB.ok && infoB.hasAudio && std::abs (infoB.duration - 4.0) < 0.2 && infoB.width == 640, "burn-in: video con audio di " + juce::String (infoB.duration, 2) + " s, larghezza " + juce::String (infoB.width) + " " + msgB);
+                    const auto plain = fc::video::thumbnails (movP, 1.0, 3, 160);
+                    const auto burned = fc::video::thumbnails (movB, 1.0, 3, 160);
+                    if (plain.size() == 3 && burned.size() == 3 && plain[1].isValid() && burned[1].isValid() && plain[1].getBounds() == burned[1].getBounds())
+                    {
+                        auto diff = [&] (juce::Rectangle<float> rel)
+                        {
+                            const auto r = plain[1].getBounds();
+                            const auto area = juce::Rectangle<int> ((int) (rel.getX() * r.getWidth()), (int) (rel.getY() * r.getHeight()), (int) (rel.getWidth() * r.getWidth()), (int) (rel.getHeight() * r.getHeight()));
+                            double sum = 0.0;
+                            for (int y = area.getY(); y < area.getBottom(); ++y)
+                                for (int x = area.getX(); x < area.getRight(); ++x)
+                                    sum += std::abs (plain[1].getPixelAt (x, y).getPerceivedBrightness() - burned[1].getPixelAt (x, y).getPerceivedBrightness());
+                            return 255.0 * sum / (double) juce::jmax (1, area.getWidth() * area.getHeight());
+                        };
+                        if (const auto dbg = juce::SystemStats::getEnvironmentVariable ("ADR_DEBUG_BURN", {}); dbg.isNotEmpty())   // per guardare il risultato a occhio
+                        {
+                            juce::FileOutputStream o (juce::File (dbg).getChildFile ("burn.png").deleteFile() ? juce::File (dbg).getChildFile ("burn.png") : juce::File (dbg).getChildFile ("burn.png"));
+                            if (o.openedOk()) juce::PNGImageFormat().writeImageToStream (burned[1], o);
+                        }
+                        const double tc = diff ({ 0.02, 0.03, 0.22, 0.12 }), bottom = diff ({ 0.10, 0.82, 0.80, 0.14 }), centre = diff ({ 0.35, 0.35, 0.30, 0.25 });
+                        expect (tc > centre * 2.0 + 2.0 && bottom > centre * 2.0 + 2.0, "burn-in: timecode e battuta visibili sul fotogramma (differenza " + juce::String (tc, 1) + " / " + juce::String (bottom, 1) + ", centro " + juce::String (centre, 1) + ")");
+                    }
+                    else
+                        expect (false, "burn-in: miniature confrontabili");
+                    wavB.deleteFile(); movP.deleteFile(); movB.deleteFile();
+                }
+
                 // offset e altezze tracce sopravvivono a salvataggio e caricamento
                 project->setVideoOffset (0.123);
                 project->getSession().tracks[0].live->height = 150;
@@ -1900,7 +2012,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.0.0"; }
+    const juce::String getApplicationVersion() override { return "2.1.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
