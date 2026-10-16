@@ -10,6 +10,7 @@
 #include "SessionCheck.h"
 #include "WorkflowGuide.h"
 #include "Conform.h"
+#include "ExternalSync.h"
 #include "VideoSupport.h"
 #include "Commands.h"
 #include "ExportDialog.h"
@@ -285,6 +286,8 @@ MainComponent::MainComponent()
     videoBtn.setToggleState (true, juce::dontSendNotification);
 
     commandManager.registerAllCommandsForTarget (this);
+    if (auto xml = juce::XmlDocument::parse (settings().getValue ("keymap", "")))   // scorciatoie personalizzate
+        commandManager.getKeyMappings()->restoreFromXml (*xml);
     commandManager.setFirstCommandTarget (this);
     setApplicationCommandManagerToWatch (&commandManager);
     addKeyListener (commandManager.getKeyMappings());
@@ -312,6 +315,8 @@ MainComponent::~MainComponent()
     if (videoWindow != nullptr) { videoWindow->clearContentComponent(); videoWindow.reset(); }
     scriptWindow.reset();
     cueWindow.reset();
+    mtcWindow.reset();
+    mtcSync.reset();
     adrWindow.reset();
 
     if (auto xml = engine.deviceManager.createStateXml())
@@ -1338,7 +1343,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1411,6 +1416,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAdrExportCsv:  i.setInfo ("Esporta cue sheet (CSV)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportPT:   i.setInfo ("Esporta cue come marker Pro Tools (testo)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportBwf:  i.setInfo ("Esporta take attivi (BWF con timecode)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdMtc:           i.setInfo ("Sincronia esterna (MTC)...", "", "Trasporto", 0); i.setTicked (mtcSync != nullptr && mtcSync->isEnabled()); break;
+        case cmdKeyEditor:     i.setInfo ("Personalizza le scorciatoie da tastiera...", "", "Aiuto", 0); break;
         case cmdReConform:     i.setInfo ("ReConform: nuovo montaggio da EDL...", "", "Modifica", 0); break;
         case cmdRelink:        i.setInfo ("Ricollega i media mancanti...", "", "File", 0); i.setActive (project->hasOfflineMedia()); break;
         case cmdSaveVersion:   i.setInfo ("Salva una versione della sessione...", "", "File", 0); i.setActive (project->getFile() != juce::File()); break;
@@ -1531,6 +1538,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrExportBwf:  exportAdrBwf(); break;
         case cmdAdrCueSheet:   exportCueSheet(); break;
         case cmdAlignToGuide:  alignSelectedToGuide(); break;
+        case cmdMtc:           toggleMtcWindow(); break;
+        case cmdKeyEditor:     keyEditorDialog(); break;
         case cmdReConform:     reconformDialog(); break;
         case cmdRelink:        relinkMedia(); break;
         case cmdSaveVersion:   saveVersionDialog(); break;
@@ -1775,8 +1784,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, 0, cmdSessionSettings }); break;
-        case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig }); break;
-        case 8: add ({ cmdWorkflow, cmdShortcuts }); break;
+        case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc }); break;
+        case 8: add ({ cmdWorkflow, cmdShortcuts, cmdKeyEditor }); break;
         case 7:
             add ({ cmdSnap, cmdFollow, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer });
             menuActions.clear();
@@ -2189,6 +2198,78 @@ private:
     juce::ToggleButton markers { "Aggiungi un marker sul materiale nuovo (senza audio)" }, saveVersion { "Salva prima una versione della sessione (consigliato)" };
 };
 } // namespace
+
+void MainComponent::toggleMtcWindow()
+{
+    if (mtcWindow != nullptr) { mtcWindow.reset(); commandManager.commandStatusChanged(); return; }
+    if (mtcSync == nullptr) mtcSync = std::make_unique<mtc::Sync> (engine, [this] { return project->tcStartSec; });
+    juce::Component::SafePointer<MainComponent> safe (this);
+    mtcWindow = std::make_unique<BoothWindow> ("Sincronia esterna (MTC) - ADR Dub Studio", [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->mtcWindow.reset(); safe->commandManager.commandStatusChanged(); } });
+    });
+    mtcWindow->setContentOwned (new mtc::Panel (*mtcSync), false);
+    mtcWindow->setResizable (false, false);
+    mtcWindow->setSize (520, 330);
+    mtcWindow->centreAroundComponent (this, 520, 330);
+    mtcWindow->setVisible (true);
+    commandManager.commandStatusChanged();
+}
+
+namespace
+{
+/** Editor delle scorciatoie: salva le modifiche nelle preferenze quando si chiude. */
+class KeyEditorPanel : public juce::Component
+{
+public:
+    explicit KeyEditorPanel (juce::ApplicationCommandManager& cm) : manager (cm), editor (*cm.getKeyMappings(), true)
+    {
+        addAndMakeVisible (editor);
+        addAndMakeVisible (resetBtn);
+        resetBtn.onClick = [this]
+        {
+            manager.getKeyMappings()->resetToDefaultMappings();
+            editor.parentHierarchyChanged();
+            editor.resized();
+            editor.repaint();
+        };
+        setSize (720, 560);
+    }
+    ~KeyEditorPanel() override
+    {
+        if (auto xml = manager.getKeyMappings()->createXml (true)) settings().setValue ("keymap", xml->toString());
+        else settings().removeValue ("keymap");   // uguale alle predefinite
+        settings().saveIfNeeded();
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (theme::panel); }
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (12);
+        auto bottom = r.removeFromBottom (34);
+        r.removeFromBottom (8);
+        editor.setBounds (r);
+        resetBtn.setBounds (bottom.removeFromRight (190));
+    }
+
+private:
+    juce::ApplicationCommandManager& manager;
+    juce::KeyMappingEditorComponent editor;
+    juce::TextButton resetBtn { "Ripristina le predefinite" };
+};
+} // namespace
+
+void MainComponent::keyEditorDialog()
+{
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (new KeyEditorPanel (commandManager));
+    lo.dialogTitle = "Scorciatoie da tastiera";
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = true;
+    lo.launchAsync();
+}
 
 void MainComponent::reconformDialog()
 {

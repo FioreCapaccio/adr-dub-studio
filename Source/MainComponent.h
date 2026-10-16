@@ -2,6 +2,7 @@
 
 #include "AdrPanel.h"
 #include "AudioEngine.h"
+#include "ExternalSync.h"
 #include "EditBar.h"
 #include "ExportEngine.h"
 #include "MixerView.h"
@@ -164,6 +165,10 @@ private:
     juce::File loadingVideo;
     std::unique_ptr<AdrWindow> adrWindow;
     std::unique_ptr<class BoothWindow> scriptWindow, cueWindow;
+    void toggleMtcWindow();
+    void keyEditorDialog();
+    std::unique_ptr<class BoothWindow> mtcWindow;
+    std::unique_ptr<mtc::Sync> mtcSync;   // ingresso MIDI e aggancio al timecode esterno
     void reconformDialog();
     juce::String reconformRun (const juce::File& oldEdl, const juce::File& newEdl, bool markers, bool saveVersion, bool apply);
     void relinkMedia();

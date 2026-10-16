@@ -15,6 +15,7 @@
 #include "SessionCheck.h"
 #include "WorkflowGuide.h"
 #include "Conform.h"
+#include "ExternalSync.h"
 #include "ThemeManager.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
@@ -114,6 +115,7 @@ private:
         stepSync();
         stepBooth();
         stepConform();
+        stepMtc();
         stepEditing();
         stepPdc();
         stepAux();
@@ -1571,6 +1573,92 @@ private:
         expect (warnDup && dup.segments.size() == 1, "ReConform: materiale usato due volte, si segue la prima occorrenza");
     }
 
+    // sincronia esterna MTC e scorciatoie
+    void stepMtc()
+    {
+        namespace mt = fc::mtc;
+        auto qf = [] (int piece, int value) { return juce::MidiMessage::quarterFrame (piece, value); };
+        auto feedTc = [&] (mt::Decoder& d, int h, int m, int s, int f, int rateCode, double startMs)
+        {
+            const int vals[8] = { f & 15, f >> 4, s & 15, s >> 4, m & 15, m >> 4, h & 15, ((h >> 4) & 1) | (rateCode << 1) };
+            for (int i = 0; i < 8; ++i) d.feed (qf (i, vals[i]), startMs + 10.0 * i);
+        };
+
+        mt::Decoder d;
+        feedTc (d, 1, 2, 3, 4, 1, 0.0);   // 01:02:03:04 a 25 fps, un quarter-frame ogni 10 ms
+        auto st = d.state (70.0);
+        expect (st.valid && st.running && st.text == "01:02:03:06" && st.fmtIndex == 2, "MTC: 8 quarter-frame danno 01:02:03:04 + 2 fotogrammi = " + st.text);
+        st = d.state (110.0);
+        expect (std::abs (st.seconds - (3723.0 + 6.0 / 25.0 + 0.040)) < 1.0e-6 && st.running, "MTC: fra un messaggio e l'altro il timecode avanza con l'orologio");
+        expect (! d.state (400.0).running && d.state (400.0).valid, "MTC: senza quarter-frame per 150 ms il timecode e' fermo");
+
+        mt::Decoder d2;   // 30 fps, ore a 10+: il bit alto dell'ora e il codice di frequenza
+        feedTc (d2, 17, 59, 58, 28, 3, 0.0);
+        st = d2.state (70.0);
+        expect (st.text == "17:59:59:00" && st.fmtIndex == 5, "MTC: 17:59:58:28 a 30 fps (+2 fotogrammi) = " + st.text);
+
+        mt::Decoder d3;   // un buco nella sequenza: si riparte dal primo quarter-frame
+        d3.feed (qf (0, 4), 0.0); d3.feed (qf (1, 0), 10.0); d3.feed (qf (4, 2), 20.0);   // manca il 2, 3
+        feedTc (d3, 0, 0, 10, 0, 1, 30.0);
+        expect (d3.state (100.0).text == "00:00:10:02", "MTC: dopo un buco ricomincia dal quarter-frame 0 (" + d3.state (100.0).text + ")");
+
+        mt::Decoder d4;   // full-frame SysEx a 29,97 drop: F0 7F 7F 01 01 hh mm ss ff F7
+        const juce::uint8 sx[] = { 0xF0, 0x7F, 0x7F, 0x01, 0x01, (juce::uint8) ((2 << 5) | 1), 10, 0, 2, 0xF7 };
+        d4.feed (juce::MidiMessage (sx, (int) sizeof (sx)), 0.0);
+        st = d4.state (10.0);
+        expect (st.valid && ! st.running && st.fmtIndex == 4 && st.text.startsWith ("01:10:00"), "MTC: messaggio full-frame a 29,97 drop letto (" + st.text + ")");
+
+        // decisioni
+        mt::Memory mem;
+        mt::Decoder run;
+        feedTc (run, 1, 0, 10, 0, 1, 0.0);                       // 01:00:10:00 (+2 fotogrammi) a 25 fps
+        const auto rs = run.state (70.0);
+        const double target = 3610.0 + 2.0 / 25.0;
+        auto dec = mt::decide (rs, 3600.0, 0.0, 48000.0, false, 0, mem);
+        expect (dec.action == mt::Action::LocateAndPlay && std::abs ((double) dec.position - target * 48000.0 + 3600.0 * 48000.0) < 1.0, "MTC: al via si posiziona e parte (" + juce::String ((juce::int64) dec.position) + ")");
+        dec = mt::decide (rs, 3600.0, 0.0, 48000.0, true, dec.position + 100, mem);
+        expect (dec.action == mt::Action::None, "MTC: dentro la tolleranza non fa nulla");
+        const int64_t far = dec.position;
+        dec = mt::decide (rs, 3600.0, 0.0, 48000.0, true, far + 48000 / 5, mem);
+        const auto first = dec.action;
+        dec = mt::decide (rs, 3600.0, 0.0, 48000.0, true, far + 48000 / 5, mem);
+        expect (first == mt::Action::None && dec.action == mt::Action::Locate, "MTC: la deriva oltre 2 fotogrammi riposiziona solo al secondo controllo di fila");
+        dec = mt::decide (rs, 3600.0, 0.5, 48000.0, false, 0, mem);
+        expect (std::abs ((double) dec.position - (target - 3600.0 + 0.5) * 48000.0) < 1.0, "MTC: lo spostamento si somma alla posizione");
+        const auto stopped = run.state (1000.0);
+        dec = mt::decide (stopped, 3600.0, 0.0, 48000.0, true, 1000, mem);
+        expect (dec.action == mt::Action::Stop, "MTC: se il timecode si ferma, il trasporto che era partito da MTC si ferma");
+        mt::Memory manual;
+        expect (mt::decide (stopped, 3600.0, 0.0, 48000.0, true, 1000, manual).action == mt::Action::None, "MTC: un trasporto avviato a mano non viene fermato dall'assenza di MTC");
+
+        // scorciatoie: salvataggio e ripristino della mappa dei tasti
+        struct Dummy : juce::ApplicationCommandTarget
+        {
+            ApplicationCommandTarget* getNextCommandTarget() override { return nullptr; }
+            void getAllCommands (juce::Array<juce::CommandID>& c) override { c.add (1); c.add (2); }
+            void getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i) override
+            {
+                i.setInfo (id == 1 ? "Uno" : "Due", "", "Prova", 0);
+                if (id == 1) i.addDefaultKeypress ('a', juce::ModifierKeys::commandModifier);
+            }
+            bool perform (const InvocationInfo&) override { return true; }
+        } keyTarget;
+        juce::ApplicationCommandManager cm1;
+        cm1.registerAllCommandsForTarget (&keyTarget);
+        auto* km = cm1.getKeyMappings();
+        expect (km->getKeyPressesAssignedToCommand (1).size() == 1, "scorciatoie: tasto predefinito presente");
+        km->clearAllKeyPresses (1);
+        km->addKeyPress (2, juce::KeyPress ('k', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0));
+        const auto xml = km->createXml (true);
+        juce::ApplicationCommandManager cm2;
+        cm2.registerAllCommandsForTarget (&keyTarget);
+        if (xml != nullptr) cm2.getKeyMappings()->restoreFromXml (*xml);
+        expect (xml != nullptr && cm2.getKeyMappings()->getKeyPressesAssignedToCommand (1).isEmpty() && cm2.getKeyMappings()->getKeyPressesAssignedToCommand (2).size() == 1,
+                "scorciatoie: le modifiche (tasto tolto e tasto nuovo) tornano identiche dopo il salvataggio");
+        cm2.getKeyMappings()->resetToDefaultMappings();
+        expect (cm2.getKeyMappings()->getKeyPressesAssignedToCommand (1).size() == 1 && cm2.getKeyMappings()->getKeyPressesAssignedToCommand (2).isEmpty(), "scorciatoie: ripristino delle predefinite");
+    }
+
     // cuffie dell'attore: mix su una seconda coppia di uscite, bip con livello proprio, talkback del direttore
     void stepBooth()
     {
@@ -2479,7 +2567,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.5.0"; }
+    const juce::String getApplicationVersion() override { return "2.6.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
