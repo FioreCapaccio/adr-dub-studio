@@ -62,13 +62,13 @@ private:
     void save() const;
 
     AudioEngine& engine;
-    juce::ToggleButton enable { "Cuffie dell'attore attive" }, duckMix { "Abbassa il mix mentre il direttore parla" };
+    juce::ToggleButton enable { TRANS ("Cuffie dell'attore attive") }, duckMix { "Abbassa il mix mentre il direttore parla" };
     juce::ComboBox outputs, talkInput;
     juce::Slider mix { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
                  beep { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
                  talk { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Label outLbl, mixLbl, beepLbl, talkLbl, inLbl, status;
-    juce::TextButton talkButton { "TALKBACK (tieni premuto)" };
+    juce::TextButton talkButton { TRANS ("TALKBACK (tieni premuto)") };
     float shownL = 0.0f, shownR = 0.0f;
     bool loading = false;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Model.h"
+#include "Lang.h"
 
 namespace fc
 {
@@ -9,8 +10,8 @@ namespace fc
     vanno sempre ritoccati a orecchio sul materiale. */
 enum TrackType { TrackNone = 0, TrackDialogue, TrackME, TrackEffects, TrackGuide, kNumTrackTypes };   // gli indici sono salvati nelle sessioni: non cambiare l'ordine
 
-inline const char* trackTypeName (int t) { static const char* n[] = { "Nessuno", "Dialoghi", "M&E", "Effetti", "Guida" }; return n[juce::jlimit (0, kNumTrackTypes - 1, t)]; }
-inline const char* trackTypeTag (int t) { static const char* n[] = { "", "DIALOGHI", "M&E", "EFFETTI", "GUIDA" }; return n[juce::jlimit (0, kNumTrackTypes - 1, t)]; }
+inline juce::String trackTypeName (int t) { static const char* n[] = { TRX ("Nessuno"), TRX ("Dialoghi"), TRX ("M&E"), TRX ("Effetti"), TRX ("Guida") }; return juce::translate (n[juce::jlimit (0, kNumTrackTypes - 1, t)]); }
+inline juce::String trackTypeTag (int t) { static const char* n[] = { "", TRX ("DIALOGHI"), TRX ("M&E"), TRX ("EFFETTI"), TRX ("GUIDA") }; return juce::translate (n[juce::jlimit (0, kNumTrackTypes - 1, t)]); }
 inline juce::Colour trackTypeColour (int t) { static const juce::uint32 c[] = { 0xff848b97, 0xff4aa8ff, 0xffb58cff, 0xffffc94d, 0xff6fbf73 }; return juce::Colour (c[juce::jlimit (0, kNumTrackTypes - 1, t)]); }
 
 inline juce::String trackPresetDescription (int t)
@@ -24,7 +25,7 @@ inline juce::String trackPresetDescription (int t)
         case TrackEffects:  return "Passa-alto 40 Hz, -1,5 dB a 350 Hz, +1,5 dB a 5 kHz (presenza), +1 dB di aria. "
                                    "Compressore 4:1, soglia -14 dB, attacco 5 ms, rilascio 80 ms. Limiter a -2 dB. Livello -3 dB.";
         case TrackGuide:    return "Dialogo originale di riferimento: nessuna elaborazione, livello -6 dB, bus Guida (escluso dalle consegne).";
-        default:            return "Nessuna elaborazione: EQ, compressore e limiter spenti, livello a 0 dB.";
+        default:            return TRANS ("Nessuna elaborazione: EQ, compressore e limiter spenti, livello a 0 dB.");
     }
 }
 
@@ -62,7 +63,7 @@ inline void applyTrackPreset (TrackLive& l, int type)
 namespace fc
 {
 /** Bus di gruppo predefiniti per ruolo: Dialoghi, M&E, Effetti e Guida hanno ciascuno il proprio bus (1..4), cosi' gli stem escono separati. */
-inline const char* groupBusName (int k) { static const char* n[] = { "DIALOGHI", "M&E", "EFFETTI", "GUIDA" }; return n[juce::jlimit (0, 3, k)]; }
+inline juce::String groupBusName (int k) { static const char* n[] = { TRX ("DIALOGHI"), TRX ("M&E"), TRX ("EFFETTI"), TRX ("GUIDA") }; return juce::translate (n[juce::jlimit (0, 3, k)]); }
 inline int roleOutBus (int type)
 {
     switch (type) { case TrackDialogue: return 1; case TrackME: return 2; case TrackEffects: return 3; case TrackGuide: return 4; default: return 0; }

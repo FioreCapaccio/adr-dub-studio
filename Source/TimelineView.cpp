@@ -255,7 +255,7 @@ void TimelineView::drawExportBar (juce::Graphics& g)
         if (r.getWidth() > 190.0f)
         {
             g.setColour (juce::Colours::black.withAlpha (0.85f));
-            g.drawText ("ESPORTA   " + project.formatTc ((double) project.exportIn / rate) + "  -  " + project.formatTc ((double) project.exportOut / rate)
+            g.drawText (TRANS ("ESPORTA   ") + project.formatTc ((double) project.exportIn / rate) + "  -  " + project.formatTc ((double) project.exportOut / rate)
                             + "   (" + juce::String ((double) (project.exportOut - project.exportIn) / rate, 1) + " s)",
                         r.toNearestInt().reduced (6, 0), juce::Justification::centredLeft, true);
         }
@@ -263,7 +263,7 @@ void TimelineView::drawExportBar (juce::Graphics& g)
     else
     {
         g.setColour (dim.withAlpha (0.8f));
-        g.drawText ("INTERVALLO DI ESPORTAZIONE: trascina qui per sceglierlo (clic destro per le opzioni)", bar.reduced (8, 0), juce::Justification::centredLeft, true);
+        g.drawText (TRANS ("INTERVALLO DI ESPORTAZIONE: trascina qui per sceglierlo (clic destro per le opzioni)"), bar.reduced (8, 0), juce::Justification::centredLeft, true);
     }
 }
 
@@ -494,7 +494,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         {
             g.setColour (dim);
             g.setFont (mono (9.5f));
-            g.drawText ((trim > 0.05f ? "+" : "") + juce::String (trim, 1) + " dB", juce::Rectangle<int> (kr.getX() - 4, (int) cy + 22, kr.getWidth() + 8, 12), juce::Justification::centred);
+            g.drawText ((trim > 0.05f ? "+" : "") + juce::String (trim, 1) + TRANS (" dB"), juce::Rectangle<int> (kr.getX() - 4, (int) cy + 22, kr.getWidth() + 8, 12), juce::Justification::centred);
         }
     }
 
@@ -524,7 +524,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
             g.drawRoundedRectangle (ar.reduced (0.5f), 9.0f, 1.0f);
             g.setColour (mode == 0 ? dim : text);
             g.setFont (font (10.0f, true));
-            g.drawText (mode == 2 ? "SCRIVI" : (mode == 1 ? "LEGGI" : "AUTO"), ar.toNearestInt(), juce::Justification::centred);
+            g.drawText (mode == 2 ? TRANS ("SCRIVI") : (mode == 1 ? "LEGGI" : "AUTO"), ar.toNearestInt(), juce::Justification::centred);
         }
 
         static const char* inputNames[] = { "IN 1", "IN 2", "IN 1+2" };
@@ -619,11 +619,11 @@ void TimelineView::drawVideoLane (juce::Graphics& g)
     g.fillRect (0, rulerH, 5, videoH - 1);
     g.setColour (text);
     g.setFont (font (13.0f, true));
-    g.drawText ("VIDEO", 16, rulerH + 8, headerW - 24, 18, juce::Justification::centredLeft);
+    g.drawText (TRANS ("VIDEO"), 16, rulerH + 8, headerW - 24, 18, juce::Justification::centredLeft);
     g.setColour (dim);
     g.setFont (font (11.0f));
     g.drawText (v->file.getFileName(), 16, rulerH + 27, headerW - 24, 16, juce::Justification::centredLeft, true);
-    g.drawText (juce::String (v->width) + "x" + juce::String (v->height) + "  " + juce::String (v->fps, 3) + " fps  "
+    g.drawText (juce::String (v->width) + "x" + juce::String (v->height) + "  " + juce::String (v->fps, 3) + TRANS (" fps  ")
                     + juce::String (v->duration, 1) + " s",
                 16, rulerH + 42, headerW - 24, 16, juce::Justification::centredLeft, true);
 }
@@ -640,7 +640,7 @@ void TimelineView::drawOfflineClip (juce::Graphics& g, const Clip& c, juce::Rect
         g.drawLine (x, wf.getBottom(), x + wf.getHeight(), wf.getY(), 1.0f);
     g.setColour (accent.brighter (0.4f));
     g.setFont (font (11.0f, true));
-    g.drawText ("OFFLINE - " + c.asset->file.getFileName() + " (File > Ricollega i media)", wf.toNearestInt().reduced (6, 0).withX (juce::jmax (wf.toNearestInt().getX() + 6, 0)), juce::Justification::centredLeft, true);
+    g.drawText (TRANS ("OFFLINE - ") + c.asset->file.getFileName() + TRANS (" (File > Ricollega i media)"), wf.toNearestInt().reduced (6, 0).withX (juce::jmax (wf.toNearestInt().getX() + 6, 0)), juce::Justification::centredLeft, true);
 }
 
 void TimelineView::drawWaveformChannel (juce::Graphics& g, const Clip& c, juce::Rectangle<float> wf, juce::Rectangle<int> lanes, int channel)
@@ -908,7 +908,7 @@ void TimelineView::paint (juce::Graphics& g)
         {
             g.setColour (dim);
             g.setFont (font (15.0f));
-            g.drawText ("Trascina qui i file audio o un video oppure usa File > Importa audio (" + juce::String (juce::CharPointer_UTF8 ("\xe2\x8c\x98")) + "I)",
+            g.drawText (TRANS ("Trascina qui i file audio o un video oppure usa File > Importa audio (") + juce::String (juce::CharPointer_UTF8 ("\xe2\x8c\x98")) + "I)",
                         lanes, juce::Justification::centred);
         }
 
@@ -925,7 +925,7 @@ void TimelineView::paint (juce::Graphics& g)
             const juce::Colour lc = mode == 2 ? accent : (mode == 1 ? green : blue.brighter (0.3f));
             g.setColour (lc.withAlpha (0.85f));
             g.setFont (font (9.5f, true));
-            g.drawText ("AUTOMAZIONE: " + juce::String (autoParamName (param)), juce::Rectangle<int> (lanes.getX() + 6, y + 1, 160, 12), juce::Justification::centredLeft);
+            g.drawText (TRANS ("AUTOMAZIONE: ") + juce::String (autoParamName (param)), juce::Rectangle<int> (lanes.getX() + 6, y + 1, 160, 12), juce::Justification::centredLeft);
             if (lane.empty())
             {
                 const float cur = param == AutoPan ? tr.live->pan.load() : (param == AutoVolume ? tr.live->volumeDb.load() : tr.live->sendDb[param - AutoSendA].load());
@@ -1032,7 +1032,7 @@ void TimelineView::paint (juce::Graphics& g)
                 g.setColour (accent);
                 g.drawRoundedRectangle (rr, 5.0f, 1.5f);
                 g.setFont (font (11.0f, true));
-                g.drawText ("REC", rr.toNearestInt().withTrimmedLeft (8), juce::Justification::topLeft);
+                g.drawText (TRANS ("REC"), rr.toNearestInt().withTrimmedLeft (8), juce::Justification::topLeft);
             }
         }
 
@@ -1088,7 +1088,7 @@ void TimelineView::paint (juce::Graphics& g)
     g.setColour (border);
     g.drawHorizontalLine (rulerH - 1, 0.0f, (float) headerW);
     g.drawVerticalLine (headerW - 1, 0.0f, (float) rulerH);
-    drawCaption (g, "Tracce", juce::Rectangle<int> (16, 0, headerW - 16, rulerH));
+    drawCaption (g, TRANS ("Tracce"), juce::Rectangle<int> (16, 0, headerW - 16, rulerH));
 
     // riordino delle tracce: linea di destinazione
     if (drag == Drag::TrackReorder && reorderTo >= 0 && reorderFrom >= 0 && reorderTo != reorderFrom)
@@ -2100,10 +2100,10 @@ void TimelineView::renameTrackDialog (int trackId)
 {
     auto* t = project.findTrack (trackId);
     if (t == nullptr) return;
-    auto* aw = new juce::AlertWindow ("Rinomina traccia", "", juce::MessageBoxIconType::NoIcon);
+    auto* aw = new juce::AlertWindow (TRANS ("Rinomina traccia"), "", juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor ("name", t->name);
-    aw->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<TimelineView> safe (this);
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, trackId] (int r)
     {
@@ -2115,10 +2115,10 @@ void TimelineView::renameMarkerDialog (int markerId)
 {
     auto* m = project.findMarker (markerId);
     if (m == nullptr) return;
-    auto* aw = new juce::AlertWindow ("Rinomina marker", "", juce::MessageBoxIconType::NoIcon);
+    auto* aw = new juce::AlertWindow (TRANS ("Rinomina marker"), "", juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor ("name", m->name);
-    aw->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<TimelineView> safe (this);
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, markerId] (int r)
     {
@@ -2132,11 +2132,11 @@ void TimelineView::showExportBarMenu()
     const bool hasLoop = engine.getLoopEnd() > engine.getLoopStart();
     const auto* cue = project.findCue (project.selectedCueId);
     juce::PopupMenu m;
-    m.addItem (1, "Esporta l'intervallo...", has);
+    m.addItem (1, TRANS ("Esporta l'intervallo..."), has);
     m.addSeparator();
-    m.addItem (2, "Imposta dalla regione di loop", hasLoop);
-    m.addItem (3, "Imposta dal cue ADR selezionato", cue != nullptr);
-    m.addItem (4, "Cancella l'intervallo", has);
+    m.addItem (2, TRANS ("Imposta dalla regione di loop"), hasLoop);
+    m.addItem (3, TRANS ("Imposta dal cue ADR selezionato"), cue != nullptr);
+    m.addItem (4, TRANS ("Cancella l'intervallo"), has);
     juce::Component::SafePointer<TimelineView> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options(), [safe, cue] (int r)
     {
@@ -2155,15 +2155,15 @@ void TimelineView::showMarkerMenu (int markerId)
 {
     juce::PopupMenu m;
     const int64_t pos = engine.getPosition();
-    m.addItem (1, "Aggiungi marker alla testina");
+    m.addItem (1, TRANS ("Aggiungi marker alla testina"));
     if (markerId != 0)
     {
         m.addSeparator();
-        m.addItem (2, "Rinomina...");
+        m.addItem (2, TRANS ("Rinomina..."));
         juce::PopupMenu colours;
         for (int i = 0; i < numPaletteColours; ++i) colours.addColouredItem (100 + i, "Colore " + juce::String (i + 1), trackPalette[i]);
-        m.addSubMenu ("Colore", colours);
-        m.addItem (3, "Elimina marker");
+        m.addSubMenu (TRANS ("Colore"), colours);
+        m.addItem (3, TRANS ("Elimina marker"));
     }
     juce::Component::SafePointer<TimelineView> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options(), [safe, markerId, pos] (int r)
@@ -2182,26 +2182,26 @@ void TimelineView::showTrackMenu (int trackId)
     juce::PopupMenu m;
     if (trackId >= 0)
     {
-        m.addItem (1, "Rinomina...");
+        m.addItem (1, TRANS ("Rinomina..."));
         juce::PopupMenu colours;
         for (int i = 0; i < numPaletteColours; ++i)
             colours.addColouredItem (100 + i, "Colore " + juce::String (i + 1), trackPalette[i]);
-        m.addSubMenu ("Colore", colours);
-        m.addItem (2, "Elimina traccia", project.getSession().tracks.size() > 1);
+        m.addSubMenu (TRANS ("Colore"), colours);
+        m.addItem (2, TRANS ("Elimina traccia"), project.getSession().tracks.size() > 1);
         {
             // tipo di traccia: applica la catena consigliata (EQ, compressore, limiter, livello)
             juce::PopupMenu types;
             const int cur = project.findTrack (trackId) != nullptr ? project.findTrack (trackId)->live->trackType.load() : 0;
             for (int t = 0; t < kNumTrackTypes; ++t) types.addItem (200 + t, trackTypeName (t), true, t == cur);
-            m.addSubMenu ("Tipo di traccia (preset)", types);
+            m.addSubMenu (TRANS ("Tipo di traccia (preset)"), types);
         }
         m.addSeparator();
     }
-    m.addItem (3, "Nuova traccia");
-    m.addItem (4, "Importa audio...");
+    m.addItem (3, TRANS ("Nuova traccia"));
+    m.addItem (4, TRANS ("Importa audio..."));
     m.addSeparator();
-    m.addItem (5, "Adatta l'altezza delle tracce");
-    if (trackId >= 0) m.addItem (6, "Cancella l'automazione: " + juce::String (project.findTrack (trackId) != nullptr ? autoParamName (project.findTrack (trackId)->live->autoParam.load()) : "VOL"));
+    m.addItem (5, TRANS ("Adatta l'altezza delle tracce"));
+    if (trackId >= 0) m.addItem (6, TRANS ("Cancella l'automazione: ") + juce::String (project.findTrack (trackId) != nullptr ? autoParamName (project.findTrack (trackId)->live->autoParam.load()) : "VOL"));
 
     juce::Component::SafePointer<TimelineView> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options(), [safe, trackId] (int r)
@@ -2222,23 +2222,23 @@ void TimelineView::showTrackMenu (int trackId)
 void TimelineView::showClipMenu (int64_t clipId)
 {
     juce::PopupMenu m;
-    m.addItem (1, "Dividi alla testina");
-    m.addItem (2, "Duplica");
-    m.addItem (3, "Elimina");
+    m.addItem (1, TRANS ("Dividi alla testina"));
+    m.addItem (2, TRANS ("Duplica"));
+    m.addItem (3, TRANS ("Elimina"));
     m.addSeparator();
-    m.addItem (4, "Normalizza a -1 dBFS");
-    m.addItem (5, "Guadagno +3 dB");
-    m.addItem (6, "Guadagno -3 dB");
-    m.addItem (7, "Azzera guadagno");
+    m.addItem (4, TRANS ("Normalizza a -1 dBFS"));
+    m.addItem (5, TRANS ("Guadagno +3 dB"));
+    m.addItem (6, TRANS ("Guadagno -3 dB"));
+    m.addItem (7, TRANS ("Azzera guadagno"));
     if (auto* cl = project.findClip (clipId); cl != nullptr && cl->cueId != 0)
     {
         m.addSeparator();
-        m.addItem (8, "ADR: attiva il take " + juce::String (cl->takeNo), cl->muted);
-        m.addItem (9, "ADR: elimina il take " + juce::String (cl->takeNo));
-        m.addItem (11, "ADR: adatta alla durata del cue (time-stretch)");
+        m.addItem (8, TRANS ("ADR: attiva il take ") + juce::String (cl->takeNo), cl->muted);
+        m.addItem (9, TRANS ("ADR: elimina il take ") + juce::String (cl->takeNo));
+        m.addItem (11, TRANS ("ADR: adatta alla durata del cue (time-stretch)"));
     }
     m.addSeparator();
-    m.addItem (10, "Time-stretch...");
+    m.addItem (10, TRANS ("Time-stretch..."));
 
     juce::Component::SafePointer<TimelineView> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options(), [safe, clipId] (int r)
@@ -2300,7 +2300,7 @@ void TimelineView::filesDropped (const juce::StringArray& files, int x, int y)
     project.importFiles (list, trackId, juce::jmax<int64_t> (0, xToSample (x)), [] (juce::StringArray errs)
     {
         if (errs.size() > 0)
-            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Importazione", errs.joinIntoString ("\n"));
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, TRANS ("Importazione"), errs.joinIntoString ("\n"));
     });
 }
 

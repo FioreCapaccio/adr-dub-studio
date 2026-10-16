@@ -99,12 +99,12 @@ AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double ra
     if (r == nullptr) r.reset (fm.createReaderFor (f));
     if (r == nullptr || r->lengthInSamples <= 0)
     {
-        error = "Formato non supportato o file vuoto: " + f.getFileName();
+        error = TRANS ("Formato non supportato o file vuoto: ") + f.getFileName();
         return nullptr;
     }
     if (r->lengthInSamples > 2000000000LL)
     {
-        error = "File troppo lungo: " + f.getFileName();
+        error = TRANS ("File troppo lungo: ") + f.getFileName();
         return nullptr;
     }
 
@@ -420,7 +420,7 @@ void Project::importFiles (juce::Array<juce::File> files, int trackId, int64_t s
         {
             auto errs = errors;
             if (std::abs (rate - sampleRate) > 0.5)
-                errs.add ("La frequenza di campionamento e' cambiata durante l'importazione.");
+                errs.add (TRANS ("La frequenza di campionamento e' cambiata durante l'importazione."));
             else if (! loaded.empty())
             {
                 beginEdit();
@@ -514,7 +514,7 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
 
     runAsync ([=, this]() -> std::function<void()>
     {
-        setTask ("Carico il video: lettura delle informazioni", 0.01f);
+        setTask (TRANS ("Carico il video: lettura delle informazioni"), 0.01f);
         auto info = video::probe (f);
         if (! info.ok)
         {
@@ -529,24 +529,24 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
         va->width = info.width;
         va->height = info.height;
         va->thumbInterval = juce::jmax (1.0, std::ceil (info.duration / 240.0));
-        setTask ("Carico il video: miniature", 0.03f);
+        setTask (TRANS ("Carico il video: miniature"), 0.03f);
         va->thumbs = video::thumbnails (f, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56,
-                                        [this] (float p) { setTask ("Carico il video: miniature", 0.03f + 0.37f * p); });
+                                        [this] (float p) { setTask (TRANS ("Carico il video: miniature"), 0.03f + 0.37f * p); });
 
         AssetPtr audio;
         juce::String audioNote;
         if (info.hasAudio)
         {
             juce::String err;
-            setTask ("Carico il video: audio", 0.4f);
-            audio = loadAsset (*fm, f, rate, err, [this] (float p) { setTask ("Carico il video: audio", 0.4f + 0.6f * p); });
+            setTask (TRANS ("Carico il video: audio"), 0.4f);
+            audio = loadAsset (*fm, f, rate, err, [this] (float p) { setTask (TRANS ("Carico il video: audio"), 0.4f + 0.6f * p); });
             if (audio == nullptr) audioNote = "Il video e' stato caricato, ma non riesco a estrarne l'audio: " + err;
         }
 
         setTask ({}, -1.0f);
         return [=, this]
         {
-            if (std::abs (rate - sampleRate) > 0.5) { if (done) done ("La frequenza di campionamento e' cambiata."); return; }
+            if (std::abs (rate - sampleRate) > 0.5) { if (done) done (TRANS ("La frequenza di campionamento e' cambiata.")); return; }
             beginEdit();
             session.video = va;
             if (tcFormat == 2 && std::abs (va->fps - 25.0) > 0.01) tcFormat = tcFormatForFps (va->fps);
@@ -563,7 +563,7 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
                 }
                 selectedTrackId = id;
                 auto* t = findTrack (id);
-                t->name = "Audio video";
+                t->name = TRANS ("Audio video");
                 Clip c;
                 c.id = nextClipId++;
                 c.asset = audio;
@@ -1121,7 +1121,7 @@ void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce:
 {
     auto* c = findClip (id);
     if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done ("Clip non valido."); return; }
-    if (c->asset->offline) { if (done) done ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media."); return; }
+    if (c->asset->offline) { if (done) done (TRANS ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media.")); return; }
     ratio = juce::jlimit (0.25, 4.0, ratio);
     const auto src = c->asset;
     const int off = (int) c->offset, len = (int) c->length;
@@ -1388,7 +1388,7 @@ bool Project::save (const juce::File& f, juce::String& error)
     const auto json = juce::JSON::toString (toVar(), false);
     if (! f.replaceWithText (json))
     {
-        error = "Impossibile scrivere " + f.getFullPathName();
+        error = TRANS ("Impossibile scrivere ") + f.getFullPathName();
         return false;
     }
     sessionFile = f;
@@ -1402,7 +1402,7 @@ bool Project::saveCopy (const juce::File& f, juce::String& error) const
     f.getParentDirectory().createDirectory();
     if (! f.replaceWithText (juce::JSON::toString (toVar(), false)))
     {
-        error = "Impossibile scrivere " + f.getFullPathName();
+        error = TRANS ("Impossibile scrivere ") + f.getFullPathName();
         return false;
     }
     return true;
@@ -1556,7 +1556,7 @@ void Project::relinkVideo (const juce::File& f, std::function<void (juce::String
     const double offset = missingVideoOffset;
     runAsync ([=, this]() -> std::function<void()>
     {
-        setTask ("Ricollego il video", 0.01f);
+        setTask (TRANS ("Ricollego il video"), 0.01f);
         auto info = video::probe (f);
         if (! info.ok) { setTask ({}, -1.0f); return [=] { if (done) done (info.error); }; }
         auto va = std::make_shared<VideoAsset>();
@@ -1567,7 +1567,7 @@ void Project::relinkVideo (const juce::File& f, std::function<void (juce::String
         va->height = info.height;
         va->thumbInterval = juce::jmax (1.0, std::ceil (info.duration / 240.0));
         va->thumbs = video::thumbnails (f, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56,
-                                        [this] (float p) { setTask ("Ricollego il video: miniature", 0.02f + 0.95f * p); });
+                                        [this] (float p) { setTask (TRANS ("Ricollego il video: miniature"), 0.02f + 0.95f * p); });
         va->offsetSec = offset;
         setTask ({}, -1.0f);
         return [=, this]
@@ -1624,7 +1624,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
         const juce::String pNaming = parsed.getProperty ("adrNaming", "{personaggio}_{scena}_{cue}_T{take}").toString();
         const int64_t pExportIn = (juce::int64) parsed.getProperty ("exportIn", -1), pExportOut = (juce::int64) parsed.getProperty ("exportOut", -1);
         bool ok = parsed.isObject();
-        if (! ok) errors = "File di sessione non valido.";
+        if (! ok) errors = TRANS ("File di sessione non valido.");
 
         if (ok)
         {
@@ -1761,7 +1761,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                                     a->name = a->file.getFileNameWithoutExtension();
                                     a->offline = true;
                                     ++missingCount;
-                                    errors += (errors.isEmpty() ? "" : "\n") + juce::String ("File non trovato: ") + path;
+                                    errors += (errors.isEmpty() ? "" : "\n") + juce::String (TRANS ("File non trovato: ")) + path;
                                 }
                                 it = cache.emplace (path, a).first;
                             }
@@ -1785,7 +1785,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                         }
                     result->tracks.push_back (std::move (t));
                 }
-            if (result->tracks.empty()) { ok = false; errors = "La sessione non contiene tracce."; }
+            if (result->tracks.empty()) { ok = false; errors = TRANS ("La sessione non contiene tracce."); }
 
             const auto vpath = parsed.getProperty ("video", "").toString();
             if (ok && vpath.isNotEmpty())
@@ -1801,16 +1801,16 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     va->width = info.width;
                     va->height = info.height;
                     va->thumbInterval = juce::jmax (1.0, std::ceil (info.duration / 240.0));
-                    setTask ("Carico il video: miniature", 0.02f);
+                    setTask (TRANS ("Carico il video: miniature"), 0.02f);
                     va->thumbs = video::thumbnails (vf, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56,
-                                                    [this] (float p) { setTask ("Carico il video: miniature", 0.02f + 0.9f * p); });
+                                                    [this] (float p) { setTask (TRANS ("Carico il video: miniature"), 0.02f + 0.9f * p); });
                     setTask ({}, -1.0f);
                     va->offsetSec = (double) parsed.getProperty ("videoOffset", 0.0);
                     result->video = va;
                 }
                 else
                 {
-                    errors += (errors.isEmpty() ? "" : "\n") + juce::String ("Video non trovato: ") + vf.getFullPathName();
+                    errors += (errors.isEmpty() ? "" : "\n") + juce::String (TRANS ("Video non trovato: ")) + vf.getFullPathName();
                     lostVideoPath = vpath;
                     lostVideoOffset = (double) parsed.getProperty ("videoOffset", 0.0);
                 }

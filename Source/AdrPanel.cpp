@@ -29,11 +29,11 @@ AdrImportDialog::AdrImportDialog (const Project& p, const adr::ImportResult& r, 
         l.setColour (juce::Label::textColourId, dim);
         addAndMakeVisible (l);
     };
-    label (tcLbl, "FORMATO TIMECODE"); label (startLbl, "INIZIO SESSIONE (TC)"); label (durLbl, "DURATA SE MANCA L'USCITA (S)");
+    label (tcLbl, TRANS ("FORMATO TIMECODE")); label (startLbl, TRANS ("INIZIO SESSIONE (TC)")); label (durLbl, TRANS ("DURATA SE MANCA L'USCITA (S)"));
 
-    juce::String txt = "Formato riconosciuto: " + result.format + "\nCue trovati: " + juce::String ((int) result.cues.size());
-    if (result.sessionStartTc.isNotEmpty()) txt << "\nInizio sessione dichiarato dal file: " + result.sessionStartTc;
-    txt << "\n\nI timecode del file sono assoluti: la posizione sulla timeline si ottiene sottraendo l'inizio sessione.";
+    juce::String txt = TRANS ("Formato riconosciuto: ") + result.format + TRANS ("\nCue trovati: ") + juce::String ((int) result.cues.size());
+    if (result.sessionStartTc.isNotEmpty()) txt << TRANS ("\nInizio sessione dichiarato dal file: ") + result.sessionStartTc;
+    txt << TRANS ("\n\nI timecode del file sono assoluti: la posizione sulla timeline si ottiene sottraendo l'inizio sessione.");
     info.setText (txt, juce::dontSendNotification);
     info.setFont (font (12.5f));
     info.setColour (juce::Label::textColourId, text);
@@ -45,8 +45,8 @@ AdrImportDialog::AdrImportDialog (const Project& p, const adr::ImportResult& r, 
     tcFormat.setSelectedId (fmt + 1, juce::dontSendNotification);
     if (result.tcFormatIndex < 0 && fmt != project.tcFormat)
     {
-        info.setText (info.getText() + "\n\nNel file i fotogrammi arrivano fino a " + juce::String (result.maxFrameField) + ": non sono compatibili con "
-                      + tcFormats()[project.tcFormat].name + ". Ho scelto " + tcFormats()[fmt].name + "; cambia il formato qui sotto se non e' quello giusto.",
+        info.setText (info.getText() + TRANS ("\n\nNel file i fotogrammi arrivano fino a ") + juce::String (result.maxFrameField) + TRANS (": non sono compatibili con ")
+                      + tcFormats()[project.tcFormat].name + TRANS (". Ho scelto ") + tcFormats()[fmt].name + TRANS ("; cambia il formato qui sotto se non e' quello giusto."),
                       juce::dontSendNotification);
     }
     start.setText (result.sessionStartTc.isNotEmpty() ? result.sessionStartTc : project.formatTc (0.0), false);
@@ -83,8 +83,8 @@ void AdrImportDialog::close (bool ok)
         double s = 0.0;
         if (! timecodeToSeconds (start.getText(), tcFormats()[juce::jlimit (0, numTcFormats - 1, v.tcFormat)], s))
         {
-            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Timecode non valido",
-                                                    "Scrivi l'inizio sessione come ore:minuti:secondi:fotogrammi, per esempio 01:00:00:00.");
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, TRANS ("Timecode non valido"),
+                                                    TRANS ("Scrivi l'inizio sessione come ore:minuti:secondi:fotogrammi, per esempio 01:00:00:00."));
             return;
         }
         v.tcStart = s;
@@ -147,16 +147,16 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     recBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffff8a7d));
     recBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
 
-    importBtn.setTooltip ("Importa cue da Pro Tools (testo Session Info / marker), EDL o tabella CSV/TSV");
-    addBtn.setTooltip ("Crea un cue dalla regione di loop (oppure 4 secondi dalla testina)");
-    csvBtn.setTooltip ("Esporta l'elenco dei cue in CSV (cue sheet)");
-    ptBtn.setTooltip ("Esporta l'elenco dei cue come testo di marker di Pro Tools");
-    bwfBtn.setTooltip ("Esporta i take attivi come file BWF con timecode, pronti da posizionare in Pro Tools");
-    recBtn.setTooltip ("Pre-roll, bip, streamer e punch automatico sul cue selezionato");
-    auditionBtn.setTooltip ("Ascolta il take scelto da solo (con il video in sincrono). Un altro clic ferma l'ascolto");
-    activateBtn.setTooltip ("Rende attivo il take scelto: e' quello che suona nel mix e che si esporta");
-    deleteTakeBtn.setTooltip ("Elimina il take scelto (si puo' annullare)");
-    originalBtn.setTooltip ("Ascolta la battuta originale del cue (l'audio di produzione, senza i take ADR) con il video in sincrono. Un altro clic ferma l'ascolto");
+    importBtn.setTooltip (TRANS ("Importa cue da Pro Tools (testo Session Info / marker), EDL o tabella CSV/TSV"));
+    addBtn.setTooltip (TRANS ("Crea un cue dalla regione di loop (oppure 4 secondi dalla testina)"));
+    csvBtn.setTooltip (TRANS ("Esporta l'elenco dei cue in CSV (cue sheet)"));
+    ptBtn.setTooltip (TRANS ("Esporta l'elenco dei cue come testo di marker di Pro Tools"));
+    bwfBtn.setTooltip (TRANS ("Esporta i take attivi come file BWF con timecode, pronti da posizionare in Pro Tools"));
+    recBtn.setTooltip (TRANS ("Pre-roll, bip, streamer e punch automatico sul cue selezionato"));
+    auditionBtn.setTooltip (TRANS ("Ascolta il take scelto da solo (con il video in sincrono). Un altro clic ferma l'ascolto"));
+    activateBtn.setTooltip (TRANS ("Rende attivo il take scelto: e' quello che suona nel mix e che si esporta"));
+    deleteTakeBtn.setTooltip (TRANS ("Elimina il take scelto (si puo' annullare)"));
+    originalBtn.setTooltip (TRANS ("Ascolta la battuta originale del cue (l'audio di produzione, senza i take ADR) con il video in sincrono. Un altro clic ferma l'ascolto"));
     auditionBtn.onClick = [this]
     {
         if (actions.isAuditioning && actions.isAuditioning()) { if (actions.stopAudition) actions.stopAudition(); }
@@ -202,8 +202,8 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
         l.setColour (juce::Label::textColourId, dim);
         addAndMakeVisible (l);
     };
-    label (lblChar, "PERSONAGGIO"); label (lblScene, "SCENA"); label (lblReel, "RULLO"); label (lblIn, "IN (TC)"); label (lblOut, "OUT (TC)");
-    label (lblStatus, "STATO"); label (lblDialogue, "DIALOGO"); label (lblNotes, "NOTE"); label (lblTrack, "REGISTRA SU"); label (lblTakes, "TAKE");
+    label (lblChar, TRANS ("PERSONAGGIO")); label (lblScene, TRANS ("SCENA")); label (lblReel, TRANS ("RULLO")); label (lblIn, TRANS ("IN (TC)")); label (lblOut, TRANS ("OUT (TC)"));
+    label (lblStatus, TRANS ("STATO")); label (lblDialogue, TRANS ("DIALOGO")); label (lblNotes, TRANS ("NOTE")); label (lblTrack, TRANS ("REGISTRA SU")); label (lblTakes, TRANS ("TAKE"));
 
     for (auto* e : { &edChar, &edScene, &edReel, &edIn, &edOut, &edDialogue, &edNotes })
     {
@@ -259,7 +259,7 @@ void AdrPanel::refresh()
 
     // elenco delle tracce
     cbTrack.clear (juce::dontSendNotification);
-    cbTrack.addItem ("Traccia selezionata", 1);
+    cbTrack.addItem (TRANS ("Traccia selezionata"), 1);
     int sel = 1;
     const auto& tracks = project.getSession().tracks;
     for (size_t i = 0; i < tracks.size(); ++i)
@@ -314,7 +314,7 @@ void AdrPanel::rebuildTakes()
             b->setToggleState (n == viewTake, juce::dontSendNotification);
             b->setColour (juce::TextButton::textColourOffId, active ? green : text);
             b->setWantsKeyboardFocus (false);
-            b->setTooltip ("Take " + juce::String (n) + (active ? " (attivo, in verde). " : ". ") + "Clic: sceglie il take e lo ascolta");
+            b->setTooltip (TRANS ("Take ") + juce::String (n) + (active ? TRANS (" (attivo, in verde). ") : ". ") + TRANS ("Clic: sceglie il take e lo ascolta"));
             const int cueId = c->id;
             b->onClick = [this, cueId, n]
             {
@@ -328,9 +328,9 @@ void AdrPanel::rebuildTakes()
 
     const bool any = viewTake != 0;
     const bool playing = actions.isAuditioning && actions.isAuditioning();
-    auditionBtn.setButtonText (playing && ! auditionIsOriginal ? "STOP" : "ASCOLTA");
+    auditionBtn.setButtonText (playing && ! auditionIsOriginal ? TRANS ("STOP") : TRANS ("ASCOLTA"));
     auditionBtn.setEnabled (any && ! (playing && auditionIsOriginal));
-    originalBtn.setButtonText (playing && auditionIsOriginal ? "STOP" : "ORIGINALE");
+    originalBtn.setButtonText (playing && auditionIsOriginal ? TRANS ("STOP") : TRANS ("ORIGINALE"));
     originalBtn.setEnabled (c != nullptr && ! (playing && ! auditionIsOriginal));
     activateBtn.setEnabled (any && c != nullptr && c->activeTake != viewTake);
     deleteTakeBtn.setEnabled (any);
@@ -427,7 +427,7 @@ juce::Component* AdrPanel::refreshComponentForCell (int row, int columnId, bool 
                 });
         });
     }
-    cell->setTooltip ("Doppio clic per modificare. Invio conferma, Esc annulla");
+    cell->setTooltip (TRANS ("Doppio clic per modificare. Invio conferma, Esc annulla"));
     cell->setCell (row, columnId, columnId == 3 ? c->character : columnId == 4 ? c->scene : c->dialogue.replaceCharacters ("\r\n", "  "),
                    columnId == 9 ? dim.brighter (0.3f) : text, isRowSelected);
     return cell;

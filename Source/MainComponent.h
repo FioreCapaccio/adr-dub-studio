@@ -140,11 +140,11 @@ private:
                       playBtn   { theme::IconButton::Icon::Play, theme::green },
                       stopBtn   { theme::IconButton::Icon::Stop, theme::blue },
                       recBtn    { theme::IconButton::Icon::Record, theme::accent };
-    juce::TextButton exitBtn { "ESCI" };
+    juce::TextButton exitBtn { TRANS ("ESCI") };
     int64_t playStartPos = 0;          // dove e' partita l'ultima riproduzione
     bool returnToStart = true, startedFromPlay = false;   // allo stop la testina torna al punto di partenza
     void stopPlayback();
-    juce::TextButton loopBtn   { "LOOP" }, snapBtn { "SNAP" }, followBtn { "SEGUI" },
+    juce::TextButton loopBtn   { TRANS ("LOOP") }, snapBtn { "SNAP" }, followBtn { "SEGUI" },
                      monBtn    { "MON" },
                      zoomOutBtn { "-" }, zoomInBtn { "+" }, fitBtn { "ADATTA" },
                      importBtn { "IMPORTA" }, exportBtn { "ESPORTA" }, addTrackBtn { "+ TRACCIA" },
@@ -189,6 +189,7 @@ private:
     juce::TooltipWindow tooltipWindow { this, 450 };
 
     std::unique_ptr<juce::FileChooser> chooser;
+    std::vector<juce::String> langActions;   // codici delle lingue del sottomenu Aiuto > Lingua (id 32000 + indice)
     std::vector<std::function<void()>> menuActions;   // azioni delle voci dinamiche (temi, layout) del menu Vista: id 30000 + indice
     int layoutIndex = 1;
     void applyLayout (int index, bool resizeTracks);

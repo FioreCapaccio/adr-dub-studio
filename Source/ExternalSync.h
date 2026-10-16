@@ -86,7 +86,7 @@ private:
     juce::Label deviceLbl, offsetLbl, status, hint;
     juce::ComboBox devices;
     juce::TextEditor offset;
-    juce::ToggleButton enable { "Aggancia il trasporto al timecode MTC" };
+    juce::ToggleButton enable { TRANS ("Aggancia il trasporto al timecode MTC") };
     juce::Array<juce::MidiDeviceInfo> infos;
     bool loading = true;
 };

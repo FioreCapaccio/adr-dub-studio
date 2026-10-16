@@ -10,16 +10,16 @@ namespace
 struct Preset { const char* name; const char* fmt; int depth; double rate; int norm; double value; double ceiling; bool dither; bool stems; bool delivery = false; };
 // norm: 0 nessuna, 1 picco, 2 LUFS
 const Preset presets[] = {
-    { "Master (WAV 24 bit)",                    "wav", 24, 0.0,     0, 0.0,   -1.0, false, false },
-    { "Broadcast EBU R128 (-23 LUFS)",          "wav", 24, 48000.0, 2, -23.0, -1.0, false, false },
-    { "Streaming e social (-14 LUFS)",          "wav", 24, 0.0,     2, -14.0, -1.0, false, false },
-    { "Podcast (-16 LUFS, WAV 16 bit)",         "wav", 16, 44100.0, 2, -16.0, -1.0, true,  false },
-    { "CD (16 bit, 44,1 kHz, picco -0,3 dB)",   "wav", 16, 44100.0, 1, -0.3,  -1.0, true,  false },
-    { "Stem (un file per traccia)",             "wav", 24, 0.0,     0, 0.0,   -1.0, false, true  },
-    { "Consegna doppiaggio: MIX + stem DIA/ME/FX (-23 LUFS)", "wav", 24, 48000.0, 2, -23.0, -1.0, false, false, true },
-    { "TV USA, ATSC A/85 (-24 LUFS, -2 dBTP)",  "wav", 24, 48000.0, 2, -24.0, -2.0, false, false },
-    { "Streaming, dialoghi (-27 LUFS, -2 dBTP): verifica le specifiche", "wav", 24, 48000.0, 2, -27.0, -2.0, false, false },
-    { "Personalizzato",                         "wav", 24, 0.0,     0, 0.0,   -1.0, true,  false }
+    { TRX ("Master (WAV 24 bit)"),                    "wav", 24, 0.0,     0, 0.0,   -1.0, false, false },
+    { TRX ("Broadcast EBU R128 (-23 LUFS)"),          "wav", 24, 48000.0, 2, -23.0, -1.0, false, false },
+    { TRX ("Streaming e social (-14 LUFS)"),          "wav", 24, 0.0,     2, -14.0, -1.0, false, false },
+    { TRX ("Podcast (-16 LUFS, WAV 16 bit)"),         "wav", 16, 44100.0, 2, -16.0, -1.0, true,  false },
+    { TRX ("CD (16 bit, 44,1 kHz, picco -0,3 dB)"),   "wav", 16, 44100.0, 1, -0.3,  -1.0, true,  false },
+    { TRX ("Stem (un file per traccia)"),             "wav", 24, 0.0,     0, 0.0,   -1.0, false, true  },
+    { TRX ("Consegna doppiaggio: MIX + stem DIA/ME/FX (-23 LUFS)"), "wav", 24, 48000.0, 2, -23.0, -1.0, false, false, true },
+    { TRX ("TV USA, ATSC A/85 (-24 LUFS, -2 dBTP)"),  "wav", 24, 48000.0, 2, -24.0, -2.0, false, false },
+    { TRX ("Streaming, dialoghi (-27 LUFS, -2 dBTP): verifica le specifiche"), "wav", 24, 48000.0, 2, -27.0, -2.0, false, false },
+    { TRX ("Personalizzato"),                         "wav", 24, 0.0,     0, 0.0,   -1.0, true,  false }
 };
 constexpr int numPresets = (int) (sizeof (presets) / sizeof (presets[0]));
 constexpr int customPreset = numPresets - 1;
@@ -36,18 +36,18 @@ ExportDialog::ExportDialog (bool loop, int64_t loopStart, int64_t loopEnd, bool 
         l.setColour (juce::Label::textColourId, dim);
         addAndMakeVisible (l);
     };
-    label (presetLbl, "PRESET"); label (formatLbl, "FORMATO"); label (depthLbl, "PROFONDITA'"); label (rateLbl, "FREQUENZA");
-    label (rangeLbl, "INTERVALLO"); label (normLbl, "NORMALIZZAZIONE"); label (valueLbl, "VALORE"); label (ceilLbl, "TETTO TRUE-PEAK");
+    label (presetLbl, TRANS ("PRESET")); label (formatLbl, TRANS ("FORMATO")); label (depthLbl, TRANS ("PROFONDITA'")); label (rateLbl, TRANS ("FREQUENZA"));
+    label (rangeLbl, TRANS ("INTERVALLO")); label (normLbl, TRANS ("NORMALIZZAZIONE")); label (valueLbl, TRANS ("VALORE")); label (ceilLbl, TRANS ("TETTO TRUE-PEAK"));
 
-    for (int i = 0; i < numPresets; ++i) preset.addItem (presets[i].name, i + 1);
-    format.addItem ("WAV", 1); format.addItem ("AIFF", 2); format.addItem ("FLAC", 3);
-    depth.addItem ("16 bit", 1); depth.addItem ("24 bit", 2); depth.addItem ("32 bit", 3);
-    rate.addItem ("Come la sessione", 1); rate.addItem ("44,1 kHz", 2); rate.addItem ("48 kHz", 3); rate.addItem ("88,2 kHz", 4); rate.addItem ("96 kHz", 5);
-    range.addItem ("Tutta la sessione", 1); range.addItem ("Regione di loop", 2);
-    range.addItem (hasSelRegion ? "Intervallo scelto: " + selLabel : juce::String ("Intervallo scelto (barra sopra il righello)"), 3);
+    for (int i = 0; i < numPresets; ++i) preset.addItem (juce::translate (presets[i].name), i + 1);
+    format.addItem (TRANS ("WAV"), 1); format.addItem (TRANS ("AIFF"), 2); format.addItem (TRANS ("FLAC"), 3);
+    depth.addItem (TRANS ("16 bit"), 1); depth.addItem (TRANS ("24 bit"), 2); depth.addItem (TRANS ("32 bit"), 3);
+    rate.addItem (TRANS ("Come la sessione"), 1); rate.addItem (TRANS ("44,1 kHz"), 2); rate.addItem (TRANS ("48 kHz"), 3); rate.addItem (TRANS ("88,2 kHz"), 4); rate.addItem (TRANS ("96 kHz"), 5);
+    range.addItem (TRANS ("Tutta la sessione"), 1); range.addItem (TRANS ("Regione di loop"), 2);
+    range.addItem (hasSelRegion ? TRANS ("Intervallo scelto: ") + selLabel : juce::String (TRANS ("Intervallo scelto (barra sopra il righello)")), 3);
     range.setItemEnabled (2, hasLoopRegion);
     range.setItemEnabled (3, hasSelRegion);
-    norm.addItem ("Nessuna", 1); norm.addItem ("Picco a...", 2); norm.addItem ("Loudness a...", 3);
+    norm.addItem (TRANS ("Nessuna"), 1); norm.addItem (TRANS ("Picco a..."), 2); norm.addItem (TRANS ("Loudness a..."), 3);
 
     for (auto* c : { &preset, &format, &depth, &rate, &range, &norm }) addAndMakeVisible (*c);
     for (auto* t : { &value, &ceiling })
@@ -117,21 +117,21 @@ void ExportDialog::updateEnabled()
     value.setEnabled (n > 0 && ! isStem);
     ceiling.setEnabled (n == 2 && ! isStem);
     range.setEnabled (true);
-    valueLbl.setText (n == 1 ? "PICCO (dBFS)" : (n == 2 ? "OBIETTIVO (LUFS)" : "VALORE"), juce::dontSendNotification);
+    valueLbl.setText (n == 1 ? TRANS ("PICCO (dBFS)") : (n == 2 ? "OBIETTIVO (LUFS)" : "VALORE"), juce::dontSendNotification);
     // FLAC non supporta 32 bit
     depth.setItemEnabled (3, format.getSelectedId() != 3);
     if (format.getSelectedId() == 3 && depth.getSelectedId() == 3) depth.setSelectedId (2, juce::dontSendNotification);
 
     juce::String s;
-    if (isDelivery) s = "In una sola esportazione: il MIX (con il bus master) e uno stem per ogni bus di ruolo (Dialoghi, M&E, Effetti), tutti con lo stesso guadagno, piu' un rapporto HTML con picco, true-peak e loudness di ogni file. Scegli la cartella di destinazione.";
-    else if (isStem) s = "Ogni traccia con clip viene esportata in un file separato, dopo fader e inserti ma senza limiter e plug-in del master. "
-                    "I file sono allineati tra loro.";
+    if (isDelivery) s = TRANS ("In una sola esportazione: il MIX (con il bus master) e uno stem per ogni bus di ruolo (Dialoghi, M&E, Effetti), tutti con lo stesso guadagno, piu' un rapporto HTML con picco, true-peak e loudness di ogni file. Scegli la cartella di destinazione.");
+    else if (isStem) s = TRANS ("Ogni traccia con clip viene esportata in un file separato, dopo fader e inserti ma senza limiter e plug-in del master. "
+                    "I file sono allineati tra loro.");
     else if (n == 2) s = "Il programma viene misurato e riportato all'obiettivo. Se questo fa superare il tetto di true-peak interviene un limiter trasparente.";
     else if (n == 1) s = "Il guadagno viene regolato in modo che il picco massimo arrivi al valore indicato.";
-    else s = "Nessuna modifica di livello: il file e' il mix cosi' come lo senti.";
+    else s = TRANS ("Nessuna modifica di livello: il file e' il mix cosi' come lo senti.");
     if (depth.getSelectedId() == 1) s << " A 16 bit viene aggiunto un leggero dither per evitare la distorsione di quantizzazione.";
     summary.setText (s, juce::dontSendNotification);
-    exportBtn.setButtonText (isStem || isDelivery ? "Scegli cartella..." : "Esporta...");
+    exportBtn.setButtonText (isStem || isDelivery ? TRANS ("Scegli cartella...") : TRANS ("Esporta..."));
 }
 
 ExportOptions ExportDialog::collect() const

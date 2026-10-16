@@ -14,8 +14,8 @@ SessionSettingsDialog::SessionSettingsDialog (const Project& p, std::function<vo
         l.setColour (juce::Label::textColourId, dim);
         addAndMakeVisible (l);
     };
-    label (tcLbl, "FORMATO TIMECODE"); label (startLbl, "INIZIO SESSIONE (TC)"); label (preLbl, "PRE-ROLL (SECONDI)");
-    label (postLbl, "POST-ROLL (SECONDI)"); label (beepLbl, "BIP PRIMA DELL'INGRESSO"); label (sizeLbl, "DIALOGO SUL VIDEO (PX)"); label (nameLbl, "NOME DEI TAKE");
+    label (tcLbl, TRANS ("FORMATO TIMECODE")); label (startLbl, TRANS ("INIZIO SESSIONE (TC)")); label (preLbl, TRANS ("PRE-ROLL (SECONDI)"));
+    label (postLbl, TRANS ("POST-ROLL (SECONDI)")); label (beepLbl, TRANS ("BIP PRIMA DELL'INGRESSO")); label (sizeLbl, TRANS ("DIALOGO SUL VIDEO (PX)")); label (nameLbl, TRANS ("NOME DEI TAKE"));
 
     for (int i = 0; i < numTcFormats; ++i) tcFormat.addItem (tcFormats()[i].name, i + 1);
     tcFormat.setSelectedId (project.tcFormat + 1, juce::dontSendNotification);
@@ -31,9 +31,9 @@ SessionSettingsDialog::SessionSettingsDialog (const Project& p, std::function<vo
     dialogueSize.setRange (14.0, 96.0, 1.0);
     dialogueSize.setValue (project.adrDialogueSize, juce::dontSendNotification);
     dialogueSize.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 22);
-    dialogueSize.setTooltip ("Dimensione dei caratteri del dialogo sotto il video");
+    dialogueSize.setTooltip (TRANS ("Dimensione dei caratteri del dialogo sotto il video"));
     naming.setText (project.adrNaming, false);
-    naming.setTooltip ("Segnaposto: {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}");
+    naming.setTooltip (TRANS ("Segnaposto: {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}"));
     rulerTc.setToggleState (project.rulerTimecode, juce::dontSendNotification);
     streamer.setToggleState (project.adrStreamer, juce::dontSendNotification);
 
@@ -43,8 +43,8 @@ SessionSettingsDialog::SessionSettingsDialog (const Project& p, std::function<vo
     hint.setFont (font (11.5f));
     hint.setColour (juce::Label::textColourId, dim);
     hint.setJustificationType (juce::Justification::topLeft);
-    hint.setText ("L'inizio sessione e' il timecode della posizione zero della timeline: nelle sessioni Pro Tools di solito 01:00:00:00. "
-                  "I cue importati da Pro Tools (timecode assoluto) vengono posizionati sottraendo questo valore.\n\nNome dei take: schema con {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}.", juce::dontSendNotification);
+    hint.setText (TRANS ("L'inizio sessione e' il timecode della posizione zero della timeline: nelle sessioni Pro Tools di solito 01:00:00:00. "
+                  "I cue importati da Pro Tools (timecode assoluto) vengono posizionati sottraendo questo valore.\n\nNome dei take: schema con {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}."), juce::dontSendNotification);
 
     tcFormat.onChange = [this] { updateStartHint(); };
     okBtn.onClick = [this] { close (true); };
@@ -71,8 +71,8 @@ void SessionSettingsDialog::close (bool ok)
         double secs = 0.0;
         if (! timecodeToSeconds (start.getText(), tcFormats()[juce::jlimit (0, numTcFormats - 1, v.tcFormat)], secs))
         {
-            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Timecode non valido",
-                                                    "Scrivi l'inizio sessione come ore:minuti:secondi:fotogrammi, per esempio 01:00:00:00.");
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, TRANS ("Timecode non valido"),
+                                                    TRANS ("Scrivi l'inizio sessione come ore:minuti:secondi:fotogrammi, per esempio 01:00:00:00."));
             return;
         }
         v.tcStart = secs;

@@ -164,13 +164,13 @@ std::vector<Item> alignToGuide (Project& p, const std::vector<int64_t>& clipIds,
         const int64_t t0 = juce::jmax<int64_t> (0, c->start - margin), t1 = c->end() + margin, n = t1 - t0;
         std::vector<const Clip*> near;
         for (auto* g : guide) if (g->end() > t0 && g->start < t1) near.push_back (g);
-        if (near.empty()) { it.note = "nessun dialogo di guida in questa posizione"; items.push_back (it); continue; }
+        if (near.empty()) { it.note = TRANS ("nessun dialogo di guida in questa posizione"); items.push_back (it); continue; }
 
         const auto ref = renderMono (near, t0, n), tgt = renderMono ({ c }, t0, n);
         const auto sh = findShift (ref, tgt, rate, maxShiftSec);
         it.shiftMs = sh.samples * 1000.0 / rate;
         it.confidence = sh.confidence;
-        if (! sh.ok || sh.confidence < minConfidence) { it.note = "somiglianza troppo bassa (" + juce::String (sh.confidence, 2) + ")"; items.push_back (it); continue; }
+        if (! sh.ok || sh.confidence < minConfidence) { it.note = TRANS ("somiglianza troppo bassa (") + juce::String (sh.confidence, 2) + ")"; items.push_back (it); continue; }
 
         int64_t newStart = juce::jmax<int64_t> (0, c->start + (int64_t) std::llround (sh.samples));
         if (adaptDuration)

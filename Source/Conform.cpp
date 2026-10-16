@@ -100,11 +100,11 @@ Parsed parseEdl (const juce::String& text, int tcFormatIndex)
     }
     for (size_t i = 0; i < all.size(); ++i)
         if (isVideo[i] || ! anyVideoChannel) video.push_back (all[i]);
-    if (! anyVideoChannel && ! all.empty()) r.warnings.add ("L'EDL non ha eventi video (canale V): uso tutti gli eventi.");
+    if (! anyVideoChannel && ! all.empty()) r.warnings.add (TRANS ("L'EDL non ha eventi video (canale V): uso tutti gli eventi."));
     if (badTc > 0)
-        r.warnings.add (juce::String (badTc) + " eventi saltati: timecode non valido per il formato " + juce::String (fmt.name) + " (i fotogrammi del file superano quelli del formato?).");
-    if (dissolve) r.warnings.add ("L'EDL contiene dissolvenze o wipe: sono trattate come tagli netti all'inizio dell'evento.");
-    if (retime) r.warnings.add ("Alcuni eventi hanno un cambio di velocita' (M2): non e' supportato, quegli eventi non vengono seguiti.");
+        r.warnings.add (juce::String (badTc) + TRANS (" eventi saltati: timecode non valido per il formato ") + juce::String (fmt.name) + TRANS (" (i fotogrammi del file superano quelli del formato?)."));
+    if (dissolve) r.warnings.add (TRANS ("L'EDL contiene dissolvenze o wipe: sono trattate come tagli netti all'inizio dell'evento."));
+    if (retime) r.warnings.add (TRANS ("Alcuni eventi hanno un cambio di velocita' (M2): non e' supportato, quegli eventi non vengono seguiti."));
     r.events = std::move (video);
     return r;
 }
@@ -146,7 +146,7 @@ Map buildMap (const std::vector<Event>& oldE, const std::vector<Event>& newE)
         m.segments.push_back ({ os, c.oe, c.ns + (os - c.os) });
         covered = c.oe;
     }
-    if (duplicates) m.warnings.add ("Parte del materiale compare piu' volte nel nuovo montaggio: l'audio segue solo la prima occorrenza.");
+    if (duplicates) m.warnings.add (TRANS ("Parte del materiale compare piu' volte nel nuovo montaggio: l'audio segue solo la prima occorrenza."));
 
     // unione dei segmenti contigui
     std::vector<Map::Seg> merged;
@@ -161,7 +161,7 @@ Map buildMap (const std::vector<Event>& oldE, const std::vector<Event>& newE)
     for (auto& s : m.segments) { mappedOld.emplace_back (s.oldStart, s.oldEnd); mappedNew.emplace_back (s.newStart, s.newStart + (s.oldEnd - s.oldStart)); }
     m.removed = subtract (m.coverage, mergeRanges (mappedOld));
     m.inserted = subtract (newMerged, mergeRanges (mappedNew));
-    if (m.segments.empty()) m.warnings.add ("Nessun materiale in comune fra i due montaggi: controlla i nomi delle bobine e che gli EDL siano della stessa sessione.");
+    if (m.segments.empty()) m.warnings.add (TRANS ("Nessun materiale in comune fra i due montaggi: controlla i nomi delle bobine e che gli EDL siano della stessa sessione."));
     return m;
 }
 
@@ -184,12 +184,12 @@ juce::String describe (const Map& m, const ConformStats& st, double rate)
     for (auto& r : m.inserted) inserted += r.second - r.first;
     for (auto& s : m.segments) if (std::abs (s.newStart - s.oldStart) > kEps) moved += s.oldEnd - s.oldStart;
     juce::String t;
-    t << m.segments.size() << " pezzi in comune (" << juce::String (moved, 1) << " s spostati)\n"
-      << "Materiale tolto: " << m.removed.size() << " zone, " << juce::String (removed, 1) << " s\n"
-      << "Materiale nuovo (senza audio): " << m.inserted.size() << " zone, " << juce::String (inserted, 1) << " s\n\n"
-      << "Clip toccati: " << st.clipsTouched << " (" << st.clipPieces << " pezzi, " << st.clipsDropped << " eliminati del tutto, " << juce::String (st.droppedSeconds, 1) << " s di audio tolto)\n"
-      << "Cue spostati: " << st.cuesMoved << ", cue fuori dal nuovo montaggio (segnati Da rifare): " << st.cuesOut << "\n"
-      << "Marker spostati: " << st.markersMoved << ", marker sul materiale nuovo: " << st.insertedMarkers;
+    t << m.segments.size() << TRANS (" pezzi in comune (") << juce::String (moved, 1) << TRANS (" s spostati)\n")
+      << TRANS ("Materiale tolto: ") << m.removed.size() << " zone, " << juce::String (removed, 1) << " s\n"
+      << TRANS ("Materiale nuovo (senza audio): ") << m.inserted.size() << " zone, " << juce::String (inserted, 1) << " s\n\n"
+      << TRANS ("Clip toccati: ") << st.clipsTouched << " (" << st.clipPieces << " pezzi, " << st.clipsDropped << TRANS (" eliminati del tutto, ") << juce::String (st.droppedSeconds, 1) << TRANS (" s di audio tolto)\n")
+      << TRANS ("Cue spostati: ") << st.cuesMoved << TRANS (", cue fuori dal nuovo montaggio (segnati Da rifare): ") << st.cuesOut << "\n"
+      << TRANS ("Marker spostati: ") << st.markersMoved << TRANS (", marker sul materiale nuovo: ") << st.insertedMarkers;
     return t;
 }
 } // namespace fc::conform

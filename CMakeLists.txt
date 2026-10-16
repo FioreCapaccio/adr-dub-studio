@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ArotronStudio VERSION 2.6.0 LANGUAGES C CXX)
+project(ArotronStudio VERSION 2.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,8 +23,8 @@ FetchContent_MakeAvailable(JUCE)
 
 juce_add_gui_app(ArotronStudio
     PRODUCT_NAME "ADR Dub Studio"
-    VERSION 2.6.0
-    BUNDLE_VERSION 2.6.0
+    VERSION 2.7.0
+    BUNDLE_VERSION 2.7.0
     COMPANY_NAME "Arotron"
     BUNDLE_ID "com.arotron.studio"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png"
@@ -34,6 +34,10 @@ juce_add_gui_app(ArotronStudio
     CAMERA_PERMISSION_ENABLED FALSE)
 
 juce_generate_juce_header(ArotronStudio)
+
+# cataloghi di traduzione dell'interfaccia (testo italiano = chiave)
+juce_add_binary_data(ArotronLang NAMESPACE LangData HEADER_NAME LangData.h SOURCES Resources/lang/en.txt)
+target_link_libraries(ArotronStudio PRIVATE ArotronLang)
 
 target_sources(ArotronStudio PRIVATE
     Source/Main.cpp
@@ -56,6 +60,7 @@ target_sources(ArotronStudio PRIVATE
     Source/WorkflowGuide.cpp
     Source/Conform.cpp
     Source/ExternalSync.cpp
+    Source/Lang.cpp
     Source/EditBar.cpp
     Source/ExportEngine.cpp
     Source/ExportDialog.cpp
@@ -89,7 +94,7 @@ target_compile_definitions(ArotronStudio PRIVATE
     JUCE_PLUGINHOST_AU=0
     JUCE_MODAL_LOOPS_PERMITTED=0
     JUCE_APPLICATION_NAME_STRING="ADR Dub Studio"
-    JUCE_APPLICATION_VERSION_STRING="2.6.0")
+    JUCE_APPLICATION_VERSION_STRING="2.7.0")
 
 if(ADR_FFMPEG_VIDEO)
     target_compile_definitions(ArotronStudio PRIVATE ADR_FFMPEG_VIDEO=1)

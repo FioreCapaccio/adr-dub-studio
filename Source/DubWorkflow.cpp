@@ -7,12 +7,12 @@ namespace fc::dub
 const std::vector<SessionTemplate>& templates()
 {
     static const std::vector<SessionTemplate> t = {
-        { "dubbing", "Doppiaggio standard", "Guida (dialogo originale), M&E, Effetti e una traccia Dialoghi: ognuna sul proprio bus, pronta per gli stem.",
-          { { "Guida", TrackGuide }, { "M&E", TrackME }, { "Effetti", TrackEffects }, { "Dialoghi", TrackDialogue } } },
-        { "adr", "Solo registrazione ADR", "Guida e traccia ADR per registrare le battute; M&E come riferimento in cuffia.",
-          { { "Guida", TrackGuide }, { "ADR", TrackDialogue }, { "M&E", TrackME } } },
-        { "mix", "Revisione e mix", "Dialoghi, M&E ed Effetti per il mix finale, sui rispettivi bus.",
-          { { "Dialoghi", TrackDialogue }, { "M&E", TrackME }, { "Effetti", TrackEffects } } },
+        { "dubbing", TRX ("Doppiaggio standard"), TRX ("Guida (dialogo originale), M&E, Effetti e una traccia Dialoghi: ognuna sul proprio bus, pronta per gli stem."),
+          { { TRX ("Guida"), TrackGuide }, { TRX ("M&E"), TrackME }, { TRX ("Effetti"), TrackEffects }, { TRX ("Dialoghi"), TrackDialogue } } },
+        { "adr", TRX ("Solo registrazione ADR"), TRX ("Guida e traccia ADR per registrare le battute; M&E come riferimento in cuffia."),
+          { { TRX ("Guida"), TrackGuide }, { TRX ("ADR"), TrackDialogue }, { TRX ("M&E"), TrackME } } },
+        { "mix", TRX ("Revisione e mix"), TRX ("Dialoghi, M&E ed Effetti per il mix finale, sui rispettivi bus."),
+          { { TRX ("Dialoghi"), TrackDialogue }, { TRX ("M&E"), TrackME }, { TRX ("Effetti"), TrackEffects } } },
     };
     return t;
 }
@@ -24,7 +24,7 @@ void applyTemplate (Project& p, const SessionTemplate& t)
     for (auto& tt : t.tracks)
     {
         const auto colour = tt.type == TrackGuide ? trackTypeColour (TrackGuide) : theme::trackPalette[i % theme::numPaletteColours];
-        p.addTrackAs (tt.name, tt.type, colour, roleOutBus (tt.type));
+        p.addTrackAs (juce::translate (tt.name), tt.type, colour, roleOutBus (tt.type));
         ++i;
     }
     if (! p.getSession().tracks.empty()) p.selectedTrackId = p.getSession().tracks.back().id;

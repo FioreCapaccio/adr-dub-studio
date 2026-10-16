@@ -24,9 +24,9 @@ private:
     juce::Label info, tcLbl, startLbl, durLbl;
     juce::ComboBox tcFormat;
     juce::TextEditor start, duration;
-    juce::ToggleButton replace { "Sostituisci i cue esistenti" }, markers { "Crea anche un marker per ogni cue (come le Memory Location)" },
-                       characterTracks { "Crea una traccia Dialoghi per ogni personaggio" };
-    juce::TextButton okBtn { "Importa" }, cancelBtn { "Annulla" };
+    juce::ToggleButton replace { TRANS ("Sostituisci i cue esistenti") }, markers { TRANS ("Crea anche un marker per ogni cue (come le Memory Location)") },
+                       characterTracks { TRANS ("Crea una traccia Dialoghi per ogni personaggio") };
+    juce::TextButton okBtn { TRANS ("Importa") }, cancelBtn { "Annulla" };
     adr::ImportResult result;
 };
 
@@ -71,10 +71,10 @@ private:
     Project& project;
     Actions actions;
     juce::TableListBox table { {}, this };
-    juce::TextButton importBtn { "IMPORTA..." }, addBtn { "+ CUE" }, delBtn { "ELIMINA" }, settingsBtn { "IMPOSTAZIONI" },
-                     csvBtn { "ESPORTA CSV" }, ptBtn { "ESPORTA PRO TOOLS" }, bwfBtn { "ESPORTA TAKE (BWF)" },
-                     recBtn { "REGISTRA CUE" }, prevBtn { "< CUE" }, nextBtn { "CUE >" },
-                     auditionBtn { "ASCOLTA" }, originalBtn { "ORIGINALE" }, activateBtn { "ATTIVA" }, deleteTakeBtn { "ELIMINA TAKE" };
+    juce::TextButton importBtn { TRANS ("IMPORTA...") }, addBtn { TRANS ("+ CUE") }, delBtn { "ELIMINA" }, settingsBtn { "IMPOSTAZIONI" },
+                     csvBtn { TRANS ("ESPORTA CSV") }, ptBtn { TRANS ("ESPORTA PRO TOOLS") }, bwfBtn { TRANS ("ESPORTA TAKE (BWF)") },
+                     recBtn { TRANS ("REGISTRA CUE") }, prevBtn { TRANS ("< CUE") }, nextBtn { TRANS ("CUE >") },
+                     auditionBtn { "ASCOLTA" }, originalBtn { "ORIGINALE" }, activateBtn { "ATTIVA" }, deleteTakeBtn { TRANS ("ELIMINA TAKE") };
     juce::Label lblChar, lblScene, lblReel, lblIn, lblOut, lblStatus, lblDialogue, lblNotes, lblTrack, lblTakes;
     juce::TextEditor edChar, edScene, edReel, edIn, edOut, edDialogue, edNotes;
     juce::ComboBox cbStatus, cbTrack;
@@ -91,7 +91,7 @@ class AdrWindow : public juce::DocumentWindow
 {
 public:
     explicit AdrWindow (std::function<void()> closeCallback)
-        : juce::DocumentWindow ("Cue ADR - ADR Dub Studio", theme::bg, juce::DocumentWindow::allButtons), onClose (std::move (closeCallback))
+        : juce::DocumentWindow (TRANS ("Cue ADR - ADR Dub Studio"), theme::bg, juce::DocumentWindow::allButtons), onClose (std::move (closeCallback))
     {
         setUsingNativeTitleBar (true);
         setResizable (true, true);

@@ -33,56 +33,56 @@ BuiltinFx::BuiltinFx (Kind k)
     switch (kind)
     {
         case Filter:
-            addFloat ("hp", "Passa-alto", 20.0f, 1000.0f, 20.0f, " Hz", 100.0f);        // 0: 20 Hz = spento
-            addFloat ("lp", "Passa-basso", 1000.0f, 20000.0f, 20000.0f, " Hz", 5000.0f); // 1: 20 kHz = spento
+            addFloat ("hp", TRANS ("Passa-alto"), 20.0f, 1000.0f, 20.0f, " Hz", 100.0f);        // 0: 20 Hz = spento
+            addFloat ("lp", TRANS ("Passa-basso"), 1000.0f, 20000.0f, 20000.0f, " Hz", 5000.0f); // 1: 20 kHz = spento
             break;
         case DeEsser:
-            addFloat ("freq", "Frequenza", 2000.0f, 12000.0f, 6500.0f, " Hz", 6000.0f);  // 0
-            addFloat ("thr", "Soglia", -50.0f, 0.0f, -30.0f, " dB");                      // 1
-            addFloat ("max", "Riduzione max", 0.0f, 18.0f, 9.0f, " dB");                  // 2
+            addFloat ("freq", TRANS ("Frequenza"), 2000.0f, 12000.0f, 6500.0f, " Hz", 6000.0f);  // 0
+            addFloat ("thr", TRANS ("Soglia"), -50.0f, 0.0f, -30.0f, " dB");                      // 1
+            addFloat ("max", TRANS ("Riduzione max"), 0.0f, 18.0f, 9.0f, " dB");                  // 2
             break;
         case Gate:
-            addFloat ("thr", "Soglia", -80.0f, 0.0f, -50.0f, " dB");                      // 0
-            addFloat ("range", "Attenuazione", 0.0f, 80.0f, 40.0f, " dB");                // 1
-            addFloat ("att", "Attacco", 0.1f, 50.0f, 1.0f, " ms", 5.0f);                  // 2
-            addFloat ("rel", "Rilascio", 5.0f, 1000.0f, 120.0f, " ms", 150.0f);           // 3
+            addFloat ("thr", TRANS ("Soglia"), -80.0f, 0.0f, -50.0f, " dB");                      // 0
+            addFloat ("range", TRANS ("Attenuazione"), 0.0f, 80.0f, 40.0f, " dB");                // 1
+            addFloat ("att", TRANS ("Attacco"), 0.1f, 50.0f, 1.0f, " ms", 5.0f);                  // 2
+            addFloat ("rel", TRANS ("Rilascio"), 5.0f, 1000.0f, 120.0f, " ms", 150.0f);           // 3
             break;
         case Multiband:
-            addFloat ("xo1", "Crossover basso/medio", 50.0f, 1000.0f, 200.0f, " Hz", 250.0f);   // 0
-            addFloat ("xo2", "Crossover medio/alto", 1000.0f, 12000.0f, 3000.0f, " Hz", 3500.0f); // 1
-            addFloat ("att", "Attacco", 0.5f, 100.0f, 10.0f, " ms", 15.0f);                      // 2
-            addFloat ("rel", "Rilascio", 20.0f, 1000.0f, 150.0f, " ms", 200.0f);                 // 3
-            addFloat ("out", "Uscita", -12.0f, 12.0f, 0.0f, " dB");                              // 4
+            addFloat ("xo1", TRANS ("Crossover basso/medio"), 50.0f, 1000.0f, 200.0f, " Hz", 250.0f);   // 0
+            addFloat ("xo2", TRANS ("Crossover medio/alto"), 1000.0f, 12000.0f, 3000.0f, " Hz", 3500.0f); // 1
+            addFloat ("att", TRANS ("Attacco"), 0.5f, 100.0f, 10.0f, " ms", 15.0f);                      // 2
+            addFloat ("rel", TRANS ("Rilascio"), 20.0f, 1000.0f, 150.0f, " ms", 200.0f);                 // 3
+            addFloat ("out", TRANS ("Uscita"), -12.0f, 12.0f, 0.0f, " dB");                              // 4
             for (const char* band : { "low", "mid", "high" })                                   // 5.. : soglia, rapporto, guadagno di ogni banda
             {
-                const juce::String id (band), nm = id == "low" ? "Bassi" : id == "mid" ? "Medi" : "Alti";
-                addFloat (id + "Thr", nm + " - soglia", -60.0f, 0.0f, -24.0f, " dB");
-                addFloat (id + "Ratio", nm + " - rapporto", 1.0f, 20.0f, 3.0f, ":1", 4.0f);
-                addFloat (id + "Gain", nm + " - guadagno", -12.0f, 12.0f, 0.0f, " dB");
+                const juce::String id (band), nm = id == "low" ? TRANS ("Bassi") : id == "mid" ? TRANS ("Medi") : TRANS ("Alti");
+                addFloat (id + "Thr", nm + TRANS (" - soglia"), -60.0f, 0.0f, -24.0f, " dB");
+                addFloat (id + "Ratio", nm + TRANS (" - rapporto"), 1.0f, 20.0f, 3.0f, ":1", 4.0f);
+                addFloat (id + "Gain", nm + TRANS (" - guadagno"), -12.0f, 12.0f, 0.0f, " dB");
             }
             break;
         case Reverb:
-            addFloat ("size", "Dimensione", 0.0f, 1.0f, 0.5f);                            // 0
-            addFloat ("damp", "Smorzamento", 0.0f, 1.0f, 0.5f);                           // 1
-            addFloat ("width", "Larghezza", 0.0f, 1.0f, 1.0f);                            // 2
-            addFloat ("mix", "Mix", 0.0f, 100.0f, 25.0f, " %");                           // 3
+            addFloat ("size", TRANS ("Dimensione"), 0.0f, 1.0f, 0.5f);                            // 0
+            addFloat ("damp", TRANS ("Smorzamento"), 0.0f, 1.0f, 0.5f);                           // 1
+            addFloat ("width", TRANS ("Larghezza"), 0.0f, 1.0f, 1.0f);                            // 2
+            addFloat ("mix", TRANS ("Mix"), 0.0f, 100.0f, 25.0f, " %");                           // 3
             break;
         case Delay:
-            addFloat ("time", "Tempo", 1.0f, 1500.0f, 250.0f, " ms", 300.0f);             // 0
-            addFloat ("fb", "Feedback", 0.0f, 90.0f, 35.0f, " %");                        // 1
-            addFloat ("mix", "Mix", 0.0f, 100.0f, 30.0f, " %");                           // 2
-            addBool ("pingpong", "Ping-pong", false);                                     // 3
+            addFloat ("time", TRANS ("Tempo"), 1.0f, 1500.0f, 250.0f, " ms", 300.0f);             // 0
+            addFloat ("fb", TRANS ("Feedback"), 0.0f, 90.0f, 35.0f, " %");                        // 1
+            addFloat ("mix", TRANS ("Mix"), 0.0f, 100.0f, 30.0f, " %");                           // 2
+            addBool ("pingpong", TRANS ("Ping-pong"), false);                                     // 3
             break;
         case Saturator:
-            addFloat ("drive", "Drive", 0.0f, 30.0f, 10.0f, " dB");                       // 0
-            addFloat ("tone", "Tono (passa-basso)", 1000.0f, 20000.0f, 20000.0f, " Hz", 5000.0f); // 1
-            addFloat ("mix", "Mix", 0.0f, 100.0f, 100.0f, " %");                          // 2
-            addFloat ("out", "Uscita", -12.0f, 12.0f, 0.0f, " dB");                       // 3
+            addFloat ("drive", TRANS ("Drive"), 0.0f, 30.0f, 10.0f, " dB");                       // 0
+            addFloat ("tone", TRANS ("Tono (passa-basso)"), 1000.0f, 20000.0f, 20000.0f, " Hz", 5000.0f); // 1
+            addFloat ("mix", TRANS ("Mix"), 0.0f, 100.0f, 100.0f, " %");                          // 2
+            addFloat ("out", TRANS ("Uscita"), -12.0f, 12.0f, 0.0f, " dB");                       // 3
             break;
         case Chorus:
-            addFloat ("rate", "Frequenza", 0.1f, 5.0f, 0.8f, " Hz", 1.0f);                // 0
+            addFloat ("rate", TRANS ("Frequenza"), 0.1f, 5.0f, 0.8f, " Hz", 1.0f);                // 0
             addFloat ("depth", u8 ("Profondit\xc3\xa0"), 0.0f, 10.0f, 4.0f, " ms");       // 1
-            addFloat ("mix", "Mix", 0.0f, 100.0f, 50.0f, " %");                           // 2
+            addFloat ("mix", TRANS ("Mix"), 0.0f, 100.0f, 50.0f, " %");                           // 2
             break;
         default: break;
     }
@@ -118,14 +118,14 @@ juce::String BuiltinFx::kindName (Kind k)
 {
     switch (k)
     {
-        case Filter:    return "Filtro HP/LP";
-        case DeEsser:   return "De-esser";
-        case Gate:      return "Gate / Expander";
+        case Filter:    return TRANS ("Filtro HP/LP");
+        case DeEsser:   return TRANS ("De-esser");
+        case Gate:      return TRANS ("Gate / Expander");
         case Multiband: return "Compressore multibanda";
-        case Reverb:    return "Riverbero";
-        case Delay:     return "Delay";
-        case Saturator: return "Saturazione";
-        case Chorus:    return "Chorus";
+        case Reverb:    return TRANS ("Riverbero");
+        case Delay:     return TRANS ("Delay");
+        case Saturator: return TRANS ("Saturazione");
+        case Chorus:    return TRANS ("Chorus");
         default:        return {};
     }
 }
@@ -176,14 +176,14 @@ juce::String BuiltinFx::kindCategory (Kind k)
 {
     switch (k)
     {
-        case Filter:    return "Filtro";
+        case Filter:    return TRANS ("Filtro");
         case DeEsser:
         case Gate:
-        case Multiband: return "Dinamica";
+        case Multiband: return TRANS ("Dinamica");
         case Reverb:
-        case Delay:     return "Spazio";
-        case Saturator: return "Colore";
-        case Chorus:    return "Modulazione";
+        case Delay:     return TRANS ("Spazio");
+        case Saturator: return TRANS ("Colore");
+        case Chorus:    return TRANS ("Modulazione");
         default:        return {};
     }
 }
@@ -198,23 +198,23 @@ std::vector<BuiltinFx::Group> BuiltinFx::layout (Kind k)
 {
     switch (k)
     {
-        case Filter:    return { { "Filtro", { { "hp", "Passa-alto" }, { "lp", "Passa-basso" } }, -1 } };
-        case DeEsser:   return { { "De-esser", { { "freq", "Frequenza" }, { "thr", "Soglia" }, { "max", "Riduzione max" } }, 0 } };
-        case Gate:      return { { "Soglia", { { "thr", "Soglia" }, { "range", "Attenuazione" } }, 0 },
-                                 { "Tempi", { { "att", "Attacco" }, { "rel", "Rilascio" } }, -1 } };
-        case Multiband: return { { "Crossover", { { "xo1", "Bassi / medi" }, { "xo2", "Medi / alti" } }, -1 },
-                                 { "Tempi e uscita", { { "att", "Attacco" }, { "rel", "Rilascio" }, { "out", "Uscita" } }, -1 },
-                                 { "Bassi", { { "lowThr", "Soglia" }, { "lowRatio", "Rapporto" }, { "lowGain", "Guadagno" } }, 0, true },
-                                 { "Medi", { { "midThr", "Soglia" }, { "midRatio", "Rapporto" }, { "midGain", "Guadagno" } }, 1 },
-                                 { "Alti", { { "highThr", "Soglia" }, { "highRatio", "Rapporto" }, { "highGain", "Guadagno" } }, 2 } };
-        case Reverb:    return { { "Ambiente", { { "size", "Dimensione" }, { "damp", "Smorzamento" }, { "width", "Larghezza" } }, -1 },
-                                 { "Uscita", { { "mix", "Mix" } }, -1 } };
-        case Delay:     return { { "Eco", { { "time", "Tempo" }, { "fb", "Feedback" }, { "mix", "Mix" } }, -1 },
-                                 { "Stereo", { { "pingpong", "Ping-pong" } }, -1 } };
-        case Saturator: return { { "Saturazione", { { "drive", "Drive" }, { "tone", "Tono" } }, -1 },
-                                 { "Uscita", { { "mix", "Mix" }, { "out", "Livello" } }, -1 } };
-        case Chorus:    return { { "Modulazione", { { "rate", "Frequenza" }, { "depth", u8 ("Profondit\xc3\xa0") } }, -1 },
-                                 { "Uscita", { { "mix", "Mix" } }, -1 } };
+        case Filter:    return { { TRANS ("Filtro"), { { "hp", TRANS ("Passa-alto") }, { "lp", TRANS ("Passa-basso") } }, -1 } };
+        case DeEsser:   return { { TRANS ("De-esser"), { { "freq", TRANS ("Frequenza") }, { "thr", TRANS ("Soglia") }, { "max", TRANS ("Riduzione max") } }, 0 } };
+        case Gate:      return { { TRANS ("Soglia"), { { "thr", TRANS ("Soglia") }, { "range", TRANS ("Attenuazione") } }, 0 },
+                                 { TRANS ("Tempi"), { { "att", TRANS ("Attacco") }, { "rel", TRANS ("Rilascio") } }, -1 } };
+        case Multiband: return { { TRANS ("Crossover"), { { "xo1", TRANS ("Bassi / medi") }, { "xo2", TRANS ("Medi / alti") } }, -1 },
+                                 { TRANS ("Tempi e uscita"), { { "att", TRANS ("Attacco") }, { "rel", TRANS ("Rilascio") }, { "out", TRANS ("Uscita") } }, -1 },
+                                 { TRANS ("Bassi"), { { "lowThr", TRANS ("Soglia") }, { "lowRatio", TRANS ("Rapporto") }, { "lowGain", TRANS ("Guadagno") } }, 0, true },
+                                 { TRANS ("Medi"), { { "midThr", TRANS ("Soglia") }, { "midRatio", TRANS ("Rapporto") }, { "midGain", TRANS ("Guadagno") } }, 1 },
+                                 { TRANS ("Alti"), { { "highThr", TRANS ("Soglia") }, { "highRatio", TRANS ("Rapporto") }, { "highGain", TRANS ("Guadagno") } }, 2 } };
+        case Reverb:    return { { TRANS ("Ambiente"), { { "size", TRANS ("Dimensione") }, { "damp", TRANS ("Smorzamento") }, { "width", TRANS ("Larghezza") } }, -1 },
+                                 { TRANS ("Uscita"), { { "mix", TRANS ("Mix") } }, -1 } };
+        case Delay:     return { { TRANS ("Eco"), { { "time", TRANS ("Tempo") }, { "fb", TRANS ("Feedback") }, { "mix", TRANS ("Mix") } }, -1 },
+                                 { TRANS ("Stereo"), { { "pingpong", TRANS ("Ping-pong") } }, -1 } };
+        case Saturator: return { { TRANS ("Saturazione"), { { "drive", TRANS ("Drive") }, { "tone", TRANS ("Tono") } }, -1 },
+                                 { TRANS ("Uscita"), { { "mix", TRANS ("Mix") }, { "out", TRANS ("Livello") } }, -1 } };
+        case Chorus:    return { { TRANS ("Modulazione"), { { "rate", TRANS ("Frequenza") }, { "depth", u8 ("Profondit\xc3\xa0") } }, -1 },
+                                 { TRANS ("Uscita"), { { "mix", TRANS ("Mix") } }, -1 } };
         default:        return {};
     }
 }

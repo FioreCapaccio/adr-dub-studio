@@ -103,18 +103,18 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
 {
     struct T { Tool t; const char* tip; };
     const T tools[] = {
-        { Tool::Select, "Selezione (V): seleziona, sposta e rifila i clip. Cmd + trascina (Ctrl su Windows) su una traccia: seleziona la porzione e la mette in loop" },
-        { Tool::Razor,  "Lama (B): clic su un clip per dividerlo. Maiusc: divide tutte le tracce" },
-        { Tool::Slip,   "Slip (Y): trascina per scorrere il contenuto dentro il clip senza spostarlo" },
-        { Tool::Stretch, "Stretch (E): trascina il bordo di un clip per allungarlo o accorciarlo; l'audio si adatta senza cambiare il tono e il bordo si aggancia ai cue" },
-        { Tool::Hand,   "Mano (H): trascina per spostare la vista" },
-        { Tool::Zoom,   "Zoom (Z): clic per ingrandire, Alt + clic per ridurre, trascina per zoomare su un'area" },
-        { Tool::Automation, "Automazione (U): clic su una traccia per aggiungere un punto alla curva mostrata (VOL, PAN, SEND A o SEND B: si cambia dal pulsante nell'intestazione della traccia), trascina per spostarlo, clic destro per eliminarlo" }
+        { Tool::Select, TRX ("Selezione (V): seleziona, sposta e rifila i clip. Cmd + trascina (Ctrl su Windows) su una traccia: seleziona la porzione e la mette in loop") },
+        { Tool::Razor,  TRX ("Lama (B): clic su un clip per dividerlo. Maiusc: divide tutte le tracce") },
+        { Tool::Slip,   TRX ("Slip (Y): trascina per scorrere il contenuto dentro il clip senza spostarlo") },
+        { Tool::Stretch, TRX ("Stretch (E): trascina il bordo di un clip per allungarlo o accorciarlo; l'audio si adatta senza cambiare il tono e il bordo si aggancia ai cue") },
+        { Tool::Hand,   TRX ("Mano (H): trascina per spostare la vista") },
+        { Tool::Zoom,   TRX ("Zoom (Z): clic per ingrandire, Alt + clic per ridurre, trascina per zoomare su un'area") },
+        { Tool::Automation, TRX ("Automazione (U): clic su una traccia per aggiungere un punto alla curva mostrata (VOL, PAN, SEND A o SEND B: si cambia dal pulsante nell'intestazione della traccia), trascina per spostarlo, clic destro per eliminarlo") }
     };
     for (auto& t : tools)
     {
         auto b = std::make_unique<ToolButton> (t.t);
-        b->setTooltip (t.tip);
+        b->setTooltip (juce::translate (t.tip));
         b->setRadioGroupId (4711);
         b->setWantsKeyboardFocus (false);
         b->onClick = [this, tool = t.t] { if (onToolSelected) onToolSelected (tool); };
@@ -125,17 +125,17 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
 
     struct A { const char* label; int w; int cmd; const char* tip; };
     const A acts[] = {
-        { "DIVIDI",    62, cmdSplit,        "Divide i clip alla testina (S)" },
-        { "DUPLICA",   68, cmdDuplicate,    "Duplica i clip selezionati (Cmd + D)" },
-        { "ELIMINA",   68, cmdDelete,       "Elimina i clip selezionati (Canc)" },
-        { "RIPPLE",    62, cmdRippleDelete, "Elimina i clip selezionati chiudendo il vuoto sulla traccia (Maiusc + Canc)" },
-        { "TAGLIA IN", 76, cmdTrimStart,    "Taglia l'inizio dei clip alla testina (Q)" },
-        { "TAGLIA OUT", 84, cmdTrimEnd,     "Taglia la fine dei clip alla testina (W)" }
+        { TRX ("DIVIDI"),    62, cmdSplit,        TRX ("Divide i clip alla testina (S)") },
+        { TRX ("DUPLICA"),   68, cmdDuplicate,    TRX ("Duplica i clip selezionati (Cmd + D)") },
+        { TRX ("ELIMINA"),   68, cmdDelete,       TRX ("Elimina i clip selezionati (Canc)") },
+        { TRX ("RIPPLE"),    62, cmdRippleDelete, TRX ("Elimina i clip selezionati chiudendo il vuoto sulla traccia (Maiusc + Canc)") },
+        { TRX ("TAGLIA IN"), 76, cmdTrimStart,    TRX ("Taglia l'inizio dei clip alla testina (Q)") },
+        { TRX ("TAGLIA OUT"), 84, cmdTrimEnd,     TRX ("Taglia la fine dei clip alla testina (W)") }
     };
     for (auto& a : acts)
     {
-        auto b = std::make_unique<juce::TextButton> (a.label);
-        b->setTooltip (a.tip);
+        auto b = std::make_unique<juce::TextButton> (juce::translate (a.label));
+        b->setTooltip (juce::translate (a.tip));
         b->setWantsKeyboardFocus (false);
         b->onClick = [this, id = a.cmd] { commands.invokeDirectly ((juce::CommandID) id, true); };
         addAndMakeVisible (*b);
@@ -144,17 +144,17 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
 
     heightSlider.setRange (48.0, 240.0, 1.0);
     heightSlider.setValue (96.0, juce::dontSendNotification);
-    heightSlider.setTooltip ("Altezza delle tracce (si puo' anche trascinare il bordo di ogni traccia)");
+    heightSlider.setTooltip (TRANS ("Altezza delle tracce (si puo' anche trascinare il bordo di ogni traccia)"));
     heightSlider.onValueChange = [this] { if (onHeightChanged) onHeightChanged ((int) heightSlider.getValue()); };
     addAndMakeVisible (heightSlider);
 
     zoomSlider.setRange (0.0, 1.0, 0.0);
     zoomSlider.setValue (0.5, juce::dontSendNotification);
-    zoomSlider.setTooltip ("Zoom orizzontale della timeline (anche Cmd + rotella, pizzico sul trackpad, tasti + e -)");
+    zoomSlider.setTooltip (TRANS ("Zoom orizzontale della timeline (anche Cmd + rotella, pizzico sul trackpad, tasti + e -)"));
     zoomSlider.onValueChange = [this] { if (onZoomChanged) onZoomChanged (std::exp (std::log (kMaxSpp) + (std::log (kMinSpp) - std::log (kMaxSpp)) * zoomSlider.getValue())); };
     addAndMakeVisible (zoomSlider);
 
-    fitBtn.setTooltip ("Adatta l'altezza delle tracce alla finestra (Maiusc + F)");
+    fitBtn.setTooltip (TRANS ("Adatta l'altezza delle tracce alla finestra (Maiusc + F)"));
     fitBtn.setWantsKeyboardFocus (false);
     fitBtn.onClick = [this] { if (onFitHeights) onFitHeights(); };
     addAndMakeVisible (fitBtn);
@@ -184,8 +184,8 @@ void EditBar::paint (juce::Graphics& g)
     g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
     g.setColour (border);
     g.fillRect (separatorX, 8, 1, getHeight() - 16);
-    if (sliderCaptionX > 0) drawCaption (g, "Altezza", juce::Rectangle<int> (sliderCaptionX, 0, 50, getHeight()));
-    if (zoomCaptionX > 0) drawCaption (g, "Zoom", juce::Rectangle<int> (zoomCaptionX, 0, 40, getHeight()));
+    if (sliderCaptionX > 0) drawCaption (g, TRANS ("Altezza"), juce::Rectangle<int> (sliderCaptionX, 0, 50, getHeight()));
+    if (zoomCaptionX > 0) drawCaption (g, TRANS ("Zoom"), juce::Rectangle<int> (zoomCaptionX, 0, 40, getHeight()));
 }
 
 void EditBar::resized()

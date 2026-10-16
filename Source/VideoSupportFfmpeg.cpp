@@ -72,7 +72,7 @@ Info probe (const juce::File& f)
     Info info;
     juce::String out;
     const int rc = runTool ("ffprobe", { "-v", "error", "-print_format", "json", "-show_streams", "-show_format", f.getFullPathName() }, out, false);
-    if (rc < 0) { info.error = "Non trovo ffprobe: serve ffmpeg accanto all'app o nel PATH."; return info; }
+    if (rc < 0) { info.error = TRANS ("Non trovo ffprobe: serve ffmpeg accanto all'app o nel PATH."); return info; }
     const auto json = juce::JSON::parse (out);
     auto* streams = json.getProperty ("streams", {}).getArray();
     if (rc != 0 || streams == nullptr) { info.error = "Impossibile leggere " + f.getFileName() + "."; return info; }
@@ -100,7 +100,7 @@ Info probe (const juce::File& f)
             }
         info.ok = info.width > 0 && info.height > 0 && dur > 0.0;
     }
-    if (! info.ok) info.error = "Nessuna traccia video valida in " + f.getFileName();
+    if (! info.ok) info.error = TRANS ("Nessuna traccia video valida in ") + f.getFileName();
     return info;
 }
 
@@ -155,7 +155,7 @@ bool detectCuts (const juce::File& video, double sensitivity, const std::functio
     const auto filter = "select='gt(scene," + juce::String (thr, 3) + ")',showinfo";
     if (runTool ("ffmpeg", { "-hide_banner", "-nostats", "-i", video.getFullPathName(), "-vf", filter, "-an", "-f", "null", "-" }, output, true, 3600000) < 0)
     {
-        error = "Non trovo ffmpeg: serve accanto all'app o nel PATH.";
+        error = TRANS ("Non trovo ffmpeg: serve accanto all'app o nel PATH.");
         return false;
     }
     for (auto line : juce::StringArray::fromLines (output))
@@ -172,7 +172,7 @@ bool burnInSupported() { return false; }
 
 bool muxAudioBurnIn (const juce::File&, const juce::File&, const juce::File&, double, const BurnIn&, const std::function<bool (double)>&, juce::String& error, double, double)
 {
-    error = "Il burn-in e' disponibile solo su macOS.";
+    error = TRANS ("Il burn-in e' disponibile solo su macOS.");
     return false;
 }
 
@@ -186,7 +186,7 @@ bool muxAudio (const juce::File& video, const juce::File& audio, const juce::Fil
     const auto info = probe (video);
     if (! info.ok) { error = info.error; return false; }
     double total = ranged ? rangeEndSec - rangeStartSec : info.duration + atSec;
-    if (ranged && srcStart >= info.duration) { error = "L'intervallo scelto non contiene video."; return false; }
+    if (ranged && srcStart >= info.duration) { error = TRANS ("L'intervallo scelto non contiene video."); return false; }
 
     juce::StringArray args { toolCommand ("ffmpeg"), "-v", "error", "-y", "-nostats", "-progress", "pipe:1" };
     if (srcStart > 0.0) { args.add ("-ss"); args.add (juce::String (srcStart, 4)); }
@@ -197,7 +197,7 @@ bool muxAudio (const juce::File& video, const juce::File& audio, const juce::Fil
 
     out.deleteFile();
     juce::ChildProcess p;
-    if (! p.start (args, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr)) { error = "Non trovo ffmpeg: serve accanto all'app o nel PATH."; return false; }
+    if (! p.start (args, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr)) { error = TRANS ("Non trovo ffmpeg: serve accanto all'app o nel PATH."); return false; }
 
     juce::String pending, errors;
     bool cancelled = false;
@@ -222,11 +222,11 @@ bool muxAudio (const juce::File& video, const juce::File& audio, const juce::Fil
         if (cancelled) break;
     }
     p.waitForProcessToFinish (10000);
-    if (cancelled) { out.deleteFile(); error = "Esportazione annullata."; return false; }
+    if (cancelled) { out.deleteFile(); error = TRANS ("Esportazione annullata."); return false; }
     if (p.getExitCode() != 0 || ! out.existsAsFile())
     {
         out.deleteFile();
-        error = "Esportazione del video non riuscita." + (errors.isNotEmpty() ? "\n" + errors.trim() : juce::String());
+        error = TRANS ("Esportazione del video non riuscita.") + (errors.isNotEmpty() ? "\n" + errors.trim() : juce::String());
         return false;
     }
     return true;

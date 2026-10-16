@@ -387,13 +387,13 @@ bool renderMixdown (const Session& source, double rate, const juce::File& file,
     if (cancelled)
     {
         file.deleteFile();
-        message = "Esportazione annullata.";
+        message = TRANS ("Esportazione annullata.");
         return false;
     }
 
-    message = "Esportato in " + file.getFullPathName() + "\nPicco: "
+    message = TRANS ("Esportato in ") + file.getFullPathName() + "\nPicco: "
               + juce::String (juce::Decibels::gainToDecibels (peak, -120.0f), 1) + " dBFS"
-              + (peak > 1.0f ? " (attenzione: sopra 0 dBFS, abbassa i fader o il master)" : "");
+              + (peak > 1.0f ? TRANS (" (attenzione: sopra 0 dBFS, abbassa i fader o il master)") : "");
     return true;
 }
 
@@ -423,10 +423,10 @@ bool AudioEngine::ensureInput()
 
 juce::String AudioEngine::startRecording (const std::vector<TakeSpec>& specs)
 {
-    if (recording.load()) return "Registrazione gia' in corso.";
-    if (specs.empty()) return "Nessuna traccia armata.";
+    if (recording.load()) return TRANS ("Registrazione gia' in corso.");
+    if (specs.empty()) return TRANS ("Nessuna traccia armata.");
     const int nIn = numInputs.load();
-    if (nIn <= 0) return "Nessun ingresso audio attivo: controlla Impostazioni audio e il permesso del microfono.";
+    if (nIn <= 0) return TRANS ("Nessun ingresso audio attivo: controlla Impostazioni audio e il permesso del microfono.");
 
     if (! writerThread.isThreadRunning()) writerThread.startThread();
 
@@ -625,7 +625,7 @@ juce::String AudioEngine::openCueOutputs (int pair)
     auto* dev = deviceManager.getCurrentAudioDevice();
     if (dev == nullptr) return "Nessun dispositivo audio aperto.";
     const int need = 2 * (pair + 1), avail = dev->getOutputChannelNames().size();
-    if (avail < need) return "La scheda audio ha solo " + juce::String (avail) + " uscite: per le cuffie dell'attore ne servono almeno " + juce::String (need) + ".";
+    if (avail < need) return TRANS ("La scheda audio ha solo ") + juce::String (avail) + TRANS (" uscite: per le cuffie dell'attore ne servono almeno ") + juce::String (need) + ".";
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.useDefaultOutputChannels = false;
     setup.outputChannels.clear();

@@ -81,9 +81,9 @@ private:
     juce::Slider pan { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
     juce::Slider fader { juce::Slider::LinearVertical, juce::Slider::NoTextBox };
     juce::TextButton muteBtn { "M" }, soloBtn { "S" }, invertBtn { juce::String (juce::CharPointer_UTF8 ("\xc3\x98")) };
-    juce::TextButton monoBtn { "MONO" }, dimBtn { "DIM" };
+    juce::TextButton monoBtn { TRANS ("MONO") }, dimBtn { "DIM" };
     juce::Label dbLabel;
-    juce::TextButton eqBtn { "EQ" }, trackLimBtn { "LIM" }, trackLimMenuBtn { juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xbe")) }, routeBtn;   // uscita della traccia: master o bus di gruppo
+    juce::TextButton eqBtn { TRANS ("EQ") }, trackLimBtn { "LIM" }, trackLimMenuBtn { juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xbe")) }, routeBtn;   // uscita della traccia: master o bus di gruppo
     LevelMeter meter;
     juce::Rectangle<int> panLabel, ceilLabel, grRect, sendCaptionA, sendCaptionB;
     juce::Slider sendA { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox },
@@ -91,7 +91,7 @@ private:
     std::array<InsertButton, 4> inserts;
 
     // limiter (solo master)
-    juce::TextButton limBtn { "LIMITER" };
+    juce::TextButton limBtn { TRANS ("LIMITER") };
     juce::Slider ceil { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
     float grDisp = 0.0f, grHold = 0.0f;   // riduzione di guadagno del limiter mostrata e picco mantenuto (dB)
     bool limActive = false;
@@ -111,7 +111,7 @@ private:
     Project& project;
     Loudness::Meter& meter;
     juce::ComboBox standard;
-    juce::TextButton resetBtn { "AZZERA" };
+    juce::TextButton resetBtn { TRANS ("AZZERA") };
     float mom = -100.0f, st = -100.0f, integ = -100.0f, lra = 0.0f, tpDb = -100.0f;
     juce::Rectangle<int> bigBox, barBox;
 };
@@ -138,7 +138,7 @@ private:
     PluginHost& host;
     LoudnessPanel loudnessPanel;
     SpectrumView spectrum;
-    juce::TextButton tabLoud { "LOUDNESS" }, tabSpec { "SPETTRO" };   // schede del pannello di analisi
+    juce::TextButton tabLoud { TRANS ("LOUDNESS") }, tabSpec { "SPETTRO" };   // schede del pannello di analisi
     void showAnalysis (bool spec);
     juce::Viewport viewport;
     juce::Component content;

@@ -18,7 +18,7 @@ std::vector<ThemeEntry> ThemeManager::builtins()
     std::vector<ThemeEntry> v;
     v.push_back ({ "dark", "Scuro", theme::Palette::dark(), true });
     v.push_back ({ "light", "Chiaro", theme::Palette::light(), true });
-    v.push_back ({ "contrast", "Alto contrasto", theme::Palette::highContrast(), true });
+    v.push_back ({ "contrast", TRANS ("Alto contrasto"), theme::Palette::highContrast(), true });
     return v;
 }
 
@@ -58,7 +58,7 @@ bool ThemeManager::importReaperTheme (const juce::File& file, ThemeEntry& out, j
     const auto dest = themesDir().getChildFile (out.id + ".json");
     if (! themesDir().createDirectory() || ! dest.replaceWithText (juce::JSON::toString (p.toVar())))
     {
-        error = "Impossibile salvare il tema.";
+        error = TRANS ("Impossibile salvare il tema.");
         return false;
     }
     return true;

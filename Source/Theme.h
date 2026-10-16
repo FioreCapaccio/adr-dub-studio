@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Lang.h"
 
 namespace fc::theme
 {

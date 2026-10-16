@@ -54,7 +54,7 @@ class ExportJob : public juce::ThreadWithProgressWindow
 {
 public:
     ExportJob (Session s, double r, ExportOptions o, juce::File t, juce::String name, std::function<void (ExportResult)> d)
-        : juce::ThreadWithProgressWindow ("Esportazione in corso...", true, true),
+        : juce::ThreadWithProgressWindow (TRANS ("Esportazione in corso..."), true, true),
           session (std::move (s)), rate (r), options (std::move (o)), target (std::move (t)), baseName (std::move (name)), done (std::move (d)) {}
 
     void run() override
@@ -79,7 +79,7 @@ class RelinkJob : public juce::ThreadWithProgressWindow
 {
 public:
     RelinkJob (juce::AudioFormatManager& f, Session s, juce::File dir, double r, juce::String videoName, std::function<void (relink::Result)> d)
-        : juce::ThreadWithProgressWindow ("Cerco i media mancanti...", true, true),
+        : juce::ThreadWithProgressWindow (TRANS ("Cerco i media mancanti..."), true, true),
           fm (f), session (std::move (s)), folder (std::move (dir)), rate (r), video (std::move (videoName)), done (std::move (d)) {}
 
     void run() override { result = relink::search (fm, session, folder, rate, video, [this] (double p) { setProgress (p); return ! threadShouldExit(); }); }
@@ -100,7 +100,7 @@ class CutJob : public juce::ThreadWithProgressWindow
 {
 public:
     CutJob (juce::File v, double sens, std::function<void (bool, std::vector<double>, juce::String)> d)
-        : juce::ThreadWithProgressWindow ("Analisi del video: ricerca dei tagli...", true, true), file (std::move (v)), sensitivity (sens), done (std::move (d)) {}
+        : juce::ThreadWithProgressWindow (TRANS ("Analisi del video: ricerca dei tagli..."), true, true), file (std::move (v)), sensitivity (sens), done (std::move (d)) {}
 
     void run() override
     {
@@ -123,7 +123,7 @@ class VideoExportJob : public juce::ThreadWithProgressWindow
 public:
     /** from/to: intervallo della timeline in campioni (to <= from = tutto il video). */
     VideoExportJob (Session s, double r, juce::File v, double off, juce::File o, int64_t from, int64_t to, std::shared_ptr<video::BurnIn> b, std::function<void (bool, juce::String)> d)
-        : juce::ThreadWithProgressWindow ("Esportazione video con mix...", true, true),
+        : juce::ThreadWithProgressWindow (TRANS ("Esportazione video con mix..."), true, true),
           session (std::move (s)), rate (r), videoFile (std::move (v)), offset (off), outFile (std::move (o)), rangeFrom (from), rangeTo (to), burn (std::move (b)), done (std::move (d)) {}
 
     void run() override
@@ -139,7 +139,7 @@ public:
             ok = burn != nullptr ? video::muxAudioBurnIn (videoFile, tmp, outFile, offset, *burn, prog, msg, a, b) : video::muxAudio (videoFile, tmp, outFile, offset, prog, msg, a, b);
         }
         tmp.deleteFile();
-        message = ok ? "Video esportato in " + outFile.getFullPathName() : msg;
+        message = ok ? TRANS ("Video esportato in ") + outFile.getFullPathName() : msg;
     }
 
     void threadComplete (bool) override { if (done) done (ok, message); }
@@ -233,7 +233,7 @@ MainComponent::MainComponent()
         b->setClickingTogglesState (true);
     exitBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4a2523));
     exitBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffff8a7d));
-    exitBtn.setTooltip ("Esci dal programma (chiede se salvare le modifiche)");
+    exitBtn.setTooltip (TRANS ("Esci dal programma (chiede se salvare le modifiche)"));
     exitBtn.onClick = [this] { requestQuit(); };
     returnToStart = settings().getBoolValue ("returnToStart", true);
     {
@@ -262,23 +262,23 @@ MainComponent::MainComponent()
     videoBtn.onClick = [this] { viewerVisible = videoBtn.getToggleState(); layoutAll(); };
     mixerBtn.onClick = [this] { mixerVisible = mixerBtn.getToggleState(); mixer->setVisible (mixerVisible); resized(); };
 
-    rewindBtn.setTooltip ("Vai all'inizio (Home)");
-    playBtn.setTooltip ("Play / Stop (barra spaziatrice)");
-    stopBtn.setTooltip ("Stop");
-    recBtn.setTooltip ("Registra sulle tracce armate (R). Se nessuna e' armata usa la traccia selezionata");
-    loopBtn.setTooltip ("Loop (L). Maiusc + trascina sul righello per definire la regione");
-    snapBtn.setTooltip ("Aggancio ai bordi dei clip, alla testina e ai fotogrammi (N)");
-    followBtn.setTooltip ("La vista segue la testina durante la riproduzione (F)");
-    monBtn.setTooltip ("Ascolta l'ingresso durante la registrazione (M). Usa le cuffie per evitare il feedback");
-    zoomOutBtn.setTooltip ("Zoom indietro (-)");
-    zoomInBtn.setTooltip ("Zoom avanti (+)");
-    fitBtn.setTooltip ("Adatta il progetto alla finestra (Maiusc + Z)");
-    addTrackBtn.setTooltip ("Aggiunge una traccia (Maiusc + Cmd + T)");
-    importBtn.setTooltip ("Importa file audio (Cmd + I)");
-    exportBtn.setTooltip ("Esporta il mixdown in WAV, AIFF o FLAC (Cmd + E)");
-    videoBtn.setTooltip ("Mostra o nasconde il video (Maiusc + V)");
-    mixerBtn.setTooltip ("Mostra o nasconde il mixer (Maiusc + M)");
-    inMeter.setTooltip ("Livello dell'ingresso audio");
+    rewindBtn.setTooltip (TRANS ("Vai all'inizio (Home)"));
+    playBtn.setTooltip (TRANS ("Play / Stop (barra spaziatrice)"));
+    stopBtn.setTooltip (TRANS ("Stop"));
+    recBtn.setTooltip (TRANS ("Registra sulle tracce armate (R). Se nessuna e' armata usa la traccia selezionata"));
+    loopBtn.setTooltip (TRANS ("Loop (L). Maiusc + trascina sul righello per definire la regione"));
+    snapBtn.setTooltip (TRANS ("Aggancio ai bordi dei clip, alla testina e ai fotogrammi (N)"));
+    followBtn.setTooltip (TRANS ("La vista segue la testina durante la riproduzione (F)"));
+    monBtn.setTooltip (TRANS ("Ascolta l'ingresso durante la registrazione (M). Usa le cuffie per evitare il feedback"));
+    zoomOutBtn.setTooltip (TRANS ("Zoom indietro (-)"));
+    zoomInBtn.setTooltip (TRANS ("Zoom avanti (+)"));
+    fitBtn.setTooltip (TRANS ("Adatta il progetto alla finestra (Maiusc + Z)"));
+    addTrackBtn.setTooltip (TRANS ("Aggiunge una traccia (Maiusc + Cmd + T)"));
+    importBtn.setTooltip (TRANS ("Importa file audio (Cmd + I)"));
+    exportBtn.setTooltip (TRANS ("Esporta il mixdown in WAV, AIFF o FLAC (Cmd + E)"));
+    videoBtn.setTooltip (TRANS ("Mostra o nasconde il video (Maiusc + V)"));
+    mixerBtn.setTooltip (TRANS ("Mostra o nasconde il mixer (Maiusc + M)"));
+    inMeter.setTooltip (TRANS ("Livello dell'ingresso audio"));
 
     snapBtn.setToggleState (true, juce::dontSendNotification);
     followBtn.setToggleState (true, juce::dontSendNotification);
@@ -366,7 +366,7 @@ void MainComponent::paint (juce::Graphics& g)
         g.setColour (rec ? juce::Colours::white : playhead);
         g.drawText (tc, digits, juce::Justification::centred);
 
-        drawCaption (g, rec ? "REC" : "Timecode", timeBox.withTrimmedLeft (12).withHeight (12).translated (0, 3), juce::Justification::centredLeft, rec ? accent : dim);
+        drawCaption (g, rec ? TRANS ("REC") : TRANS ("Timecode"), timeBox.withTrimmedLeft (12).withHeight (12).translated (0, 3), juce::Justification::centredLeft, rec ? accent : dim);
         drawCaption (g, juce::String (project->tcFmt().name), timeBox.withTrimmedRight (12).withHeight (12).translated (0, 3), juce::Justification::centredRight);
         g.setColour (dim);
         g.setFont (mono (10.5f));
@@ -387,10 +387,10 @@ void MainComponent::paint (juce::Graphics& g)
         if (engine.getNumInputChannels() > 0) info << "   Ingressi: " << engine.getNumInputChannels();
     }
     else
-        info << "Nessun dispositivo audio";
+        info << TRANS ("Nessun dispositivo audio");
     if (engine.getPdcLatency() > 0)
-        info << "   Latenza plug-in " << juce::String (engine.getPdcLatency() * 1000.0 / project->getSampleRate(), 1) << " ms"
-             << (engine.pdcOn.load() ? " (compensata)" : " (NON compensata)");
+        info << TRANS ("   Latenza plug-in ") << juce::String (engine.getPdcLatency() * 1000.0 / project->getSampleRate(), 1) << " ms"
+             << (engine.pdcOn.load() ? " (compensata)" : TRANS (" (NON compensata)"));
     info << "   CPU " << juce::String ((int) std::round (engine.deviceManager.getCpuUsage() * 100.0)) << "%";
     g.setColour (dim);
     g.drawText (info, statusBox.reduced (10, 0), juce::Justification::centredRight, true);
@@ -399,9 +399,9 @@ void MainComponent::paint (juce::Graphics& g)
     juce::Colour leftCol = dim;
     if (engine.isRecording())
     {
-        left = "REGISTRAZIONE IN CORSO";
+        left = TRANS ("REGISTRAZIONE IN CORSO");
         leftCol = accent;
-        if (engine.getDroppedBlocks() > 0) left << "  -  attenzione: blocchi persi";
+        if (engine.getDroppedBlocks() > 0) left << TRANS ("  -  attenzione: blocchi persi");
     }
     else if (project->getBusyCount() > 0) { left = "Caricamento..."; leftCol = yellow; }
     else if (project->getSession().video != nullptr) left = "Video: " + project->getSession().video->file.getFileName();
@@ -411,7 +411,7 @@ void MainComponent::paint (juce::Graphics& g)
     // versione e copyright, al centro della barra
     g.setColour (dim.withAlpha (0.8f));
     g.setFont (font (10.5f));
-    g.drawText ("ADR Dub Studio " + juce::JUCEApplication::getInstance()->getApplicationVersion() + juce::String (juce::CharPointer_UTF8 ("   \xc2\xb7   \xc2\xa9 2026 Fioravante Capaccio")),
+    g.drawText (TRANS ("ADR Dub Studio ") + juce::JUCEApplication::getInstance()->getApplicationVersion() + juce::translate (juce::String (juce::CharPointer_UTF8 ("   \xc2\xb7   \xc2\xa9 2026 Fioravante Capaccio"))),
                 statusBox, juce::Justification::centred);
 }
 
@@ -431,7 +431,7 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
     g.drawRoundedRectangle (box.toFloat().reduced (0.5f), 12.0f, 1.0f);
     g.setColour (text);
     g.setFont (font (14.0f, true));
-    g.drawText (label.isEmpty() ? juce::String ("Caricamento in corso...") : label, box.reduced (22, 12).removeFromTop (24), juce::Justification::centredLeft, true);
+    g.drawText (label.isEmpty() ? juce::String (TRANS ("Caricamento in corso...")) : label, box.reduced (22, 12).removeFromTop (24), juce::Justification::centredLeft, true);
     auto bar = box.reduced (22, 0).withTrimmedTop (44).withHeight (14).toFloat();
     g.setColour (well);
     g.fillRoundedRectangle (bar, 7.0f);
@@ -622,7 +622,7 @@ void MainComponent::updateTitle()
     if (onTitleChanged)
     {
         auto name = project->getFile() == juce::File() ? juce::String ("Senza titolo") : project->getFile().getFileNameWithoutExtension();
-        onTitleChanged (name + (project->isDirty() ? " *" : "") + " - ADR Dub Studio");
+        onTitleChanged (name + (project->isDirty() ? " *" : "") + TRANS (" - ADR Dub Studio"));
     }
 }
 
@@ -633,7 +633,7 @@ void MainComponent::syncToggles()
 
 void MainComponent::showError (const juce::String& msg)
 {
-    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "ADR Dub Studio", msg);
+    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, TRANS ("ADR Dub Studio"), msg);
 }
 
 //==============================================================================
@@ -680,8 +680,8 @@ void MainComponent::startRecording()
 
     if (! engine.ensureInput())
     {
-        showError ("Non riesco ad aprire un ingresso audio.\n\nControlla che il microfono sia consentito in Impostazioni di Sistema > Privacy e sicurezza > Microfono, "
-                   "e scegli l'ingresso in File > Impostazioni audio.");
+        showError (TRANS ("Non riesco ad aprire un ingresso audio.\n\nControlla che il microfono sia consentito in Impostazioni di Sistema > Privacy e sicurezza > Microfono, "
+                   "e scegli l'ingresso in File > Impostazioni audio."));
         return;
     }
 
@@ -723,7 +723,7 @@ void MainComponent::finishRecording()
     project->addRecordings (items, [safe, drops] (juce::StringArray errs)
     {
         if (safe == nullptr) return;
-        if (drops > 0) errs.add ("Durante la registrazione sono stati persi alcuni blocchi audio: il disco o il computer non reggevano il ritmo.");
+        if (drops > 0) errs.add (TRANS ("Durante la registrazione sono stati persi alcuni blocchi audio: il disco o il computer non reggevano il ritmo."));
         if (errs.size() > 0) safe->showError (errs.joinIntoString ("\n"));
     });
 }
@@ -758,8 +758,8 @@ void MainComponent::setLoopFromSelection()
 void MainComponent::confirmDiscard (std::function<void()> proceed)
 {
     if (! project->isDirty()) { proceed(); return; }
-    auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, "Modifiche non salvate",
-                                                                 "Vuoi salvare le modifiche alla sessione?", "Salva", "Non salvare", "Annulla");
+    auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, TRANS ("Modifiche non salvate"),
+                                                                 TRANS ("Vuoi salvare le modifiche alla sessione?"), TRANS ("Salva"), TRANS ("Non salvare"), TRANS ("Annulla"));
     juce::Component::SafePointer<MainComponent> safe (this);
     juce::NativeMessageBox::showAsync (opts, [safe, proceed] (int r)
     {
@@ -806,9 +806,9 @@ void MainComponent::checkRecovery()
     if (! crashed) return;
 
     const auto when = autosaveFile().getLastModificationTime().toString (true, true);
-    auto opts = juce::MessageBoxOptions::makeOptionsYesNo (juce::MessageBoxIconType::QuestionIcon, "Recupero della sessione",
-                                                          "ADR Dub Studio non e' stato chiuso correttamente.\n\nVuoi ripristinare la copia di sicurezza del " + when + "?",
-                                                          "Ripristina", "Ignora");
+    auto opts = juce::MessageBoxOptions::makeOptionsYesNo (juce::MessageBoxIconType::QuestionIcon, TRANS ("Recupero della sessione"),
+                                                          TRANS ("ADR Dub Studio non e' stato chiuso correttamente.\n\nVuoi ripristinare la copia di sicurezza del ") + when + "?",
+                                                          TRANS ("Ripristina"), TRANS ("Ignora"));
     juce::Component::SafePointer<MainComponent> safe (this);
     juce::NativeMessageBox::showAsync (opts, [safe] (int r)
     {
@@ -822,8 +822,8 @@ void MainComponent::checkRecovery()
             safe->timeline->zoomToFit();
             if (safe->project->hasOfflineMedia())
             {
-                auto opts = juce::MessageBoxOptions::makeOptionsYesNo (juce::MessageBoxIconType::WarningIcon, "Media mancanti",
-                    errs + "\n\nI clip restano nella sessione come OFFLINE (senza audio) e non vanno persi se salvi. Vuoi cercare i file in una cartella?", "Cerca...", "Piu' tardi");
+                auto opts = juce::MessageBoxOptions::makeOptionsYesNo (juce::MessageBoxIconType::WarningIcon, TRANS ("Media mancanti"),
+                    errs + TRANS ("\n\nI clip restano nella sessione come OFFLINE (senza audio) e non vanno persi se salvi. Vuoi cercare i file in una cartella?"), TRANS ("Cerca..."), TRANS ("Piu' tardi"));
                 juce::NativeMessageBox::showAsync (opts, [safe] (int r) { if (r == 0 && safe != nullptr) safe->relinkMedia(); });
             }
             else if (errs.isNotEmpty()) safe->showError (errs);
@@ -846,7 +846,7 @@ void MainComponent::openFile (const juce::File& f)
 {
     if (! f.existsAsFile())
     {
-        showError ("Il file non esiste piu': " + f.getFullPathName());
+        showError (TRANS ("Il file non esiste piu': ") + f.getFullPathName());
         return;
     }
     juce::Component::SafePointer<MainComponent> safe (this);
@@ -889,7 +889,7 @@ void MainComponent::showSessionSettings()
     dlg->setSize (520, 580);
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (dlg);
-    lo.dialogTitle = "Impostazioni sessione: timecode e ADR";
+    lo.dialogTitle = TRANS ("Impostazioni sessione: timecode e ADR");
     lo.dialogBackgroundColour = panel;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;
@@ -901,7 +901,7 @@ void MainComponent::showSessionSettings()
 void MainComponent::showShortcuts()
 {
     juce::String t;
-    t << "SCORCIATOIE DA TASTIERA\n\n";
+    t << TRANS ("SCORCIATOIE DA TASTIERA\n\n");
     juce::StringArray cats = commandManager.getCommandCategories();
     for (auto& cat : cats)
     {
@@ -918,7 +918,7 @@ void MainComponent::showShortcuts()
         }
         t << "\n";
     }
-    t << "MOUSE\n"
+    t << TRANS ("MOUSE\n"
          "  Trascina il bordo inferiore di una traccia      altezza traccia (Maiusc: tutte)\n"
          "  Doppio clic sul nome della traccia              rinomina\n"
          "  Clic sul righello                               sposta la testina\n"
@@ -926,7 +926,7 @@ void MainComponent::showShortcuts()
          "  Doppio clic sul righello                        elimina la regione di loop\n"
          "  Cmd + rotella / pinch                           zoom orizzontale\n"
          "  Alt + rotella                                   altezza delle tracce\n"
-         "  Clic destro su clip, traccia, marker            menu contestuale\n";
+         "  Clic destro su clip, traccia, marker            menu contestuale\n");
 
     auto* ed = new juce::TextEditor();
     ed->setMultiLine (true);
@@ -939,7 +939,7 @@ void MainComponent::showShortcuts()
 
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (ed);
-    lo.dialogTitle = "Guida rapida e scorciatoie";
+    lo.dialogTitle = TRANS ("Guida rapida e scorciatoie");
     lo.dialogBackgroundColour = bg;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;
@@ -955,7 +955,7 @@ public:
     struct Item { std::shared_ptr<Asset> asset; std::shared_ptr<VideoAsset> video; juce::File source, dest; };
 
     CollectJob (std::vector<Item> i, std::function<void (std::vector<Item>, juce::String)> d)
-        : juce::ThreadWithProgressWindow ("Raccolta dei media...", true, true), items (std::move (i)), done (std::move (d)) {}
+        : juce::ThreadWithProgressWindow (TRANS ("Raccolta dei media..."), true, true), items (std::move (i)), done (std::move (d)) {}
 
     void run() override
     {
@@ -963,7 +963,7 @@ public:
         {
             setProgress ((double) k / (double) items.size());
             setStatusMessage (items[k].source.getFileName());
-            if (! items[k].source.copyFileTo (items[k].dest)) { error = "Impossibile copiare " + items[k].source.getFileName(); return; }
+            if (! items[k].source.copyFileTo (items[k].dest)) { error = TRANS ("Impossibile copiare ") + items[k].source.getFileName(); return; }
         }
         ok = ! threadShouldExit();
     }
@@ -980,7 +980,7 @@ void MainComponent::collectMedia()
 {
     if (project->getFile() == juce::File())
     {
-        showError ("Salva prima la sessione: i media vengono raccolti in una cartella accanto al file di sessione.");
+        showError (TRANS ("Salva prima la sessione: i media vengono raccolti in una cartella accanto al file di sessione."));
         return;
     }
     const auto folder = project->getFile().getParentDirectory().getChildFile (project->getFile().getFileNameWithoutExtension() + "_media");
@@ -1003,7 +1003,7 @@ void MainComponent::collectMedia()
             if (c.asset != nullptr && done.emplace (c.asset.get(), c.asset->file).second) plan (c.asset->file, c.asset, nullptr);
     if (auto v = project->getSession().video) plan (v->file, nullptr, v);
 
-    if (items.empty()) { showError ("Tutti i media si trovano gia' nella cartella del progetto."); return; }
+    if (items.empty()) { showError (TRANS ("Tutti i media si trovano gia' nella cartella del progetto.")); return; }
 
     // i clip che condividono un file ne condividono anche l'oggetto Asset: basta ricollegare quello
     juce::Component::SafePointer<MainComponent> safe (this);
@@ -1023,8 +1023,8 @@ void MainComponent::collectMedia()
                         if (it.video != nullptr) it.video->file = it.dest;
                     }
                     safe->project->markDirty();
-                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Media raccolti",
-                                                            juce::String ((int) copied.size()) + " file copiati nella cartella del progetto.\nSalva la sessione per mantenere i nuovi collegamenti.");
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Media raccolti"),
+                                                            juce::String ((int) copied.size()) + TRANS (" file copiati nella cartella del progetto.\nSalva la sessione per mantenere i nuovi collegamenti."));
                 }
             }
             job->reset();
@@ -1114,7 +1114,7 @@ void MainComponent::importVideoDialog()
 void MainComponent::exportVideoDialog()
 {
     auto video = project->getSession().video;
-    if (video == nullptr) { showError ("Importa prima un video."); return; }
+    if (video == nullptr) { showError (TRANS ("Importa prima un video.")); return; }
     if (videoJob != nullptr || exportJob != nullptr) return;
 
     // con un intervallo scelto sul righello si chiede se esportare solo quello
@@ -1132,7 +1132,7 @@ void MainComponent::exportVideoDialog()
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
         f = f.withFileExtension ("mov");
-        if (f == video->file) { safe->showError ("Scegli un nome diverso da quello del video originale."); return; }
+        if (f == video->file) { safe->showError (TRANS ("Scegli un nome diverso da quello del video originale.")); return; }
 
         const int64_t from = useRange ? safe->project->exportIn : 0, to = useRange ? safe->project->exportOut : -1;
         std::shared_ptr<video::BurnIn> burn;
@@ -1152,7 +1152,7 @@ void MainComponent::exportVideoDialog()
                 if (safe == nullptr) return;
                 safe->videoJob.reset();
                 juce::AlertWindow::showMessageBoxAsync (ok ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon,
-                                                        "Esportazione video", msg);
+                                                        TRANS ("Esportazione video"), msg);
             });
         });
         safe->videoJob->launchThread();
@@ -1164,9 +1164,9 @@ void MainComponent::exportVideoDialog()
     {
         if (safe == nullptr) return;
         if (! video::burnInSupported()) { chooseFile (useRange, false); return; }
-        auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, "Esporta video con mix",
-            "Vuoi incidere sul video il timecode, il personaggio e la battuta di ogni cue (per la revisione)?\n\nCon il burn-in il video viene ricodificato in H.264: ci vuole piu' tempo.",
-            "Con burn-in", "Solo il mix", "Annulla");
+        auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, TRANS ("Esporta video con mix"),
+            TRANS ("Vuoi incidere sul video il timecode, il personaggio e la battuta di ogni cue (per la revisione)?\n\nCon il burn-in il video viene ricodificato in H.264: ci vuole piu' tempo."),
+            TRANS ("Con burn-in"), TRANS ("Solo il mix"), TRANS ("Annulla"));
         juce::NativeMessageBox::showAsync (opts, [chooseFile, useRange] (int r)
         {
             if (r == 0) chooseFile (useRange, true); else if (r == 1) chooseFile (useRange, false);
@@ -1175,9 +1175,9 @@ void MainComponent::exportVideoDialog()
 
     if (! hasSel) { choose (false); return; }
     const double rate = project->getSampleRate();
-    auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, "Esporta video con mix",
-        "E' stato scelto un intervallo sul righello (" + project->formatTc ((double) project->exportIn / rate) + " - " + project->formatTc ((double) project->exportOut / rate)
-            + ").\n\nVuoi esportare solo quello?", "Solo l'intervallo", "Tutto il video", "Annulla");
+    auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, TRANS ("Esporta video con mix"),
+        TRANS ("E' stato scelto un intervallo sul righello (") + project->formatTc ((double) project->exportIn / rate) + " - " + project->formatTc ((double) project->exportOut / rate)
+            + TRANS (").\n\nVuoi esportare solo quello?"), TRANS ("Solo l'intervallo"), TRANS ("Tutto il video"), TRANS ("Annulla"));
     juce::NativeMessageBox::showAsync (opts, [choose] (int r)
     {
         // NativeMessageBox restituisce l'indice del pulsante (da 0): 0 = intervallo, 1 = tutto, 2 = annulla
@@ -1187,7 +1187,7 @@ void MainComponent::exportVideoDialog()
 
 void MainComponent::exportDialog()
 {
-    if (project->contentEnd() <= 0) { showError ("La sessione e' vuota: importa prima dell'audio."); return; }
+    if (project->contentEnd() <= 0) { showError (TRANS ("La sessione e' vuota: importa prima dell'audio.")); return; }
     if (exportJob != nullptr || videoJob != nullptr) return;
 
     const bool hasLoop = engine.getLoopEnd() > engine.getLoopStart();
@@ -1201,7 +1201,7 @@ void MainComponent::exportDialog()
 
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (dlg);
-    lo.dialogTitle = "Esporta audio";
+    lo.dialogTitle = TRANS ("Esporta audio");
     lo.dialogBackgroundColour = panel;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;
@@ -1228,11 +1228,11 @@ void MainComponent::runExport (const ExportOptions& o)
                 if (r.ok && delivery) safe->deliveredThisSession = true;
                 if (! r.ok)
                 {
-                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Esportazione", r.message);
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, TRANS ("Esportazione"), r.message);
                     return;
                 }
-                auto opts = juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::InfoIcon, "Esportazione completata", r.message,
-                                                                         "Mostra nel Finder", "Chiudi");
+                auto opts = juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::InfoIcon, TRANS ("Esportazione completata"), r.message,
+                                                                         TRANS ("Mostra nel Finder"), TRANS ("Chiudi"));
                 juce::NativeMessageBox::showAsync (opts, [r] (int res)
                 {
                     if (res == 0 && r.files.size() > 0) juce::File (r.files[0]).revealToUser();   // 0 = primo pulsante
@@ -1319,7 +1319,7 @@ void MainComponent::audioSettings()
     sel->setSize (520, 440);
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned (sel);
-    o.dialogTitle = "Impostazioni audio";
+    o.dialogTitle = TRANS ("Impostazioni audio");
     o.componentToCentreAround = this;
     o.dialogBackgroundColour = panel;
     o.escapeKeyTriggersCloseButton = true;
@@ -1355,116 +1355,116 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
 
     switch (id)
     {
-        case cmdNew:           i.setInfo ("Nuova sessione", "", "File", 0); i.addDefaultKeypress ('n', cmd); break;
-        case cmdOpen:          i.setInfo ("Apri...", "", "File", 0); i.addDefaultKeypress ('o', cmd); break;
-        case cmdSave:          i.setInfo ("Salva", "", "File", 0); i.addDefaultKeypress ('s', cmd); break;
-        case cmdSaveAs:        i.setInfo ("Salva con nome...", "", "File", 0); i.addDefaultKeypress ('s', cmd | shift); break;
-        case cmdImport:        i.setInfo ("Importa audio...", "", "File", 0); i.addDefaultKeypress ('i', cmd); break;
-        case cmdExport:        i.setInfo ("Esporta audio...", "", "File", 0); i.addDefaultKeypress ('e', cmd); break;
-        case cmdAudioSettings: i.setInfo ("Impostazioni audio...", "", "File", 0); i.addDefaultKeypress (',', cmd); break;
+        case cmdNew:           i.setInfo (TRANS ("Nuova sessione"), "", TRANS ("File"), 0); i.addDefaultKeypress ('n', cmd); break;
+        case cmdOpen:          i.setInfo (TRANS ("Apri..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('o', cmd); break;
+        case cmdSave:          i.setInfo (TRANS ("Salva"), "", TRANS ("File"), 0); i.addDefaultKeypress ('s', cmd); break;
+        case cmdSaveAs:        i.setInfo (TRANS ("Salva con nome..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('s', cmd | shift); break;
+        case cmdImport:        i.setInfo (TRANS ("Importa audio..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('i', cmd); break;
+        case cmdExport:        i.setInfo (TRANS ("Esporta audio..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('e', cmd); break;
+        case cmdAudioSettings: i.setInfo (TRANS ("Impostazioni audio..."), "", TRANS ("File"), 0); i.addDefaultKeypress (',', cmd); break;
 
-        case cmdUndo:          i.setInfo ("Annulla", "", "Modifica", 0); i.addDefaultKeypress ('z', cmd); i.setActive (project->canUndo()); break;
-        case cmdRedo:          i.setInfo ("Ripeti", "", "Modifica", 0); i.addDefaultKeypress ('z', cmd | shift); i.setActive (project->canRedo()); break;
-        case cmdSelectAll:     i.setInfo ("Seleziona tutto", "", "Modifica", 0); i.addDefaultKeypress ('a', cmd); break;
-        case cmdDuplicate:     i.setInfo ("Duplica", "", "Modifica", 0); i.addDefaultKeypress ('d', cmd); i.setActive (hasSel); break;
-        case cmdDelete:        i.setInfo ("Elimina", "", "Modifica", 0);
+        case cmdUndo:          i.setInfo (TRANS ("Annulla"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('z', cmd); i.setActive (project->canUndo()); break;
+        case cmdRedo:          i.setInfo (TRANS ("Ripeti"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('z', cmd | shift); i.setActive (project->canRedo()); break;
+        case cmdSelectAll:     i.setInfo (TRANS ("Seleziona tutto"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('a', cmd); break;
+        case cmdDuplicate:     i.setInfo (TRANS ("Duplica"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('d', cmd); i.setActive (hasSel); break;
+        case cmdDelete:        i.setInfo (TRANS ("Elimina"), "", TRANS ("Modifica"), 0);
                                i.addDefaultKeypress (KeyPress::deleteKey, 0); i.addDefaultKeypress (KeyPress::backspaceKey, 0);
                                i.setActive (hasSel); break;
-        case cmdSplit:         i.setInfo ("Dividi alla testina", "", "Modifica", 0); i.addDefaultKeypress ('s', 0); break;
+        case cmdSplit:         i.setInfo (TRANS ("Dividi alla testina"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('s', 0); break;
 
-        case cmdAddTrack:      i.setInfo ("Nuova traccia", "", "Traccia", 0); i.addDefaultKeypress ('t', cmd | shift); break;
-        case cmdRemoveTrack:   i.setInfo ("Elimina traccia selezionata", "", "Traccia", 0); break;
-        case cmdRenameTrack:   i.setInfo ("Rinomina traccia selezionata...", "", "Traccia", 0); break;
+        case cmdAddTrack:      i.setInfo (TRANS ("Nuova traccia"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('t', cmd | shift); break;
+        case cmdRemoveTrack:   i.setInfo (TRANS ("Elimina traccia selezionata"), "", TRANS ("Traccia"), 0); break;
+        case cmdRenameTrack:   i.setInfo (TRANS ("Rinomina traccia selezionata..."), "", TRANS ("Traccia"), 0); break;
 
-        case cmdPlay:          i.setInfo (engine.isPlaying() ? "Stop" : "Play", "", "Trasporto", 0); i.addDefaultKeypress (KeyPress::spaceKey, 0); break;
-        case cmdHome:          i.setInfo ("Vai all'inizio", "", "Trasporto", 0); i.addDefaultKeypress (KeyPress::homeKey, 0); break;
-        case cmdEnd:           i.setInfo ("Vai alla fine", "", "Trasporto", 0); i.addDefaultKeypress (KeyPress::endKey, 0); break;
-        case cmdLoop:          i.setInfo ("Loop", "", "Trasporto", 0); i.addDefaultKeypress ('l', 0); i.setTicked (engine.isLooping()); break;
-        case cmdLoopFromSel:   i.setInfo ("Loop dalla selezione", "", "Trasporto", 0); i.addDefaultKeypress ('l', shift); break;
-        case cmdNudgeL:        i.setInfo ("Indietro di un fotogramma", "", "Trasporto", 0); i.addDefaultKeypress (KeyPress::leftKey, 0); break;
-        case cmdNudgeR:        i.setInfo ("Avanti di un fotogramma", "", "Trasporto", 0); i.addDefaultKeypress (KeyPress::rightKey, 0); break;
-        case cmdNudgeLBig:     i.setInfo ("Indietro di un secondo", "", "Trasporto", 0); i.addDefaultKeypress (KeyPress::leftKey, shift); break;
-        case cmdNudgeRBig:     i.setInfo ("Avanti di un secondo", "", "Trasporto", 0); i.addDefaultKeypress (KeyPress::rightKey, shift); break;
+        case cmdPlay:          i.setInfo (engine.isPlaying() ? TRANS ("Stop") : TRANS ("Play"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::spaceKey, 0); break;
+        case cmdHome:          i.setInfo (TRANS ("Vai all'inizio"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::homeKey, 0); break;
+        case cmdEnd:           i.setInfo (TRANS ("Vai alla fine"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::endKey, 0); break;
+        case cmdLoop:          i.setInfo (TRANS ("Loop"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress ('l', 0); i.setTicked (engine.isLooping()); break;
+        case cmdLoopFromSel:   i.setInfo (TRANS ("Loop dalla selezione"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress ('l', shift); break;
+        case cmdNudgeL:        i.setInfo (TRANS ("Indietro di un fotogramma"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::leftKey, 0); break;
+        case cmdNudgeR:        i.setInfo (TRANS ("Avanti di un fotogramma"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::rightKey, 0); break;
+        case cmdNudgeLBig:     i.setInfo (TRANS ("Indietro di un secondo"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::leftKey, shift); break;
+        case cmdNudgeRBig:     i.setInfo (TRANS ("Avanti di un secondo"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::rightKey, shift); break;
 
-        case cmdSnap:          i.setInfo ("Aggancio (snap)", "", "Vista", 0); i.addDefaultKeypress ('n', 0); i.setTicked (timeline->snapEnabled); break;
-        case cmdFollow:        i.setInfo ("Segui la testina", "", "Vista", 0); i.addDefaultKeypress ('f', 0); i.setTicked (timeline->followEnabled); break;
-        case cmdZoomIn:        i.setInfo ("Zoom avanti", "", "Vista", 0); i.addDefaultKeypress ('=', 0); i.addDefaultKeypress ('+', 0); break;
-        case cmdZoomOut:       i.setInfo ("Zoom indietro", "", "Vista", 0); i.addDefaultKeypress ('-', 0); break;
-        case cmdZoomFit:       i.setInfo ("Adatta allo schermo", "", "Vista", 0); i.addDefaultKeypress ('z', shift); break;
-        case cmdMixer:         i.setInfo ("Mostra mixer", "", "Vista", 0); i.addDefaultKeypress ('m', shift); i.setTicked (mixerVisible); break;
-        case cmdRecord:        i.setInfo (engine.isRecording() ? "Ferma registrazione" : "Registra", "", "Trasporto", 0); i.addDefaultKeypress ('r', 0); i.setTicked (engine.isRecording()); break;
-        case cmdArm:           i.setInfo ("Arma/disarma traccia selezionata", "", "Traccia", 0); i.addDefaultKeypress ('a', 0); break;
-        case cmdMonitor:       i.setInfo ("Ascolta l'ingresso durante la registrazione", "", "Trasporto", 0); i.addDefaultKeypress ('i', 0); i.setTicked (engine.monitorInput.load()); break;
-        case cmdImportVideo:   i.setInfo ("Importa video...", "", "File", 0); i.addDefaultKeypress ('i', cmd | shift); break;
-        case cmdRemoveVideo:   i.setInfo ("Rimuovi video", "", "File", 0); i.setActive (project->getSession().video != nullptr); break;
-        case cmdExportVideo:   i.setInfo ("Esporta video con mix...", "", "File", 0); i.addDefaultKeypress ('e', cmd | shift); i.setActive (project->getSession().video != nullptr); break;
-        case cmdShowVideo:     i.setInfo ("Mostra video", "", "Vista", 0); i.addDefaultKeypress ('v', shift); i.setTicked (viewerVisible); i.setActive (project->getSession().video != nullptr); break;
-        case cmdToolSelect:    i.setInfo ("Selezione", "", "Strumenti", 0); i.addDefaultKeypress ('v', 0); i.setTicked (timeline->getTool() == Tool::Select); break;
-        case cmdToolRazor:     i.setInfo ("Lama", "", "Strumenti", 0); i.addDefaultKeypress ('b', 0); i.setTicked (timeline->getTool() == Tool::Razor); break;
-        case cmdToolStretch:   i.setInfo ("Stretch", "", "Strumenti", 0); i.addDefaultKeypress ('e', 0); i.setTicked (timeline->getTool() == Tool::Stretch); break;
-        case cmdToolSlip:      i.setInfo ("Slip", "", "Strumenti", 0); i.addDefaultKeypress ('y', 0); i.setTicked (timeline->getTool() == Tool::Slip); break;
-        case cmdToolHand:      i.setInfo ("Mano", "", "Strumenti", 0); i.addDefaultKeypress ('h', 0); i.setTicked (timeline->getTool() == Tool::Hand); break;
-        case cmdToolZoom:      i.setInfo ("Zoom", "", "Strumenti", 0); i.addDefaultKeypress ('z', 0); i.setTicked (timeline->getTool() == Tool::Zoom); break;
-        case cmdTimeStretch:   i.setInfo ("Time-stretch dei clip selezionati...", "", "Modifica", 0); i.addDefaultKeypress ('t', cmd | juce::ModifierKeys::altModifier); i.setActive (hasSel); break;
-        case cmdAdrWindow:     i.setInfo ("Finestra ADR", "", "ADR", 0); i.addDefaultKeypress ('a', cmd | shift); i.setTicked (adrWindow != nullptr); break;
-        case cmdAdrImport:     i.setInfo ("Importa cue da Pro Tools / EDL / tabella...", "", "ADR", 0); break;
-        case cmdAdrAddCue:     i.setInfo ("Nuovo cue dalla regione di loop o dalla testina", "", "ADR", 0); break;
-        case cmdAdrRecord:     i.setInfo (adrRecCue != 0 ? "Ferma la registrazione del cue" : "Registra il cue selezionato", "", "ADR", 0);
+        case cmdSnap:          i.setInfo (TRANS ("Aggancio (snap)"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('n', 0); i.setTicked (timeline->snapEnabled); break;
+        case cmdFollow:        i.setInfo (TRANS ("Segui la testina"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('f', 0); i.setTicked (timeline->followEnabled); break;
+        case cmdZoomIn:        i.setInfo (TRANS ("Zoom avanti"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('=', 0); i.addDefaultKeypress ('+', 0); break;
+        case cmdZoomOut:       i.setInfo (TRANS ("Zoom indietro"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('-', 0); break;
+        case cmdZoomFit:       i.setInfo (TRANS ("Adatta allo schermo"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('z', shift); break;
+        case cmdMixer:         i.setInfo (TRANS ("Mostra mixer"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('m', shift); i.setTicked (mixerVisible); break;
+        case cmdRecord:        i.setInfo (engine.isRecording() ? TRANS ("Ferma registrazione") : TRANS ("Registra"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress ('r', 0); i.setTicked (engine.isRecording()); break;
+        case cmdArm:           i.setInfo (TRANS ("Arma/disarma traccia selezionata"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('a', 0); break;
+        case cmdMonitor:       i.setInfo (TRANS ("Ascolta l'ingresso durante la registrazione"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress ('i', 0); i.setTicked (engine.monitorInput.load()); break;
+        case cmdImportVideo:   i.setInfo (TRANS ("Importa video..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('i', cmd | shift); break;
+        case cmdRemoveVideo:   i.setInfo (TRANS ("Rimuovi video"), "", TRANS ("File"), 0); i.setActive (project->getSession().video != nullptr); break;
+        case cmdExportVideo:   i.setInfo (TRANS ("Esporta video con mix..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('e', cmd | shift); i.setActive (project->getSession().video != nullptr); break;
+        case cmdShowVideo:     i.setInfo (TRANS ("Mostra video"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('v', shift); i.setTicked (viewerVisible); i.setActive (project->getSession().video != nullptr); break;
+        case cmdToolSelect:    i.setInfo (TRANS ("Selezione"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('v', 0); i.setTicked (timeline->getTool() == Tool::Select); break;
+        case cmdToolRazor:     i.setInfo (TRANS ("Lama"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('b', 0); i.setTicked (timeline->getTool() == Tool::Razor); break;
+        case cmdToolStretch:   i.setInfo (TRANS ("Stretch"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('e', 0); i.setTicked (timeline->getTool() == Tool::Stretch); break;
+        case cmdToolSlip:      i.setInfo (TRANS ("Slip"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('y', 0); i.setTicked (timeline->getTool() == Tool::Slip); break;
+        case cmdToolHand:      i.setInfo (TRANS ("Mano"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('h', 0); i.setTicked (timeline->getTool() == Tool::Hand); break;
+        case cmdToolZoom:      i.setInfo (TRANS ("Zoom"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('z', 0); i.setTicked (timeline->getTool() == Tool::Zoom); break;
+        case cmdTimeStretch:   i.setInfo (TRANS ("Time-stretch dei clip selezionati..."), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('t', cmd | juce::ModifierKeys::altModifier); i.setActive (hasSel); break;
+        case cmdAdrWindow:     i.setInfo (TRANS ("Finestra ADR"), "", TRANS ("ADR"), 0); i.addDefaultKeypress ('a', cmd | shift); i.setTicked (adrWindow != nullptr); break;
+        case cmdAdrImport:     i.setInfo (TRANS ("Importa cue da Pro Tools / EDL / tabella..."), "", TRANS ("ADR"), 0); break;
+        case cmdAdrAddCue:     i.setInfo (TRANS ("Nuovo cue dalla regione di loop o dalla testina"), "", TRANS ("ADR"), 0); break;
+        case cmdAdrRecord:     i.setInfo (adrRecCue != 0 ? TRANS ("Ferma la registrazione del cue") : TRANS ("Registra il cue selezionato"), "", TRANS ("ADR"), 0);
                                i.addDefaultKeypress ('r', cmd | shift); i.setActive (adrRecCue != 0 || project->findCue (project->selectedCueId) != nullptr); break;
-        case cmdAdrNextCue:    i.setInfo ("Cue successivo", "", "ADR", 0); i.addDefaultKeypress (juce::KeyPress::rightKey, cmd | shift); i.setActive (! project->getSession().cues.empty()); break;
-        case cmdAdrPrevCue:    i.setInfo ("Cue precedente", "", "ADR", 0); i.addDefaultKeypress (juce::KeyPress::leftKey, cmd | shift); i.setActive (! project->getSession().cues.empty()); break;
-        case cmdAdrExportCsv:  i.setInfo ("Esporta cue sheet (CSV)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
-        case cmdAdrExportPT:   i.setInfo ("Esporta cue come marker Pro Tools (testo)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
-        case cmdAdrExportBwf:  i.setInfo ("Esporta take attivi (BWF con timecode)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
-        case cmdMtc:           i.setInfo ("Sincronia esterna (MTC)...", "", "Trasporto", 0); i.setTicked (mtcSync != nullptr && mtcSync->isEnabled()); break;
-        case cmdKeyEditor:     i.setInfo ("Personalizza le scorciatoie da tastiera...", "", "Aiuto", 0); break;
-        case cmdReConform:     i.setInfo ("ReConform: nuovo montaggio da EDL...", "", "Modifica", 0); break;
-        case cmdRelink:        i.setInfo ("Ricollega i media mancanti...", "", "File", 0); i.setActive (project->hasOfflineMedia()); break;
-        case cmdSaveVersion:   i.setInfo ("Salva una versione della sessione...", "", "File", 0); i.setActive (project->getFile() != juce::File()); break;
-        case cmdVersions:      i.setInfo ("Versioni della sessione...", "", "File", 0); i.setActive (project->getFile() != juce::File()); break;
-        case cmdCheckSession:  i.setInfo ("Controlla la sessione prima della consegna...", "", "File", 0); break;
-        case cmdWorkflow:      i.setInfo ("Flusso di lavoro del doppiaggio", "", "Aiuto", 0); break;
-        case cmdScriptReader:  i.setInfo ("Lettore copione per l'attore", "", "ADR", 0); i.setTicked (scriptWindow != nullptr); break;
-        case cmdCueMix:        i.setInfo ("Cuffie dell'attore e talkback...", "", "ADR", 0); i.setTicked (cueWindow != nullptr); break;
-        case cmdAlignToGuide:  i.setInfo ("Allinea alla guida (sincronia automatica)...", "", "Modifica", 0); break;
-        case cmdAutoDuck:      i.setInfo ("Ducking automatico del fondo sotto i dialoghi...", "", "Traccia", 0); break;
-        case cmdDetectCuts:    i.setInfo ("Rileva i tagli del video (marker)...", "", "Marker", 0); i.setActive (project->getSession().video != nullptr); break;
-        case cmdAdrCueSheet:   i.setInfo ("Foglio cue e copione per personaggio (stampabile)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
-        case cmdSessionSettings: i.setInfo ("Impostazioni sessione: timecode e ADR...", "", "File", 0); break;
-        case cmdRulerTc:       i.setInfo ("Righello in timecode", "", "Vista", 0); i.setTicked (project->rulerTimecode); break;
-        case cmdShortcuts:     i.setInfo ("Guida rapida e scorciatoie...", "", "Aiuto", 0); i.addDefaultKeypress ('?', 0); break;
-        case cmdCollectMedia:  i.setInfo ("Raccogli i media nella cartella del progetto...", "", "File", 0); break;
-        case cmdClearRecent:   i.setInfo ("Svuota l'elenco dei file recenti", "", "File", 0); break;
-        case cmdToolAuto:      i.setInfo ("Automazione", "", "Strumenti", 0); i.addDefaultKeypress ('u', 0); i.setTicked (timeline->getTool() == Tool::Automation); break;
-        case cmdClearAutomation: i.setInfo ("Cancella l'automazione mostrata (volume, pan o send) della traccia selezionata", "", "Traccia", 0); break;
-        case cmdRippleDelete:  i.setInfo ("Elimina con ripple", "", "Modifica", 0);
+        case cmdAdrNextCue:    i.setInfo (TRANS ("Cue successivo"), "", TRANS ("ADR"), 0); i.addDefaultKeypress (juce::KeyPress::rightKey, cmd | shift); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdAdrPrevCue:    i.setInfo (TRANS ("Cue precedente"), "", TRANS ("ADR"), 0); i.addDefaultKeypress (juce::KeyPress::leftKey, cmd | shift); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdAdrExportCsv:  i.setInfo (TRANS ("Esporta cue sheet (CSV)..."), "", TRANS ("ADR"), 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdAdrExportPT:   i.setInfo (TRANS ("Esporta cue come marker Pro Tools (testo)..."), "", TRANS ("ADR"), 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdAdrExportBwf:  i.setInfo (TRANS ("Esporta take attivi (BWF con timecode)..."), "", TRANS ("ADR"), 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdMtc:           i.setInfo (TRANS ("Sincronia esterna (MTC)..."), "", TRANS ("Trasporto"), 0); i.setTicked (mtcSync != nullptr && mtcSync->isEnabled()); break;
+        case cmdKeyEditor:     i.setInfo (TRANS ("Personalizza le scorciatoie da tastiera..."), "", TRANS ("Aiuto"), 0); break;
+        case cmdReConform:     i.setInfo (TRANS ("ReConform: nuovo montaggio da EDL..."), "", TRANS ("Modifica"), 0); break;
+        case cmdRelink:        i.setInfo (TRANS ("Ricollega i media mancanti..."), "", TRANS ("File"), 0); i.setActive (project->hasOfflineMedia()); break;
+        case cmdSaveVersion:   i.setInfo (TRANS ("Salva una versione della sessione..."), "", TRANS ("File"), 0); i.setActive (project->getFile() != juce::File()); break;
+        case cmdVersions:      i.setInfo (TRANS ("Versioni della sessione..."), "", TRANS ("File"), 0); i.setActive (project->getFile() != juce::File()); break;
+        case cmdCheckSession:  i.setInfo (TRANS ("Controlla la sessione prima della consegna..."), "", TRANS ("File"), 0); break;
+        case cmdWorkflow:      i.setInfo (TRANS ("Flusso di lavoro del doppiaggio"), "", TRANS ("Aiuto"), 0); break;
+        case cmdScriptReader:  i.setInfo (TRANS ("Lettore copione per l'attore"), "", TRANS ("ADR"), 0); i.setTicked (scriptWindow != nullptr); break;
+        case cmdCueMix:        i.setInfo (TRANS ("Cuffie dell'attore e talkback..."), "", TRANS ("ADR"), 0); i.setTicked (cueWindow != nullptr); break;
+        case cmdAlignToGuide:  i.setInfo (TRANS ("Allinea alla guida (sincronia automatica)..."), "", TRANS ("Modifica"), 0); break;
+        case cmdAutoDuck:      i.setInfo (TRANS ("Ducking automatico del fondo sotto i dialoghi..."), "", TRANS ("Traccia"), 0); break;
+        case cmdDetectCuts:    i.setInfo (TRANS ("Rileva i tagli del video (marker)..."), "", TRANS ("Marker"), 0); i.setActive (project->getSession().video != nullptr); break;
+        case cmdAdrCueSheet:   i.setInfo (TRANS ("Foglio cue e copione per personaggio (stampabile)..."), "", TRANS ("ADR"), 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdSessionSettings: i.setInfo (TRANS ("Impostazioni sessione: timecode e ADR..."), "", TRANS ("File"), 0); break;
+        case cmdRulerTc:       i.setInfo (TRANS ("Righello in timecode"), "", TRANS ("Vista"), 0); i.setTicked (project->rulerTimecode); break;
+        case cmdShortcuts:     i.setInfo (TRANS ("Guida rapida e scorciatoie..."), "", TRANS ("Aiuto"), 0); i.addDefaultKeypress ('?', 0); break;
+        case cmdCollectMedia:  i.setInfo (TRANS ("Raccogli i media nella cartella del progetto..."), "", TRANS ("File"), 0); break;
+        case cmdClearRecent:   i.setInfo (TRANS ("Svuota l'elenco dei file recenti"), "", TRANS ("File"), 0); break;
+        case cmdToolAuto:      i.setInfo (TRANS ("Automazione"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('u', 0); i.setTicked (timeline->getTool() == Tool::Automation); break;
+        case cmdClearAutomation: i.setInfo (TRANS ("Cancella l'automazione mostrata (volume, pan o send) della traccia selezionata"), "", TRANS ("Traccia"), 0); break;
+        case cmdRippleDelete:  i.setInfo (TRANS ("Elimina con ripple"), "", TRANS ("Modifica"), 0);
                                i.addDefaultKeypress (juce::KeyPress::deleteKey, shift); i.addDefaultKeypress (juce::KeyPress::backspaceKey, shift);
                                i.setActive (hasSel); break;
-        case cmdTrimStart:     i.setInfo ("Taglia l'inizio alla testina", "", "Modifica", 0); i.addDefaultKeypress ('q', 0); break;
-        case cmdTrimEnd:       i.setInfo ("Taglia la fine alla testina", "", "Modifica", 0); i.addDefaultKeypress ('w', 0); break;
-        case cmdTrackUp:       i.setInfo ("Sposta la traccia su", "", "Traccia", 0); i.addDefaultKeypress (juce::KeyPress::upKey, cmd | juce::ModifierKeys::altModifier); break;
-        case cmdTrackDown:     i.setInfo (juce::String (juce::CharPointer_UTF8 ("Sposta la traccia gi\xc3\xb9")), "", "Traccia", 0); i.addDefaultKeypress (juce::KeyPress::downKey, cmd | juce::ModifierKeys::altModifier); break;
-        case cmdDuplicateTrack: i.setInfo ("Duplica la traccia", "", "Traccia", 0); i.addDefaultKeypress ('d', cmd | shift); break;
-        case cmdAddPlugin:     i.setInfo ("Aggiungi plug-in VST3 alla traccia selezionata...", "", "Traccia", 0); i.addDefaultKeypress ('p', 0); break;
-        case cmdAddMarker:     i.setInfo ("Aggiungi marker alla testina", "", "Marker", 0); i.addDefaultKeypress ('m', 0); break;
-        case cmdPrevMarker:    i.setInfo ("Marker precedente", "", "Marker", 0); i.addDefaultKeypress (juce::KeyPress::leftKey, juce::ModifierKeys::altModifier); break;
-        case cmdNextMarker:    i.setInfo ("Marker successivo", "", "Marker", 0); i.addDefaultKeypress (juce::KeyPress::rightKey, juce::ModifierKeys::altModifier); break;
-        case cmdExportMarkers: i.setInfo ("Esporta elenco marker (CSV)...", "", "Marker", 0); i.setActive (! project->getSession().markers.empty()); break;
-        case cmdPdc:           i.setInfo ("Compensazione latenza plug-in", "", "Trasporto", 0); i.setTicked (engine.pdcOn.load()); break;
-        case cmdReturnToStart: i.setInfo ("Allo stop la testina torna al punto di partenza", "", "Trasporto", 0); i.setTicked (returnToStart); break;
-        case cmdQuit:          i.setInfo ("Esci", "", "File", 0);
+        case cmdTrimStart:     i.setInfo (TRANS ("Taglia l'inizio alla testina"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('q', 0); break;
+        case cmdTrimEnd:       i.setInfo (TRANS ("Taglia la fine alla testina"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('w', 0); break;
+        case cmdTrackUp:       i.setInfo (TRANS ("Sposta la traccia su"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress (juce::KeyPress::upKey, cmd | juce::ModifierKeys::altModifier); break;
+        case cmdTrackDown:     i.setInfo (juce::String (juce::CharPointer_UTF8 ("Sposta la traccia gi\xc3\xb9")), "", TRANS ("Traccia"), 0); i.addDefaultKeypress (juce::KeyPress::downKey, cmd | juce::ModifierKeys::altModifier); break;
+        case cmdDuplicateTrack: i.setInfo (TRANS ("Duplica la traccia"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('d', cmd | shift); break;
+        case cmdAddPlugin:     i.setInfo (TRANS ("Aggiungi plug-in VST3 alla traccia selezionata..."), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('p', 0); break;
+        case cmdAddMarker:     i.setInfo (TRANS ("Aggiungi marker alla testina"), "", TRANS ("Marker"), 0); i.addDefaultKeypress ('m', 0); break;
+        case cmdPrevMarker:    i.setInfo (TRANS ("Marker precedente"), "", TRANS ("Marker"), 0); i.addDefaultKeypress (juce::KeyPress::leftKey, juce::ModifierKeys::altModifier); break;
+        case cmdNextMarker:    i.setInfo (TRANS ("Marker successivo"), "", TRANS ("Marker"), 0); i.addDefaultKeypress (juce::KeyPress::rightKey, juce::ModifierKeys::altModifier); break;
+        case cmdExportMarkers: i.setInfo (TRANS ("Esporta elenco marker (CSV)..."), "", TRANS ("Marker"), 0); i.setActive (! project->getSession().markers.empty()); break;
+        case cmdPdc:           i.setInfo (TRANS ("Compensazione latenza plug-in"), "", TRANS ("Trasporto"), 0); i.setTicked (engine.pdcOn.load()); break;
+        case cmdReturnToStart: i.setInfo (TRANS ("Allo stop la testina torna al punto di partenza"), "", TRANS ("Trasporto"), 0); i.setTicked (returnToStart); break;
+        case cmdQuit:          i.setInfo (TRANS ("Esci"), "", TRANS ("File"), 0);
 #if ! JUCE_MAC
                                i.addDefaultKeypress ('q', cmd);
 #endif
                                break;
-        case cmdAddMasterPlugin: i.setInfo ("Aggiungi plug-in VST3 al master...", "", "Traccia", 0); break;
-        case cmdDetachVideo:   i.setInfo (videoWindow != nullptr ? "Aggancia la finestra video" : "Stacca la finestra video", "", "Vista", 0);
+        case cmdAddMasterPlugin: i.setInfo (TRANS ("Aggiungi plug-in VST3 al master..."), "", TRANS ("Traccia"), 0); break;
+        case cmdDetachVideo:   i.setInfo (videoWindow != nullptr ? TRANS ("Aggancia la finestra video") : TRANS ("Stacca la finestra video"), "", TRANS ("Vista"), 0);
                                i.addDefaultKeypress ('d', shift); i.setActive (project->getSession().video != nullptr); break;
-        case cmdFitTracks:     i.setInfo ("Adatta l'altezza delle tracce", "", "Vista", 0); i.addDefaultKeypress ('f', shift); break;
-        case cmdVideoOffsetMinus: i.setInfo ("Anticipa il video di 1 ms", "", "Vista", 0); i.addDefaultKeypress (',', 0); i.setActive (project->getSession().video != nullptr); break;
-        case cmdVideoOffsetPlus:  i.setInfo ("Ritarda il video di 1 ms", "", "Vista", 0); i.addDefaultKeypress ('.', 0); i.setActive (project->getSession().video != nullptr); break;
-        case cmdTaller:        i.setInfo ("Tracce piu' alte", "", "Vista", 0); i.addDefaultKeypress (KeyPress::upKey, cmd); break;
-        case cmdShorter:       i.setInfo ("Tracce piu' basse", "", "Vista", 0); i.addDefaultKeypress (KeyPress::downKey, cmd); break;
+        case cmdFitTracks:     i.setInfo (TRANS ("Adatta l'altezza delle tracce"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('f', shift); break;
+        case cmdVideoOffsetMinus: i.setInfo (TRANS ("Anticipa il video di 1 ms"), "", TRANS ("Vista"), 0); i.addDefaultKeypress (',', 0); i.setActive (project->getSession().video != nullptr); break;
+        case cmdVideoOffsetPlus:  i.setInfo (TRANS ("Ritarda il video di 1 ms"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('.', 0); i.setActive (project->getSession().video != nullptr); break;
+        case cmdTaller:        i.setInfo (TRANS ("Tracce piu' alte"), "", TRANS ("Vista"), 0); i.addDefaultKeypress (KeyPress::upKey, cmd); break;
+        case cmdShorter:       i.setInfo (TRANS ("Tracce piu' basse"), "", TRANS ("Vista"), 0); i.addDefaultKeypress (KeyPress::downKey, cmd); break;
         default: break;
     }
 }
@@ -1595,6 +1595,17 @@ bool MainComponent::perform (const InvocationInfo& info)
 
 void MainComponent::menuItemSelected (int id, int)
 {
+    if (id >= 32000 && id < 32100)
+    {
+        const size_t i = (size_t) (id - 32000);
+        if (i < langActions.size() && lang::savedCode() != langActions[i])
+        {
+            lang::saveCode (langActions[i]);
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "ADR Dub Studio",
+                                                    lang::translateTo (langActions[i], "Il cambio di lingua si applica al riavvio dell'app."));
+        }
+        return;
+    }
     if (id >= 31000 && id < 31100)
     {
         newFromTemplate (id - 31000);
@@ -1634,7 +1645,7 @@ void MainComponent::exportMarkersCsv()
         juce::String csv = "Nome;Timecode;Secondi\n";
         for (auto& m : safe->project->getSession().markers)
             csv << m.name.replace (";", ",") << ";" << safe->project->formatTc ((double) m.pos / rate) << ";" << juce::String ((double) m.pos / rate, 3) << "\n";
-        if (! f.withFileExtension ("csv").replaceWithText (csv)) safe->showError ("Impossibile scrivere il file.");
+        if (! f.withFileExtension ("csv").replaceWithText (csv)) safe->showError (TRANS ("Impossibile scrivere il file."));
     });
 }
 
@@ -1666,16 +1677,16 @@ juce::PopupMenu MainComponent::buildThemeMenu()
     juce::PopupMenu found;
     for (auto& f : reaper::findInstalledThemes())
         addAction (found, f.getFileNameWithoutExtension(), false, [this, f] { importThemeFile (f); });
-    if (found.getNumItems() == 0) found.addItem (29999, "Nessun tema trovato nella cartella di Reaper", false);
-    sub.addSubMenu (juce::String::fromUTF8 ("Temi di Reaper installati"), found);
-    addAction (sub, "Importa un tema Reaper...", false, [this] { chooseThemeFile(); });
+    if (found.getNumItems() == 0) found.addItem (29999, TRANS ("Nessun tema trovato nella cartella di Reaper"), false);
+    sub.addSubMenu (juce::translate (juce::String::fromUTF8 ("Temi di Reaper installati")), found);
+    addAction (sub, TRANS ("Importa un tema Reaper..."), false, [this] { chooseThemeFile(); });
 
     // rimuovere un tema importato (solo se e' quello in uso)
     for (auto& t : imported)
         if (t.id == current)
         {
             sub.addSeparator();
-            addAction (sub, "Rimuovi \"" + t.name + "\" dall'elenco", false, [t] { ThemeManager::remove (t); ThemeManager::select ("dark"); });
+            addAction (sub, TRANS ("Rimuovi \"") + t.name + TRANS ("\" dall'elenco"), false, [t] { ThemeManager::remove (t); ThemeManager::select ("dark"); });
         }
     return sub;
 }
@@ -1684,7 +1695,7 @@ void MainComponent::importThemeFile (const juce::File& f)
 {
     ThemeEntry t;
     juce::String err;
-    if (! ThemeManager::importReaperTheme (f, t, err)) { showError ("Tema non importato: " + err); return; }
+    if (! ThemeManager::importReaperTheme (f, t, err)) { showError (TRANS ("Tema non importato: ") + err); return; }
     ThemeManager::select (t.id);
 }
 
@@ -1730,7 +1741,7 @@ void MainComponent::applyLayout (int index, bool resizeTracks)
 
 juce::StringArray MainComponent::getMenuBarNames()
 {
-    return { "File", "Modifica", "Traccia", "Strumenti", "Marker", "ADR", "Trasporto", "Vista", "Aiuto" };
+    return { TRANS ("File"), TRANS ("Modifica"), TRANS ("Traccia"), TRANS ("Strumenti"), TRANS ("Marker"), TRANS ("ADR"), TRANS ("Trasporto"), TRANS ("Vista"), TRANS ("Aiuto") };
 }
 
 juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
@@ -1752,8 +1763,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 juce::PopupMenu models;
                 const auto& list = dub::templates();
                 for (size_t i = 0; i < list.size(); ++i)
-                    models.addItem (31000 + (int) i, juce::String (list[i].name) + "   -   " + list[i].description);
-                m.addSubMenu ("Nuovo da modello", models);
+                    models.addItem (31000 + (int) i, juce::translate (list[i].name) + "   -   " + juce::translate (list[i].description));
+                m.addSubMenu (TRANS ("Nuovo da modello"), models);
             }
             add ({ cmdOpen });
             juce::PopupMenu recent;
@@ -1761,7 +1772,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             for (int i = 0; i < list.size(); ++i)
                 if (list[i].isNotEmpty()) recent.addItem (2000 + i, juce::File (list[i]).getFileNameWithoutExtension() + "   -   " + juce::File (list[i]).getParentDirectory().getFileName());
             if (recent.getNumItems() > 0) { recent.addSeparator(); recent.addCommandItem (&commandManager, cmdClearRecent); }
-            m.addSubMenu ("Apri recente", recent, recent.getNumItems() > 0);
+            m.addSubMenu (TRANS ("Apri recente"), recent, recent.getNumItems() > 0);
             m.addSeparator();
             add ({ cmdSave, cmdSaveAs, cmdSaveVersion, cmdVersions, 0, cmdCollectMedia, cmdRelink, cmdCheckSession, 0, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings,
 #if ! JUCE_MAC
@@ -1785,13 +1796,26 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         }
         case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, 0, cmdSessionSettings }); break;
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc }); break;
-        case 8: add ({ cmdWorkflow, cmdShortcuts, cmdKeyEditor }); break;
+        case 8:
+        {
+            add ({ cmdWorkflow, cmdShortcuts, cmdKeyEditor });
+            m.addSeparator();
+            juce::PopupMenu langs;
+            langActions.clear();
+            for (auto& l : lang::languages())
+            {
+                langs.addItem (32000 + (int) langActions.size(), l.name, true, lang::savedCode() == l.code);
+                langActions.push_back (l.code);
+            }
+            m.addSubMenu (TRANS ("Lingua / Language"), langs);
+            break;
+        }
         case 7:
             add ({ cmdSnap, cmdFollow, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer });
             menuActions.clear();
             m.addSeparator();
-            m.addSubMenu ("Tema", buildThemeMenu());
-            m.addSubMenu ("Layout", buildLayoutMenu());
+            m.addSubMenu (TRANS ("Tema"), buildThemeMenu());
+            m.addSubMenu (TRANS ("Layout"), buildLayoutMenu());
             break;
         default: break;
     }
@@ -1802,7 +1826,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 void MainComponent::timeStretchSelected (bool toCue)
 {
     std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
-    if (ids.empty()) { showError ("Seleziona almeno un clip."); return; }
+    if (ids.empty()) { showError (TRANS ("Seleziona almeno un clip.")); return; }
     const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
     juce::Component::SafePointer<MainComponent> safe (this);
     auto report = [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); };
@@ -1817,7 +1841,7 @@ void MainComponent::timeStretchSelected (bool toCue)
             const auto* cue = c != nullptr && c->cueId != 0 ? project->findCue (c->cueId) : nullptr;
             if (cue == nullptr || c->length <= 0) continue;
             const double ratio = (double) (cue->outPos - cue->inPos) / (double) c->length;
-            if (ratio < 0.25 || ratio > 4.0) { report ("La durata del cue " + juce::String (cue->number) + " e' troppo diversa dal take (oltre 4 volte)."); continue; }
+            if (ratio < 0.25 || ratio > 4.0) { report (TRANS ("La durata del cue ") + juce::String (cue->number) + TRANS (" e' troppo diversa dal take (oltre 4 volte).")); continue; }
             project->stretchClip (id, ratio, true, folder, report);
             ++n;
         }
@@ -1825,16 +1849,16 @@ void MainComponent::timeStretchSelected (bool toCue)
         return;
     }
 
-    auto* aw = new juce::AlertWindow ("Time-stretch", "Cambia la durata dei clip selezionati. Sopra 100% i clip diventano piu' lunghi (piu' lenti).", juce::MessageBoxIconType::NoIcon);
-    aw->addTextEditor ("pct", "100", "Durata finale (% dell'originale, da 25 a 400)");
-    aw->addComboBox ("mode", { "Mantieni il tono (voce, dialoghi)", "Cambia anche il tono (come un nastro)" }, "Modo");
-    aw->addButton ("Applica", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    auto* aw = new juce::AlertWindow (TRANS ("Time-stretch"), TRANS ("Cambia la durata dei clip selezionati. Sopra 100% i clip diventano piu' lunghi (piu' lenti)."), juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("pct", "100", TRANS ("Durata finale (% dell'originale, da 25 a 400)"));
+    aw->addComboBox ("mode", { TRANS ("Mantieni il tono (voce, dialoghi)"), TRANS ("Cambia anche il tono (come un nastro)") }, TRANS ("Modo"));
+    aw->addButton (TRANS ("Applica"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, ids, folder, report] (int r)
     {
         if (r != 1 || safe == nullptr) return;
         const double pct = aw->getTextEditorContents ("pct").replaceCharacter (',', '.').getDoubleValue();
-        if (pct < 25.0 || pct > 400.0) { safe->showError ("Scrivi una percentuale tra 25 e 400."); return; }
+        if (pct < 25.0 || pct > 400.0) { safe->showError (TRANS ("Scrivi una percentuale tra 25 e 400.")); return; }
         if (std::abs (pct - 100.0) < 0.05) return;
         const bool keepPitch = aw->getComboBoxComponent ("mode")->getSelectedItemIndex() == 0;
         for (auto id : ids) safe->project->stretchClip (id, pct / 100.0, keepPitch, folder, report);
@@ -1890,7 +1914,7 @@ void MainComponent::updateAdrViewer()
         info.streamer = project->adrStreamer;
         info.inSec = (double) c->inPos / rate;
         info.outSec = (double) c->outPos / rate;
-        info.title = "ADR #" + juce::String (c->number) + "   " + c->character.toUpperCase()
+        info.title = TRANS ("ADR #") + juce::String (c->number) + "   " + c->character.toUpperCase()
                    + (c->scene.isNotEmpty() ? "   Scena " + c->scene : juce::String())
                    + "   " + project->formatTc (info.inSec) + " - " + project->formatTc (info.outSec)
                    + (info.recording ? "   REGISTRAZIONE" : juce::String());
@@ -1986,8 +2010,8 @@ void MainComponent::importAdrDialog()
         const auto result = adr::parse (f.loadFileAsString());
         if (result.cues.empty())
         {
-            safe->showError ("Non ho trovato cue in questo file.\n\nFormati letti: testo Session Info di Pro Tools (elenco marker), EDL CMX3600 con locatori o commenti, "
-                             "tabelle CSV/TSV con una colonna di timecode.");
+            safe->showError (TRANS ("Non ho trovato cue in questo file.\n\nFormati letti: testo Session Info di Pro Tools (elenco marker), EDL CMX3600 con locatori o commenti, "
+                             "tabelle CSV/TSV con una colonna di timecode."));
             return;
         }
         auto* dlg = new AdrImportDialog (*safe->project, result, [safe, result] (const AdrImportDialog::Values& v)
@@ -2000,19 +2024,19 @@ void MainComponent::importAdrDialog()
             auto cues = adr::toCues (result, p, p.getSampleRate(), v.defaultDuration, warnings);
             const auto firstPos = cues.empty() ? int64_t (0) : cues.front().inPos;
             if (v.makeMarkers) for (auto& c : cues) p.addMarker (c.inPos, c.character + " " + juce::String (c.scene));
-            if (v.makeTracks) { const int n = dub::createCharacterTracks (p, cues); if (n > 0) warnings.add (juce::String (n) + " tracce Dialoghi create (una per personaggio)."); }
+            if (v.makeTracks) { const int n = dub::createCharacterTracks (p, cues); if (n > 0) warnings.add (juce::String (n) + TRANS (" tracce Dialoghi create (una per personaggio).")); }
             p.addCues (cues, v.replace);
             if (! p.getSession().cues.empty()) { p.selectedCueId = p.getSession().cues.front().id; p.sendChangeMessage(); }
             (void) firstPos;
             safe->showAdrWindow();
             juce::String msg = "Importati " + juce::String ((int) cues.size()) + " cue.";
             if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
-            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Importazione ADR", msg);
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Importazione ADR"), msg);
         });
         dlg->setSize (560, 500);
         juce::DialogWindow::LaunchOptions lo;
         lo.content.setOwned (dlg);
-        lo.dialogTitle = "Importa cue ADR";
+        lo.dialogTitle = TRANS ("Importa cue ADR");
         lo.dialogBackgroundColour = theme::panel;
         lo.componentToCentreAround = safe.getComponent();
         lo.escapeKeyTriggersCloseButton = true;
@@ -2027,15 +2051,15 @@ void MainComponent::recordAdrCue (int cueId)
     if (engine.isRecording()) return;
     if (engine.getAuditionClip() != 0) endAudition();
     const auto* cue = project->findCue (cueId);
-    if (cue == nullptr) { showError ("Seleziona un cue nell'elenco ADR."); return; }
+    if (cue == nullptr) { showError (TRANS ("Seleziona un cue nell'elenco ADR.")); return; }
 
     int trackId = project->findTrack (project->adrTrackId) != nullptr ? project->adrTrackId : project->selectedTrackId;
     if (const int forCharacter = dub::trackForCue (*project, *cue); forCharacter >= 0 && project->findTrack (project->adrTrackId) == nullptr) trackId = forCharacter;   // traccia del personaggio, se non ne hai scelta una a mano
-    if (project->findTrack (trackId) == nullptr) { showError ("Crea o seleziona la traccia su cui registrare l'ADR."); return; }
+    if (project->findTrack (trackId) == nullptr) { showError (TRANS ("Crea o seleziona la traccia su cui registrare l'ADR.")); return; }
     if (! engine.ensureInput())
     {
-        showError ("Non riesco ad aprire un ingresso audio.\n\nControlla che il microfono sia consentito in Impostazioni di Sistema > Privacy e sicurezza > Microfono, "
-                   "e scegli l'ingresso in File > Impostazioni audio.");
+        showError (TRANS ("Non riesco ad aprire un ingresso audio.\n\nControlla che il microfono sia consentito in Impostazioni di Sistema > Privacy e sicurezza > Microfono, "
+                   "e scegli l'ingresso in File > Impostazioni audio."));
         return;
     }
 
@@ -2083,12 +2107,12 @@ juce::String csvField (const juce::String& s) { return "\"" + s.replace ("\"", "
 
 juce::String MainComponent::reconformRun (const juce::File& oldEdl, const juce::File& newEdl, bool markers, bool saveVersion, bool apply)
 {
-    if (! oldEdl.existsAsFile() || ! newEdl.existsAsFile()) return "Scegli i due file EDL: quello del vecchio montaggio e quello del nuovo.";
+    if (! oldEdl.existsAsFile() || ! newEdl.existsAsFile()) return TRANS ("Scegli i due file EDL: quello del vecchio montaggio e quello del nuovo.");
     const auto po = conform::parseEdl (oldEdl.loadFileAsString(), project->tcFormat), pn = conform::parseEdl (newEdl.loadFileAsString(), project->tcFormat);
     juce::String out;
-    for (auto& w : po.warnings) out << "VECCHIO EDL: " << w << "\n";
-    for (auto& w : pn.warnings) out << "NUOVO EDL: " << w << "\n";
-    if (po.events.empty() || pn.events.empty()) return out + "\nUno dei due EDL non contiene eventi utilizzabili: niente da fare.";
+    for (auto& w : po.warnings) out << TRANS ("VECCHIO EDL: ") << w << "\n";
+    for (auto& w : pn.warnings) out << TRANS ("NUOVO EDL: ") << w << "\n";
+    if (po.events.empty() || pn.events.empty()) return out + TRANS ("\nUno dei due EDL non contiene eventi utilizzabili: niente da fare.");
 
     auto map = conform::buildMap (po.events, pn.events);
     for (auto& w : map.warnings) out << w << "\n";
@@ -2097,16 +2121,16 @@ juce::String MainComponent::reconformRun (const juce::File& oldEdl, const juce::
     if (apply && saveVersion && project->getFile() != juce::File())
     {
         juce::String err;
-        const auto v = versions::save (*project, "prima del ReConform", err);
+        const auto v = versions::save (*project, TRANS ("prima del ReConform"), err);
         if (v == juce::File()) return out + "\nNon sono riuscito a salvare la versione di sicurezza (" + err + "): non applico nulla.";
-        out << "Versione di sicurezza salvata: " << v.getFileName() << "\n";
+        out << TRANS ("Versione di sicurezza salvata: ") << v.getFileName() << "\n";
     }
     const auto plan = conform::makePlan (map, project->tcStartSec, project->getSampleRate(), markers);
     const auto st = project->conform (plan, apply);
     if (! out.isEmpty()) out << "\n";
     out << conform::describe (map, st, project->getSampleRate()) << "\n\n"
-        << (apply ? "FATTO. Per tornare indietro: Modifica > Annulla.\nOra importa il video del nuovo montaggio (File > Importa video) e controlla la sincronia."
-                  : "Questa e' solo un'anteprima: la sessione non e' cambiata. Premi Applica per eseguire.");
+        << (apply ? TRANS ("FATTO. Per tornare indietro: Modifica > Annulla.\nOra importa il video del nuovo montaggio (File > Importa video) e controlla la sincronia.")
+                  : TRANS ("Questa e' solo un'anteprima: la sessione non e' cambiata. Premi Applica per eseguire."));
     if (apply) { timeline->repaint(); adrViewerKey.clear(); }
     return out;
 }
@@ -2121,9 +2145,9 @@ public:
     explicit ReconformPanel (Runner r, bool canSaveVersion) : run (std::move (r))
     {
         for (auto* l : { &oldLbl, &newLbl }) { l->setFont (font (12.0f, true)); l->setColour (juce::Label::textColourId, dim); addAndMakeVisible (*l); }
-        oldLbl.setText ("EDL DEL VECCHIO MONTAGGIO", juce::dontSendNotification);
-        newLbl.setText ("EDL DEL NUOVO MONTAGGIO", juce::dontSendNotification);
-        for (auto* p : { &oldPath, &newPath }) { p->setReadOnly (true); p->setTextToShowWhenEmpty ("(nessun file)", dim); addAndMakeVisible (*p); }
+        oldLbl.setText (TRANS ("EDL DEL VECCHIO MONTAGGIO"), juce::dontSendNotification);
+        newLbl.setText (TRANS ("EDL DEL NUOVO MONTAGGIO"), juce::dontSendNotification);
+        for (auto* p : { &oldPath, &newPath }) { p->setReadOnly (true); p->setTextToShowWhenEmpty (TRANS ("(nessun file)"), dim); addAndMakeVisible (*p); }
         for (auto* b : { &oldBtn, &newBtn, &previewBtn, &applyBtn, &closeBtn }) addAndMakeVisible (*b);
         addAndMakeVisible (markers);
         addAndMakeVisible (saveVersion);
@@ -2133,9 +2157,9 @@ public:
         report.setMultiLine (true);
         report.setReadOnly (true);
         report.setFont (font (12.5f));
-        report.setText ("Scegli l'EDL del montaggio su cui hai lavorato fin qui e quello del nuovo montaggio (stessi nomi di bobina), poi premi Anteprima.\n\n"
+        report.setText (TRANS ("Scegli l'EDL del montaggio su cui hai lavorato fin qui e quello del nuovo montaggio (stessi nomi di bobina), poi premi Anteprima.\n\n"
                         "Audio, cue e marker vengono spostati dove si trova ora lo stesso materiale video. Il materiale tolto viene tagliato, i cue che cadono li' diventano \"Da rifare\", "
-                        "il materiale nuovo resta senza audio. Il timecode degli EDL si legge nel formato della sessione.", false);
+                        "il materiale nuovo resta senza audio. Il timecode degli EDL si legge nel formato della sessione."), false);
         addAndMakeVisible (report);
         applyBtn.setEnabled (false);
         oldBtn.onClick = [this] { choose (oldFile, oldPath); };
@@ -2194,8 +2218,8 @@ private:
     std::shared_ptr<juce::FileChooser> chooser;
     juce::Label oldLbl, newLbl;
     juce::TextEditor oldPath, newPath, report;
-    juce::TextButton oldBtn { "Scegli..." }, newBtn { "Scegli..." }, previewBtn { "Anteprima" }, applyBtn { "Applica" }, closeBtn { "Chiudi" };
-    juce::ToggleButton markers { "Aggiungi un marker sul materiale nuovo (senza audio)" }, saveVersion { "Salva prima una versione della sessione (consigliato)" };
+    juce::TextButton oldBtn { TRANS ("Scegli...") }, newBtn { "Scegli..." }, previewBtn { "Anteprima" }, applyBtn { "Applica" }, closeBtn { "Chiudi" };
+    juce::ToggleButton markers { TRANS ("Aggiungi un marker sul materiale nuovo (senza audio)") }, saveVersion { TRANS ("Salva prima una versione della sessione (consigliato)") };
 };
 } // namespace
 
@@ -2204,7 +2228,7 @@ void MainComponent::toggleMtcWindow()
     if (mtcWindow != nullptr) { mtcWindow.reset(); commandManager.commandStatusChanged(); return; }
     if (mtcSync == nullptr) mtcSync = std::make_unique<mtc::Sync> (engine, [this] { return project->tcStartSec; });
     juce::Component::SafePointer<MainComponent> safe (this);
-    mtcWindow = std::make_unique<BoothWindow> ("Sincronia esterna (MTC) - ADR Dub Studio", [safe]
+    mtcWindow = std::make_unique<BoothWindow> (TRANS ("Sincronia esterna (MTC) - ADR Dub Studio"), [safe]
     {
         juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->mtcWindow.reset(); safe->commandManager.commandStatusChanged(); } });
     });
@@ -2254,7 +2278,7 @@ public:
 private:
     juce::ApplicationCommandManager& manager;
     juce::KeyMappingEditorComponent editor;
-    juce::TextButton resetBtn { "Ripristina le predefinite" };
+    juce::TextButton resetBtn { TRANS ("Ripristina le predefinite") };
 };
 } // namespace
 
@@ -2262,7 +2286,7 @@ void MainComponent::keyEditorDialog()
 {
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (new KeyEditorPanel (commandManager));
-    lo.dialogTitle = "Scorciatoie da tastiera";
+    lo.dialogTitle = TRANS ("Scorciatoie da tastiera");
     lo.dialogBackgroundColour = theme::panel;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;
@@ -2281,7 +2305,7 @@ void MainComponent::reconformDialog()
     panel->setSize (620, 520);
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (panel);
-    lo.dialogTitle = "ReConform: nuovo montaggio";
+    lo.dialogTitle = TRANS ("ReConform: nuovo montaggio");
     lo.dialogBackgroundColour = theme::panel;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;
@@ -2292,7 +2316,7 @@ void MainComponent::reconformDialog()
 
 void MainComponent::relinkMedia()
 {
-    if (! project->hasOfflineMedia()) { showError ("Tutti i media della sessione sono presenti."); return; }
+    if (! project->hasOfflineMedia()) { showError (TRANS ("Tutti i media della sessione sono presenti.")); return; }
     chooser = std::make_unique<juce::FileChooser> ("Scegli la cartella in cui cercare i file mancanti (si cerca anche nelle sottocartelle)", juce::File::getSpecialLocation (juce::File::userHomeDirectory));
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe] (const juce::FileChooser& fc)
@@ -2313,11 +2337,11 @@ void MainComponent::relinkMedia()
                     safe->project->relinkVideo (r.video, [safe] (juce::String err) { if (safe != nullptr) { safe->timeline->repaint(); if (err.isNotEmpty()) safe->showError (err); } });
                 }
                 juce::String msg = juce::String (r.found) + (r.found == 1 ? " file ricollegato" : " file ricollegati") + (r.video != juce::File() ? " e il video" : juce::String()) + ".";
-                if (! r.tooShort.isEmpty()) msg << "\n\nTrovati ma troppo corti (non usati): " << r.tooShort.joinIntoString (", ");
-                if (! r.notFound.isEmpty()) msg << "\n\nNon trovati: " << r.notFound.joinIntoString (", ");
+                if (! r.tooShort.isEmpty()) msg << TRANS ("\n\nTrovati ma troppo corti (non usati): ") << r.tooShort.joinIntoString (", ");
+                if (! r.notFound.isEmpty()) msg << TRANS ("\n\nNon trovati: ") << r.notFound.joinIntoString (", ");
                 safe->commandManager.commandStatusChanged();
                 safe->timeline->repaint();
-                juce::AlertWindow::showMessageBoxAsync (r.notFound.isEmpty() && r.tooShort.isEmpty() ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, "Ricollega i media", msg);
+                juce::AlertWindow::showMessageBoxAsync (r.notFound.isEmpty() && r.tooShort.isEmpty() ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Ricollega i media"), msg);
             });
         });
         safe->relinkJob->launchThread();
@@ -2326,11 +2350,11 @@ void MainComponent::relinkMedia()
 
 void MainComponent::saveVersionDialog()
 {
-    if (project->getFile() == juce::File()) { showError ("Salva prima la sessione: le versioni stanno in una cartella accanto al file."); return; }
-    auto* aw = new juce::AlertWindow ("Salva una versione", "Copia numerata della sessione cosi' com'e' adesso, per poter tornare indietro (anche dopo aver chiuso il programma).", juce::MessageBoxIconType::NoIcon);
-    aw->addTextEditor ("note", "", "Nota (facoltativa, per esempio \"prima del nuovo montaggio\")");
-    aw->addButton ("Salva versione", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    if (project->getFile() == juce::File()) { showError (TRANS ("Salva prima la sessione: le versioni stanno in una cartella accanto al file.")); return; }
+    auto* aw = new juce::AlertWindow (TRANS ("Salva una versione"), TRANS ("Copia numerata della sessione cosi' com'e' adesso, per poter tornare indietro (anche dopo aver chiuso il programma)."), juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("note", "", TRANS ("Nota (facoltativa, per esempio \"prima del nuovo montaggio\")"));
+    aw->addButton (TRANS ("Salva versione"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<MainComponent> safe (this);
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw] (int r)
     {
@@ -2338,7 +2362,7 @@ void MainComponent::saveVersionDialog()
         juce::String err;
         const auto f = versions::save (*safe->project, aw->getTextEditorContents ("note"), err);
         if (f == juce::File()) safe->showError (err);
-        else juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Versione salvata", f.getFileName() + "\n\nSi ritrova in File > Versioni della sessione.");
+        else juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Versione salvata"), f.getFileName() + TRANS ("\n\nSi ritrova in File > Versioni della sessione."));
     }), true);
 }
 
@@ -2389,10 +2413,10 @@ private:
         if (selected) { g.setColour (blue.withAlpha (0.3f)); g.fillRect (0, 0, w, h); }
         g.setColour (text);
         g.setFont (font (13.0f, true));
-        g.drawText ("Versione " + juce::String (v.number) + "   " + v.time.formatted ("%d/%m/%Y %H:%M"), 12, 3, w - 24, 18, juce::Justification::centredLeft);
+        g.drawText (TRANS ("Versione ") + juce::String (v.number) + "   " + v.time.formatted ("%d/%m/%Y %H:%M"), 12, 3, w - 24, 18, juce::Justification::centredLeft);
         g.setColour (dim);
         g.setFont (font (12.0f));
-        g.drawText (v.note.isEmpty() ? juce::String ("(nessuna nota)") : v.note, 12, 21, w - 24, 16, juce::Justification::centredLeft, true);
+        g.drawText (v.note.isEmpty() ? juce::String (TRANS ("(nessuna nota)")) : v.note, 12, 21, w - 24, 16, juce::Justification::centredLeft, true);
     }
     void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override { openBtn.triggerClick(); }
 
@@ -2400,20 +2424,20 @@ private:
     std::function<void (juce::File)> openFn;
     std::vector<versions::Entry> items;
     juce::ListBox list { {}, this };
-    juce::TextButton openBtn { "Apri" }, delBtn { "Elimina" };
+    juce::TextButton openBtn { TRANS ("Apri") }, delBtn { "Elimina" };
 };
 } // namespace
 
 void MainComponent::versionsDialog()
 {
-    if (project->getFile() == juce::File()) { showError ("Salva prima la sessione."); return; }
-    if (versions::list (project->getFile()).empty()) { showError ("Non ci sono ancora versioni: usa File > Salva una versione."); return; }
+    if (project->getFile() == juce::File()) { showError (TRANS ("Salva prima la sessione.")); return; }
+    if (versions::list (project->getFile()).empty()) { showError (TRANS ("Non ci sono ancora versioni: usa File > Salva una versione.")); return; }
     juce::Component::SafePointer<MainComponent> safe (this);
     auto* panel = new VersionsPanel (project->getFile(), [safe] (juce::File f) { juce::MessageManager::callAsync ([safe, f] { if (safe != nullptr) safe->openFile (f); }); });
     panel->setSize (480, 360);
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (panel);
-    lo.dialogTitle = "Versioni della sessione";
+    lo.dialogTitle = TRANS ("Versioni della sessione");
     lo.dialogBackgroundColour = theme::panel;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;
@@ -2439,7 +2463,7 @@ void MainComponent::checkSessionDialog()
     panel->setSize (640, 420);
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (panel);
-    lo.dialogTitle = "Controllo della sessione";
+    lo.dialogTitle = TRANS ("Controllo della sessione");
     lo.dialogBackgroundColour = theme::panel;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;
@@ -2461,7 +2485,7 @@ void MainComponent::workflowDialog()
             case workflow::ActTracks:
             {
                 const int n = dub::createCharacterTracks (*safe->project, safe->project->getSession().cues);
-                safe->showError (n > 0 ? juce::String (n) + " tracce Dialoghi create, una per personaggio." : "Non c'e' nulla da creare: servono dei cue con i personaggi, oppure le tracce esistono gia'.");
+                safe->showError (n > 0 ? juce::String (n) + TRANS (" tracce Dialoghi create, una per personaggio.") : TRANS ("Non c'e' nulla da creare: servono dei cue con i personaggi, oppure le tracce esistono gia'."));
                 break;
             }
             case workflow::ActRecord: case workflow::ActApprove: safe->showAdrWindow(); break;
@@ -2473,7 +2497,7 @@ void MainComponent::workflowDialog()
     panel->setSize (560, 14 + 7 * 52 + 14);
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (panel);
-    lo.dialogTitle = "Flusso di lavoro del doppiaggio";
+    lo.dialogTitle = TRANS ("Flusso di lavoro del doppiaggio");
     lo.dialogBackgroundColour = theme::panel;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;
@@ -2486,7 +2510,7 @@ void MainComponent::toggleScriptWindow()
 {
     if (scriptWindow != nullptr) { scriptWindow.reset(); commandManager.commandStatusChanged(); return; }
     juce::Component::SafePointer<MainComponent> safe (this);
-    scriptWindow = std::make_unique<BoothWindow> ("Lettore copione - ADR Dub Studio", [safe]
+    scriptWindow = std::make_unique<BoothWindow> (TRANS ("Lettore copione - ADR Dub Studio"), [safe]
     {
         juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->scriptWindow.reset(); safe->commandManager.commandStatusChanged(); } });
     });
@@ -2503,7 +2527,7 @@ void MainComponent::toggleCueWindow()
 {
     if (cueWindow != nullptr) { cueWindow.reset(); commandManager.commandStatusChanged(); return; }
     juce::Component::SafePointer<MainComponent> safe (this);
-    cueWindow = std::make_unique<BoothWindow> ("Cuffie dell'attore - ADR Dub Studio", [safe]
+    cueWindow = std::make_unique<BoothWindow> (TRANS ("Cuffie dell'attore - ADR Dub Studio"), [safe]
     {
         juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->cueWindow.reset(); safe->commandManager.commandStatusChanged(); } });
     });
@@ -2519,21 +2543,21 @@ void MainComponent::alignSelectedToGuide()
 {
     bool haveGuide = false;
     for (auto& t : project->getSession().tracks) haveGuide = haveGuide || (t.live->trackType.load() == TrackGuide && ! t.clips.empty());
-    if (! haveGuide) { showError ("Serve una traccia Guida con il dialogo originale.\n\nImposta il tipo della traccia su Guida (clic destro sulla traccia, Tipo di traccia) e mettici l'audio di riferimento."); return; }
+    if (! haveGuide) { showError (TRANS ("Serve una traccia Guida con il dialogo originale.\n\nImposta il tipo della traccia su Guida (clic destro sulla traccia, Tipo di traccia) e mettici l'audio di riferimento.")); return; }
 
     std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
     if (ids.empty())   // nessun clip selezionato: il take attivo del cue selezionato
         if (const auto* cue = project->findCue (project->selectedCueId))
             for (auto& t : project->getSession().tracks)
                 for (auto& c : t.clips) if (c.cueId == cue->id && c.takeNo == cue->activeTake) ids.push_back (c.id);
-    if (ids.empty()) { showError ("Seleziona i clip da allineare (o un cue ADR con un take attivo)."); return; }
+    if (ids.empty()) { showError (TRANS ("Seleziona i clip da allineare (o un cue ADR con un take attivo).")); return; }
 
-    auto* aw = new juce::AlertWindow ("Allinea alla guida", "Sposta i clip selezionati finche' il parlato coincide con quello della traccia Guida (si confronta l'andamento del volume, non le parole).",
+    auto* aw = new juce::AlertWindow (TRANS ("Allinea alla guida"), TRANS ("Sposta i clip selezionati finche' il parlato coincide con quello della traccia Guida (si confronta l'andamento del volume, non le parole)."),
                                       juce::MessageBoxIconType::NoIcon);
-    aw->addComboBox ("mode", { "Solo spostamento (consigliato)", "Spostamento e adatta la durata del parlato" }, "Modo");
-    aw->addTextEditor ("range", "1500", "Spostamento massimo (millisecondi)");
-    aw->addButton ("Allinea", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->addComboBox ("mode", { TRANS ("Solo spostamento (consigliato)"), TRANS ("Spostamento e adatta la durata del parlato") }, TRANS ("Modo"));
+    aw->addTextEditor ("range", "1500", TRANS ("Spostamento massimo (millisecondi)"));
+    aw->addButton (TRANS ("Allinea"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<MainComponent> safe (this);
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, ids] (int r)
     {
@@ -2552,14 +2576,14 @@ void MainComponent::alignSelectedToGuide()
             const auto* c = p.findClip (it.clipId);
             const juce::String name = c != nullptr && c->asset != nullptr ? c->asset->name : juce::String ("clip");
             if (it.applied) ++done;
-            msg << name << ": " << (it.applied ? (juce::String (it.shiftMs >= 0 ? "+" : "") + juce::String (it.shiftMs, 0) + " ms") : juce::String ("non spostato"))
-                << " (" << it.note << (it.applied ? ", somiglianza " + juce::String (it.confidence, 2) : juce::String()) << ")\n";
+            msg << name << ": " << (it.applied ? (juce::String (it.shiftMs >= 0 ? "+" : "") + juce::String (it.shiftMs, 0) + " ms") : juce::String (TRANS ("non spostato")))
+                << " (" << it.note << (it.applied ? TRANS (", somiglianza ") + juce::String (it.confidence, 2) : juce::String()) << ")\n";
             if (it.applied && it.stretchRatio != 1.0) p.stretchClip (it.clipId, it.stretchRatio, true, folder, report, it.stretchStart);
         }
         safe->timeline->repaint();
-        juce::AlertWindow::showMessageBoxAsync (done > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, "Allinea alla guida",
-                                                juce::String (done) + " di " + juce::String ((int) items.size()) + " clip allineati.\n\n" + msg
-                                                    + (done > 0 ? "\nSe il risultato non ti convince, annulla con Modifica > Annulla." : juce::String()));
+        juce::AlertWindow::showMessageBoxAsync (done > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Allinea alla guida"),
+                                                juce::String (done) + TRANS (" di ") + juce::String ((int) items.size()) + TRANS (" clip allineati.\n\n") + msg
+                                                    + (done > 0 ? TRANS ("\nSe il risultato non ti convince, annulla con Modifica > Annulla.") : juce::String()));
     }), true);
 }
 
@@ -2567,16 +2591,16 @@ void MainComponent::autoDuckDialog()
 {
     bool haveDialogue = false;
     for (auto& t : project->getSession().tracks) haveDialogue = haveDialogue || (t.live->trackType.load() == TrackDialogue && ! t.clips.empty());
-    if (! haveDialogue) { showError ("Serve almeno una traccia Dialoghi con dei clip.\n\nImposta il tipo delle tracce con i dialoghi su Dialoghi (clic destro sulla traccia, Tipo di traccia)."); return; }
+    if (! haveDialogue) { showError (TRANS ("Serve almeno una traccia Dialoghi con dei clip.\n\nImposta il tipo delle tracce con i dialoghi su Dialoghi (clic destro sulla traccia, Tipo di traccia).")); return; }
 
-    auto* aw = new juce::AlertWindow ("Ducking automatico", "Abbassa M&E ed Effetti quando parlano i Dialoghi, scrivendo l'automazione del volume (annullabile).", juce::MessageBoxIconType::NoIcon);
+    auto* aw = new juce::AlertWindow (TRANS ("Ducking automatico"), TRANS ("Abbassa M&E ed Effetti quando parlano i Dialoghi, scrivendo l'automazione del volume (annullabile)."), juce::MessageBoxIconType::NoIcon);
     duck::Settings d;
-    aw->addTextEditor ("depth", juce::String (d.depthDb, 0), "Quanto abbassare il fondo (dB)");
-    aw->addTextEditor ("thr", juce::String (d.thresholdDb, 0), "Soglia del dialogo (dBFS: sotto e' silenzio)");
-    aw->addTextEditor ("atk", juce::String ((int) (d.attackSec * 1000.0)), "Discesa (ms)");
-    aw->addTextEditor ("rel", juce::String ((int) (d.releaseSec * 1000.0)), "Risalita (ms)");
-    aw->addButton ("Applica", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->addTextEditor ("depth", juce::String (d.depthDb, 0), TRANS ("Quanto abbassare il fondo (dB)"));
+    aw->addTextEditor ("thr", juce::String (d.thresholdDb, 0), TRANS ("Soglia del dialogo (dBFS: sotto e' silenzio)"));
+    aw->addTextEditor ("atk", juce::String ((int) (d.attackSec * 1000.0)), TRANS ("Discesa (ms)"));
+    aw->addTextEditor ("rel", juce::String ((int) (d.releaseSec * 1000.0)), TRANS ("Risalita (ms)"));
+    aw->addButton (TRANS ("Applica"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<MainComponent> safe (this);
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw] (int r)
     {
@@ -2589,22 +2613,22 @@ void MainComponent::autoDuckDialog()
         st.releaseSec = juce::jlimit (0.05, 5.0, num ("rel") / 1000.0);
         const int n = duck::apply (*safe->project, st, safe->project->selectedTrackId);
         safe->timeline->repaint();
-        juce::AlertWindow::showMessageBoxAsync (n > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, "Ducking automatico",
-            n > 0 ? "Automazione del volume scritta su " + juce::String (n) + (n == 1 ? " traccia" : " tracce") + ".\nLe tracce sono in modalita' lettura: la curva si vede e si modifica nella corsia VOL.\n\nPer togliere tutto: Modifica > Annulla."
-                  : "Non ho trovato parlato sopra la soglia, oppure non ci sono tracce M&E / Effetti (o una traccia selezionata) su cui scrivere.");
+        juce::AlertWindow::showMessageBoxAsync (n > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Ducking automatico"),
+            n > 0 ? TRANS ("Automazione del volume scritta su ") + juce::String (n) + (n == 1 ? " traccia" : " tracce") + TRANS (".\nLe tracce sono in modalita' lettura: la curva si vede e si modifica nella corsia VOL.\n\nPer togliere tutto: Modifica > Annulla.")
+                  : TRANS ("Non ho trovato parlato sopra la soglia, oppure non ci sono tracce M&E / Effetti (o una traccia selezionata) su cui scrivere."));
     }), true);
 }
 
 void MainComponent::detectVideoCuts()
 {
     auto video = project->getSession().video;
-    if (video == nullptr) { showError ("Importa prima un video."); return; }
+    if (video == nullptr) { showError (TRANS ("Importa prima un video.")); return; }
     if (videoJob != nullptr || exportJob != nullptr) return;
 
-    auto* aw = new juce::AlertWindow ("Rileva i tagli del video", "Cerca i cambi di inquadratura e mette un marker su ciascuno. Con un film lungo puo' volerci qualche minuto.", juce::MessageBoxIconType::NoIcon);
-    aw->addTextEditor ("sens", "5", "Sensibilita' (da 1 a 10: piu' alta = piu' tagli, anche dissolvenze veloci)");
-    aw->addButton ("Analizza", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    auto* aw = new juce::AlertWindow (TRANS ("Rileva i tagli del video"), TRANS ("Cerca i cambi di inquadratura e mette un marker su ciascuno. Con un film lungo puo' volerci qualche minuto."), juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("sens", "5", TRANS ("Sensibilita' (da 1 a 10: piu' alta = piu' tagli, anche dissolvenze veloci)"));
+    aw->addButton (TRANS ("Analizza"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<MainComponent> safe (this);
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, video] (int r)
     {
@@ -2622,8 +2646,8 @@ void MainComponent::detectVideoCuts()
                 int n = 0;
                 for (auto t : cuts) marks.emplace_back ((int64_t) std::llround ((t + video->offsetSec) * rate), "Taglio " + juce::String (++n));
                 safe->project->addMarkers (marks, juce::Colour (0xff7aa7c7));
-                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Tagli del video",
-                    cuts.empty() ? juce::String ("Non ho trovato tagli. Prova ad aumentare la sensibilita'.") : "Ho aggiunto " + juce::String ((int) cuts.size()) + " marker sui cambi di inquadratura.\n\nSi vedono nel righello e nel menu Marker; se sono troppi o troppo pochi, annulla e cambia la sensibilita'.");
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Tagli del video"),
+                    cuts.empty() ? juce::String (TRANS ("Non ho trovato tagli. Prova ad aumentare la sensibilita'.")) : TRANS ("Ho aggiunto ") + juce::String ((int) cuts.size()) + TRANS (" marker sui cambi di inquadratura.\n\nSi vedono nel righello e nel menu Marker; se sono troppi o troppo pochi, annulla e cambia la sensibilita'."));
             });
         });
         safe->cutJob->launchThread();
@@ -2642,7 +2666,7 @@ void MainComponent::exportCueSheet()
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
         f = f.withFileExtension ("html");
-        if (! f.replaceWithText (cuesheet::buildHtml (*safe->project, "Foglio cue - " + base.replace ("_foglio_cue", "")))) { safe->showError ("Impossibile scrivere il file."); return; }
+        if (! f.replaceWithText (cuesheet::buildHtml (*safe->project, TRANS ("Foglio cue - ") + base.replace ("_foglio_cue", "")))) { safe->showError (TRANS ("Impossibile scrivere il file.")); return; }
         juce::URL (f).launchInDefaultBrowser();
     });
 }
@@ -2675,12 +2699,12 @@ void MainComponent::exportAdrCsv()
         if (safe == nullptr || f == juce::File()) return;
         auto& p = *safe->project;
         const double rate = p.getSampleRate();
-        juce::String csv = "Cue;Stato;Personaggio;Scena;Rullo;TC In;TC Out;Durata (s);Take attivo;Take totali;Dialogo;Note\n";
+        juce::String csv = TRANS ("Cue;Stato;Personaggio;Scena;Rullo;TC In;TC Out;Durata (s);Take attivo;Take totali;Dialogo;Note\n");
         for (auto& c : p.getSession().cues)
             csv << c.number << ";" << adrStatusName (c.status) << ";" << csvField (c.character) << ";" << csvField (c.scene) << ";" << csvField (c.reel) << ";"
                 << p.formatTc ((double) c.inPos / rate) << ";" << p.formatTc ((double) c.outPos / rate) << ";" << juce::String ((double) (c.outPos - c.inPos) / rate, 2) << ";"
                 << c.activeTake << ";" << p.takeCount (c.id) << ";" << csvField (c.dialogue) << ";" << csvField (c.notes) << "\n";
-        if (! f.withFileExtension ("csv").replaceWithText (csv)) safe->showError ("Impossibile scrivere il file.");
+        if (! f.withFileExtension ("csv").replaceWithText (csv)) safe->showError (TRANS ("Impossibile scrivere il file."));
     });
 }
 
@@ -2689,19 +2713,19 @@ juce::String adrToProToolsText (const Project& p, const juce::String& sessionNam
     const double rate = p.getSampleRate();
     static const char* const tcNames[] = { "23.976 Frame", "24 Frame", "25 Frame", "29.97 Frame", "29.97 Drop Frame", "30 Frame", "50 Frame", "60 Frame" };
     juce::String t;
-    t << "SESSION NAME:\t" << sessionName << "\n";
-    t << "SAMPLE RATE:\t" << juce::String (rate, 6) << "\n";
-    t << "BIT DEPTH:\t24-bit\n";
-    t << "SESSION START TIMECODE:\t" << p.formatTc (0.0) << "\n";
-    t << "TIMECODE FORMAT:\t" << tcNames[juce::jlimit (0, 7, p.tcFormat)] << "\n\n\n";
+    t << TRANS ("SESSION NAME:\t") << sessionName << "\n";
+    t << TRANS ("SAMPLE RATE:\t") << juce::String (rate, 6) << "\n";
+    t << TRANS ("BIT DEPTH:\t24-bit\n");
+    t << TRANS ("SESSION START TIMECODE:\t") << p.formatTc (0.0) << "\n";
+    t << TRANS ("TIMECODE FORMAT:\t") << tcNames[juce::jlimit (0, 7, p.tcFormat)] << "\n\n\n";
     t << "M A R K E R S  L I S T I N G\n";
-    t << "#   \tLOCATION     \tTIME REFERENCE      \tUNITS    \tNAME                             \tCOMMENTS\n";
+    t << TRANS ("#   \tLOCATION     \tTIME REFERENCE      \tUNITS    \tNAME                             \tCOMMENTS\n");
     for (auto& c : p.getSession().cues)
     {
-        juce::String com = "CHARACTER: " + c.character + " | SCENE: " + c.scene + " | OUT: " + p.formatTc ((double) c.outPos / rate);
-        if (c.reel.isNotEmpty()) com << " | REEL: " << c.reel;
-        if (c.dialogue.isNotEmpty()) com << " | DIALOGUE: " << c.dialogue.replaceCharacters ("\r\n\t|", "    ");
-        if (c.notes.isNotEmpty()) com << " | NOTES: " << c.notes.replaceCharacters ("\r\n\t|", "    ");
+        juce::String com = "CHARACTER: " + c.character + TRANS (" | SCENE: ") + c.scene + TRANS (" | OUT: ") + p.formatTc ((double) c.outPos / rate);
+        if (c.reel.isNotEmpty()) com << TRANS (" | REEL: ") << c.reel;
+        if (c.dialogue.isNotEmpty()) com << TRANS (" | DIALOGUE: ") << c.dialogue.replaceCharacters ("\r\n\t|", "    ");
+        if (c.notes.isNotEmpty()) com << TRANS (" | NOTES: ") << c.notes.replaceCharacters ("\r\n\t|", "    ");
         t << c.number << "\t" << p.formatTc ((double) c.inPos / rate) << "\t" << juce::String ((int64_t) std::llround (p.tcStartSec * rate) + c.inPos)
           << "\tSamples\t" << c.character << "\t" << com << "\n";
     }
@@ -2719,7 +2743,7 @@ void MainComponent::exportAdrProTools()
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
         const auto name = safe->project->getFile() == juce::File() ? juce::String ("Sessione") : safe->project->getFile().getFileNameWithoutExtension();
-        if (! f.withFileExtension ("txt").replaceWithText (adrToProToolsText (*safe->project, name))) safe->showError ("Impossibile scrivere il file.");
+        if (! f.withFileExtension ("txt").replaceWithText (adrToProToolsText (*safe->project, name))) safe->showError (TRANS ("Impossibile scrivere il file."));
     });
 }
 
@@ -2756,7 +2780,7 @@ int exportAdrTakes (const Project& p, const juce::File& folder, juce::StringArra
                 if (w == nullptr) { errors.add ("Impossibile creare " + file.getFileName()); continue; }
                 os.release();
 
-                if (c.asset->offline) { errors.add ("Il file di " + c.asset->name + " non e' stato trovato: il take non si puo' esportare."); continue; }
+                if (c.asset->offline) { errors.add (TRANS ("Il file di ") + c.asset->name + TRANS (" non e' stato trovato: il take non si puo' esportare.")); continue; }
                 juce::AudioBuffer<float> buf (c.asset->numChannels(), (int) c.length);
                 for (int ch = 0; ch < buf.getNumChannels(); ++ch)
                     buf.copyFrom (ch, 0, c.asset->audio, ch, (int) c.offset, (int) c.length);
@@ -2780,9 +2804,9 @@ void MainComponent::exportAdrBwf()
         juce::StringArray errors;
         const int n = exportAdrTakes (*safe->project, dir, errors);
         juce::String msg = n == 0 ? juce::String ("Nessun take attivo da esportare.") : "Esportati " + juce::String (n) + " file BWF (24 bit) in " + dir.getFullPathName()
-                                                                                       + ".\n\nOgni file porta il timecode della posizione sulla timeline: in Pro Tools si importano con Spot e \"Timecode\" oppure \"Original Time Stamp\".";
+                                                                                       + TRANS (".\n\nOgni file porta il timecode della posizione sulla timeline: in Pro Tools si importano con Spot e \"Timecode\" oppure \"Original Time Stamp\".");
         if (errors.size() > 0) msg << "\n\n" << errors.joinIntoString ("\n");
-        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Esporta take ADR", msg);
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Esporta take ADR"), msg);
     });
 }
 

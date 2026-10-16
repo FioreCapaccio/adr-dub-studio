@@ -25,8 +25,8 @@ private:
     juce::Slider dialogueSize { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::ComboBox tcFormat, beeps;
     juce::TextEditor start, preRoll, postRoll, naming;
-    juce::ToggleButton rulerTc { "Il righello mostra il timecode" }, streamer { "Streamer visivo sul video (ADR)" };
-    juce::TextButton okBtn { "OK" }, cancelBtn { "Annulla" };
+    juce::ToggleButton rulerTc { TRANS ("Il righello mostra il timecode") }, streamer { TRANS ("Streamer visivo sul video (ADR)") };
+    juce::TextButton okBtn { TRANS ("OK") }, cancelBtn { "Annulla" };
 };
 
 } // namespace fc

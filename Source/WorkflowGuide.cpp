@@ -17,12 +17,12 @@ std::vector<Step> steps (const Project& p, bool checkedClean, bool delivered)
     for (auto& t : s.tracks) if (t.live->trackType.load() == TrackDialogue && ! t.name.startsWithIgnoreCase ("Audio")) ++roleTracks;
 
     v.push_back ({ "1. Video", s.video != nullptr ? s.video->file.getFileName() : juce::String ("nessun video importato"), s.video != nullptr, ActImportVideo, "Importa video..." });
-    v.push_back ({ "2. Copione", cues > 0 ? juce::String (cues) + " cue importati" : juce::String ("nessun cue"), cues > 0, ActImportScript, "Importa cue..." });
-    v.push_back ({ "3. Tracce", roleTracks > 0 ? juce::String (roleTracks) + " tracce Dialoghi" : juce::String ("ancora nessuna traccia per i personaggi"), roleTracks > 0, ActTracks, "Tracce per personaggio" });
+    v.push_back ({ TRANS ("2. Copione"), cues > 0 ? juce::String (cues) + TRANS (" cue importati") : juce::String (TRANS ("nessun cue")), cues > 0, ActImportScript, TRANS ("Importa cue...") });
+    v.push_back ({ TRANS ("3. Tracce"), roleTracks > 0 ? juce::String (roleTracks) + TRANS (" tracce Dialoghi") : juce::String (TRANS ("ancora nessuna traccia per i personaggi")), roleTracks > 0, ActTracks, TRANS ("Tracce per personaggio") });
     v.push_back ({ "4. Registrazione", cues > 0 ? juce::String (recorded) + " di " + juce::String (cues) + " cue registrati" : juce::String ("serve il copione"), cues > 0 && recorded == cues, ActRecord, "Finestra ADR" });
     v.push_back ({ "5. Approvazione", cues > 0 ? juce::String (approved) + " di " + juce::String (cues) + " cue approvati" : juce::String ("serve il copione"), cues > 0 && approved == cues, ActApprove, "Finestra ADR" });
-    v.push_back ({ "6. Controllo", checkedClean ? juce::String ("la sessione e' a posto") : juce::String ("controlla la sessione prima di consegnare"), checkedClean, ActCheck, "Controlla..." });
-    v.push_back ({ "7. Consegna", delivered ? juce::String ("consegna esportata in questa sessione") : juce::String ("MIX, stem e rapporto"), delivered, ActDeliver, "Esporta..." });
+    v.push_back ({ TRANS ("6. Controllo"), checkedClean ? juce::String (TRANS ("la sessione e' a posto")) : juce::String (TRANS ("controlla la sessione prima di consegnare")), checkedClean, ActCheck, "Controlla..." });
+    v.push_back ({ TRANS ("7. Consegna"), delivered ? juce::String (TRANS ("consegna esportata in questa sessione")) : juce::String (TRANS ("MIX, stem e rapporto")), delivered, ActDeliver, "Esporta..." });
     return v;
 }
 

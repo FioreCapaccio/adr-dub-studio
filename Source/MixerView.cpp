@@ -109,7 +109,7 @@ void InsertButton::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
         g.setColour (dim.withAlpha (0.7f));
         g.setFont (font (10.5f));
-        g.drawText ("+  Insert", getLocalBounds().withTrimmedLeft (8), juce::Justification::centredLeft);
+        g.drawText (TRANS ("+  Insert"), getLocalBounds().withTrimmedLeft (8), juce::Justification::centredLeft);
         return;
     }
 
@@ -148,16 +148,16 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
         monoBtn.setClickingTogglesState (true);
         monoBtn.setColour (juce::TextButton::buttonOnColourId, yellow);
         monoBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
-        monoBtn.setTooltip ("Ascolto in mono (controllo di compatibilita'): non influisce su export e misure");
+        monoBtn.setTooltip (TRANS ("Ascolto in mono (controllo di compatibilita'): non influisce su export e misure"));
         monoBtn.onClick = [this] { live->monoMon = monoBtn.getToggleState(); };
         addAndMakeVisible (monoBtn);
         dimBtn.setClickingTogglesState (true);
         dimBtn.setColour (juce::TextButton::buttonOnColourId, yellow);
         dimBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
-        dimBtn.setTooltip ("Abbassa l'ascolto di 20 dB: non influisce su export e misure");
+        dimBtn.setTooltip (TRANS ("Abbassa l'ascolto di 20 dB: non influisce su export e misure"));
         dimBtn.onClick = [this] { live->dimMon = dimBtn.getToggleState(); };
         addAndMakeVisible (dimBtn);
-        limBtn.setTooltip ("Limiter del master: nessun picco supera il tetto. Lookahead 3 ms, rilascio 80 ms");
+        limBtn.setTooltip (TRANS ("Limiter del master: nessun picco supera il tetto. Lookahead 3 ms, rilascio 80 ms"));
         limBtn.onClick = [this] { live->limiterOn = limBtn.getToggleState(); project.liveChanged(); };
         addAndMakeVisible (limBtn);
 
@@ -168,7 +168,7 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
         ceil.setRange (-12.0, 0.0, 0.1);
         ceil.setDoubleClickReturnValue (true, -1.0);
         ceil.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f, juce::MathConstants<float>::pi * 2.75f, true);
-        ceil.setTooltip ("Tetto del limiter (dBFS). Doppio clic: -1 dB");
+        ceil.setTooltip (TRANS ("Tetto del limiter (dBFS). Doppio clic: -1 dB"));
         ceil.onValueChange = [this] { live->ceilingDb = (float) ceil.getValue(); project.liveChanged(); repaint (ceilLabel); };
         addAndMakeVisible (ceil);
     }
@@ -194,7 +194,7 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
     dbLabel.setColour (juce::Label::backgroundColourId, well);
     addAndMakeVisible (dbLabel);
     meter.setShowScale (true);
-    meter.setTooltip ("Picco massimo (dBFS). Clic per azzerare");
+    meter.setTooltip (TRANS ("Picco massimo (dBFS). Clic per azzerare"));
     addAndMakeVisible (meter);
 
     if (! master && ! aux)
@@ -231,15 +231,15 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
         invertBtn.setClickingTogglesState (true);
         invertBtn.setColour (juce::TextButton::buttonOnColourId, accent);
         invertBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
-        invertBtn.setTooltip ("Inverte la polarita' (fase) della traccia");
+        invertBtn.setTooltip (TRANS ("Inverte la polarita' (fase) della traccia"));
         invertBtn.onClick = [this] { live->invert = invertBtn.getToggleState(); project.liveChanged(); };
         addAndMakeVisible (invertBtn);
 
-        routeBtn.setTooltip ("Uscita della traccia: master oppure un bus di gruppo");
+        routeBtn.setTooltip (TRANS ("Uscita della traccia: master oppure un bus di gruppo"));
         routeBtn.onClick = [this]
         {
             juce::PopupMenu m;
-            m.addItem (1, "Master", true, live->outBus.load() == 0);
+            m.addItem (1, TRANS ("Master"), true, live->outBus.load() == 0);
             for (int g = 0; g < Session::kNumGroups; ++g) m.addItem (2 + g, juce::String (groupBusName (g)), true, live->outBus.load() == g + 1);
             juce::Component::SafePointer<ChannelStrip> safe (this);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&routeBtn), [safe] (int r)
@@ -253,16 +253,16 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
         addAndMakeVisible (routeBtn);
         trackLimBtn.setClickingTogglesState (false);
         trackLimBtn.setColour (juce::TextButton::buttonOnColourId, green.darker (0.15f));
-        trackLimBtn.setTooltip ("Limiter della traccia (dopo il fader): nessun picco supera il tetto. Aggiunge 3 ms di latenza, compensata. Si accende di giallo quando interviene");
+        trackLimBtn.setTooltip (TRANS ("Limiter della traccia (dopo il fader): nessun picco supera il tetto. Aggiunge 3 ms di latenza, compensata. Si accende di giallo quando interviene"));
         trackLimBtn.onClick = [this] { live->limiterOn = ! live->limiterOn.load(); project.liveChanged(); };
         addAndMakeVisible (trackLimBtn);
-        trackLimMenuBtn.setTooltip ("Tetto del limiter della traccia");
+        trackLimMenuBtn.setTooltip (TRANS ("Tetto del limiter della traccia"));
         trackLimMenuBtn.onClick = [this]
         {
             juce::PopupMenu m;
             const float cur = live->ceilingDb.load();
             static const float values[] = { -0.1f, -1.0f, -3.0f, -6.0f, -9.0f, -12.0f, -18.0f };
-            for (int i = 0; i < 7; ++i) m.addItem (i + 1, "Tetto " + juce::String (values[i], 1) + " dB", true, std::abs (cur - values[i]) < 0.05f);
+            for (int i = 0; i < 7; ++i) m.addItem (i + 1, TRANS ("Tetto ") + juce::String (values[i], 1) + TRANS (" dB"), true, std::abs (cur - values[i]) < 0.05f);
             juce::Component::SafePointer<ChannelStrip> safe (this);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&trackLimMenuBtn), [safe] (int r)
             {
@@ -274,7 +274,7 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
             });
         };
         addAndMakeVisible (trackLimMenuBtn);
-        eqBtn.setTooltip ("EQ a 4 bande, compressore e tipo di traccia (preset per dialogo, musica, effetti). Acceso = colorato");
+        eqBtn.setTooltip (TRANS ("EQ a 4 bande, compressore e tipo di traccia (preset per dialogo, musica, effetti). Acceso = colorato"));
         eqBtn.onClick = [this] { if (onEq) onEq(); };
         addAndMakeVisible (eqBtn);
 
@@ -297,11 +297,11 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
                 if (live->autoMode.load() == 2 && sl->isMouseButtonDown() && project.isPlayingFn && project.isPlayingFn())
                     project.writeAuto (trackId, k == 0 ? AutoSendA : AutoSendB, project.positionFn(), live->sendDb[k].load());
                 sl->setTooltip (juce::String (k == 0 ? "Send A" : "Send B") + (v <= -59.5f ? ": spento" : ": " + juce::String (v, 1) + " dB")
-                                + "  (post-fader, verso il ritorno FX). Doppio clic: spento");
+                                + TRANS ("  (post-fader, verso il ritorno FX). Doppio clic: spento"));
                 project.liveChanged();
             };
             sl->onDragEnd = [this] { project.endAutoTouch(); };
-            sl->setTooltip (juce::String (k == 0 ? "Send A" : "Send B") + " verso il ritorno FX (post-fader). Doppio clic: spento");
+            sl->setTooltip (juce::String (k == 0 ? "Send A" : "Send B") + TRANS (" verso il ritorno FX (post-fader). Doppio clic: spento"));
             addAndMakeVisible (*sl);
         }
     }
@@ -337,7 +337,7 @@ void ChannelStrip::syncFromLive()
         soloBtn.setToggleState (live->solo.load(), juce::dontSendNotification);
         invertBtn.setToggleState (live->invert.load(), juce::dontSendNotification);
         trackLimBtn.setToggleState (live->limiterOn.load(), juce::dontSendNotification);
-        trackLimBtn.setButtonText (live->limiterOn.load() ? "LIM " + juce::String (live->ceilingDb.load(), 0) : juce::String ("LIM"));
+        trackLimBtn.setButtonText (live->limiterOn.load() ? TRANS ("LIM ") + juce::String (live->ceilingDb.load(), 0) : juce::String ("LIM"));
         eqBtn.setToggleState ((live->eq.enabled.load() && ! live->eq.isNeutral()) || live->comp.enabled.load(), juce::dontSendNotification);
         repaint (0, 0, getWidth(), 30);
         routeBtn.setButtonText (live->outBus.load() == 0 ? juce::String ("MASTER") : juce::String (groupBusName (live->outBus.load() - 1)));
@@ -369,10 +369,10 @@ void ChannelStrip::refreshInserts()
                          : slot->error.isNotEmpty() ? slot->error
                          : slot->name + (slot->desc.manufacturerName.isNotEmpty() ? " (" + slot->desc.manufacturerName + ")" : juce::String())
                                + (slot->ready.load() && slot->plugin != nullptr && slot->plugin->getLatencySamples() > 0
-                                      ? "\nLatenza: " + juce::String (slot->plugin->getLatencySamples()) + " campioni ("
-                                            + juce::String (slot->plugin->getLatencySamples() * 1000.0 / juce::jmax (1.0, project.getSampleRate()), 1) + " ms), compensata"
+                                      ? "\nLatenza: " + juce::String (slot->plugin->getLatencySamples()) + TRANS (" campioni (")
+                                            + juce::String (slot->plugin->getLatencySamples() * 1000.0 / juce::jmax (1.0, project.getSampleRate()), 1) + TRANS (" ms), compensata")
                                       : juce::String())
-                               + "\nClic: apre l'editor.  Clic destro: bypass, sposta, rimuovi";
+                               + TRANS ("\nClic: apre l'editor.  Clic destro: bypass, sposta, rimuovi");
         inserts[i].setTooltip (tip);
     }
 }
@@ -391,13 +391,13 @@ void ChannelStrip::onInsert (int index, const juce::MouseEvent& e)
     }
 
     juce::PopupMenu m;
-    m.addItem (1, "Apri l'editor", slot->ready.load());
-    m.addItem (2, "Bypass", true, slot->bypass.load());
+    m.addItem (1, TRANS ("Apri l'editor"), slot->ready.load());
+    m.addItem (2, TRANS ("Bypass"), true, slot->bypass.load());
     m.addSeparator();
-    m.addItem (3, juce::String (juce::CharPointer_UTF8 ("Sposta su")), index > 0);
-    m.addItem (4, juce::String (juce::CharPointer_UTF8 ("Sposta gi\xc3\xb9")), index + 1 < (int) chain->slots.size());
+    m.addItem (3, juce::translate (juce::String (juce::CharPointer_UTF8 ("Sposta su"))), index > 0);
+    m.addItem (4, juce::translate (juce::String (juce::CharPointer_UTF8 ("Sposta gi\xc3\xb9"))), index + 1 < (int) chain->slots.size());
     m.addSeparator();
-    m.addItem (5, "Rimuovi");
+    m.addItem (5, TRANS ("Rimuovi"));
 
     juce::Component::SafePointer<ChannelStrip> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options(), [safe, index, slot] (int r)
@@ -492,7 +492,7 @@ void ChannelStrip::paint (juce::Graphics& g)
     g.setColour (text);
     g.setFont (font (12.0f, true));
     const int type = (! master && ! aux) ? live->trackType.load() : 0;
-    g.drawText (master ? "MASTER" : name, getLocalBounds().withHeight (type > 0 ? 22 : 28).withTrimmedTop (type > 0 ? 1 : 4).reduced (8, 0),
+    g.drawText (master ? TRANS ("MASTER") : name, getLocalBounds().withHeight (type > 0 ? 22 : 28).withTrimmedTop (type > 0 ? 1 : 4).reduced (8, 0),
                 juce::Justification::centred, true);
     if (type > 0)   // tipo di traccia (dialogo, musica, effetti) sotto il nome
     {
@@ -518,7 +518,7 @@ void ChannelStrip::paint (juce::Graphics& g)
             g.setColour (dim.withAlpha (0.7f));
             g.drawHorizontalLine ((int) ty, (float) grRect.getX() - 3.0f, (float) grRect.getX());
         }
-        drawCaption (g, "GR", juce::Rectangle<int> (grRect.getX() - 6, grRect.getBottom() + 1, grRect.getWidth() + 12, 12), juce::Justification::centred);
+        drawCaption (g, TRANS ("GR"), juce::Rectangle<int> (grRect.getX() - 6, grRect.getBottom() + 1, grRect.getWidth() + 12, 12), juce::Justification::centred);
         g.setColour (grHold > 0.1f ? yellow : dim);   // lettura numerica della riduzione
         g.setFont (mono (9.0f));
         g.drawText ((grHold > 0.05f ? "-" : "") + juce::String (grHold, 1), juce::Rectangle<int> (grRect.getX() - 10, grRect.getY() - 14, grRect.getWidth() + 20, 12), juce::Justification::centred);
@@ -526,8 +526,8 @@ void ChannelStrip::paint (juce::Graphics& g)
 
     if (! master && ! aux)
     {
-        drawCaption (g, "Send A", sendCaptionA, juce::Justification::centred);
-        drawCaption (g, "Send B", sendCaptionB, juce::Justification::centred);
+        drawCaption (g, TRANS ("Send A"), sendCaptionA, juce::Justification::centred);
+        drawCaption (g, TRANS ("Send B"), sendCaptionB, juce::Justification::centred);
     }
 
     if (! master && ! aux)
@@ -617,7 +617,7 @@ void ChannelStrip::resized()
 LoudnessPanel::LoudnessPanel (Project& p, Loudness::Meter& m) : project (p), meter (m)
 {
     const auto& list = Loudness::standards();
-    for (size_t i = 0; i < list.size(); ++i) standard.addItem (list[i].name, (int) i + 1);
+    for (size_t i = 0; i < list.size(); ++i) standard.addItem (juce::translate (list[i].name), (int) i + 1);
     standard.setSelectedId (project.loudnessStandard + 1, juce::dontSendNotification);
     standard.onChange = [this]
     {
@@ -627,7 +627,7 @@ LoudnessPanel::LoudnessPanel (Project& p, Loudness::Meter& m) : project (p), met
     };
     addAndMakeVisible (standard);
 
-    resetBtn.setTooltip ("Azzera la misura integrata, il loudness range e i picchi");
+    resetBtn.setTooltip (TRANS ("Azzera la misura integrata, il loudness range e i picchi"));
     resetBtn.onClick = [this] { meter.requestReset(); tpDb = -100.0f; integ = -100.0f; repaint(); };
     addAndMakeVisible (resetBtn);
     startTimerHz (15);
@@ -696,15 +696,15 @@ void LoudnessPanel::paint (juce::Graphics& g)
         g.fillRoundedRectangle (f, 8.0f);
         g.setColour (hasTarget && integ > -99.0f ? c.withAlpha (0.7f) : border);
         g.drawRoundedRectangle (f.reduced (0.5f), 8.0f, 1.0f);
-        drawCaption (g, "Integrato (LUFS)", bigBox.withTrimmedLeft (12).withHeight (18).translated (0, 4), juce::Justification::centredLeft);
+        drawCaption (g, TRANS ("Integrato (LUFS)"), bigBox.withTrimmedLeft (12).withHeight (18).translated (0, 4), juce::Justification::centredLeft);
         g.setColour (c);
         g.setFont (mono (34.0f));
         g.drawText (fmt (integ), bigBox.withTrimmedTop (16).withTrimmedBottom (18), juce::Justification::centred);
         g.setFont (font (11.0f));
         g.setColour (dim);
-        juce::String sub = "nessun obiettivo";
+        juce::String sub = TRANS ("nessun obiettivo");
         if (hasTarget)
-            sub = "obiettivo " + juce::String (std_.target, 0) + " LUFS" + (integ > -99.0f ? "   " + juce::String (dev >= 0 ? "+" : "") + juce::String (dev, 1) + " LU" : juce::String());
+            sub = TRANS ("obiettivo ") + juce::String (std_.target, 0) + " LUFS" + (integ > -99.0f ? "   " + juce::String (dev >= 0 ? "+" : "") + juce::String (dev, 1) + " LU" : juce::String());
         g.drawText (sub, bigBox.withTrimmedTop (bigBox.getHeight() - 20), juce::Justification::centred);
     }
 
@@ -712,7 +712,7 @@ void LoudnessPanel::paint (juce::Graphics& g)
     {
         auto f = barBox.toFloat().withTrimmedTop (14.0f);
         auto toX = [&f] (float lufs) { return f.getX() + juce::jlimit (0.0f, 1.0f, (lufs + 50.0f) / 45.0f) * f.getWidth(); };
-        drawCaption (g, "Momentaneo", barBox.withHeight (13), juce::Justification::centredLeft);
+        drawCaption (g, TRANS ("Momentaneo"), barBox.withHeight (13), juce::Justification::centredLeft);
         g.setColour (dim);
         g.setFont (mono (11.0f));
         g.drawText (fmt (mom), barBox.withHeight (13), juce::Justification::centredRight);
@@ -754,15 +754,15 @@ void LoudnessPanel::paint (juce::Graphics& g)
         g.setFont (mono (14.0f));
         g.drawText (value, r, juce::Justification::centredRight);
     };
-    row ("Short-term (LUFS)", fmt (st), text);
-    row ("Loudness range (LU)", lra > 0.0f ? juce::String (lra, 1) : juce::String (juce::CharPointer_UTF8 ("--")), text);
+    row (TRANS ("Short-term (LUFS)"), fmt (st), text);
+    row (TRANS ("Loudness range (LU)"), lra > 0.0f ? juce::String (lra, 1) : juce::String (juce::CharPointer_UTF8 ("--")), text);
     const bool tpOver = hasTarget && tpDb > (float) std_.ceiling;
-    row ("True peak (dBTP)", fmt (tpDb), tpOver ? accent : (tpDb > -1.0f ? yellow : text));
+    row (TRANS ("True peak (dBTP)"), fmt (tpDb), tpOver ? accent : (tpDb > -1.0f ? yellow : text));
     if (hasTarget)
     {
         g.setColour (dim);
         g.setFont (font (10.0f));
-        g.drawFittedText (juce::String (std_.detail), rows.removeFromTop (60).reduced (0, 4), juce::Justification::topLeft, 4);
+        g.drawFittedText (juce::translate (std_.detail), rows.removeFromTop (60).reduced (0, 4), juce::Justification::topLeft, 4);
     }
 }
 
@@ -805,7 +805,7 @@ void MixerView::makeAux (int k)
 {
     if (auxStrips[k] != nullptr) removeChildComponent (auxStrips[k].get());
     auxStrips[k] = std::make_unique<ChannelStrip> (project, host, project.getSession().aux[(size_t) k], -2 - k, false, true);
-    auxStrips[k]->setInfo (k == 0 ? "FX A" : "FX B", juce::Colour (0xff4aa8c9), false);
+    auxStrips[k]->setInfo (k == 0 ? TRANS ("FX A") : TRANS ("FX B"), juce::Colour (0xff4aa8c9), false);
     addAndMakeVisible (*auxStrips[k]);
 }
 
@@ -820,7 +820,7 @@ void MixerView::openEq (int trackId)
 
     auto live = t->live;
     juce::Component::SafePointer<MixerView> safe (this);
-    auto win = std::make_unique<EqWindow> (t->name + " - EQ e compressore", [safe, live]
+    auto win = std::make_unique<EqWindow> (t->name + TRANS (" - EQ e compressore"), [safe, live]
     {
         juce::MessageManager::callAsync ([safe, live]
         {

@@ -13,12 +13,12 @@ SpectrumView::SpectrumView (Reader r, std::function<double()> sr) : read (std::m
 
     tiltBtn.setClickingTogglesState (true);
     tiltBtn.setColour (juce::TextButton::buttonOnColourId, blue);
-    tiltBtn.setTooltip ("Inclinazione +4,5 dB/ottava (come il rumore rosa appare piatto): rende piu' leggibili le alte frequenze");
+    tiltBtn.setTooltip (TRANS ("Inclinazione +4,5 dB/ottava (come il rumore rosa appare piatto): rende piu' leggibili le alte frequenze"));
     tiltBtn.onClick = [this] { tilt = tiltBtn.getToggleState(); };
     peakBtn.setClickingTogglesState (true);
     peakBtn.setToggleState (true, juce::dontSendNotification);
     peakBtn.setColour (juce::TextButton::buttonOnColourId, blue);
-    peakBtn.setTooltip ("Mostra i picchi mantenuti");
+    peakBtn.setTooltip (TRANS ("Mostra i picchi mantenuti"));
     peakBtn.onClick = [this] { showPeaks = peakBtn.getToggleState(); };
     addAndMakeVisible (tiltBtn);
     addAndMakeVisible (peakBtn);

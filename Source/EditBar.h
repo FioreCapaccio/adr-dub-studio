@@ -42,7 +42,7 @@ private:
     std::vector<Action> actions;
     juce::Slider heightSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::Slider zoomSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };   // 0 = tutto, 1 = campione per campione (scala logaritmica)
-    juce::TextButton fitBtn { "ADATTA" };
+    juce::TextButton fitBtn { TRANS ("ADATTA") };
     juce::Rectangle<int> toolsBox;
     int separatorX = 0, sliderCaptionX = 0, zoomCaptionX = 0;
 };

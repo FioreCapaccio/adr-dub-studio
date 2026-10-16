@@ -87,7 +87,7 @@ bool renderToTemp (const Session& source, double rate, int64_t start, int64_t to
             }
             writer->writeFromAudioSampleBuffer (buf, first, n - first);
         }
-        if (progress && ! progress ((double) i / (double) all)) { error = "Esportazione annullata."; return false; }
+        if (progress && ! progress ((double) i / (double) all)) { error = TRANS ("Esportazione annullata."); return false; }
     }
     writer.reset();
 
@@ -207,7 +207,7 @@ bool convertTemp (const juce::File& temp, double rate, const ExportOptions& o, d
 
         if (progress && ! progress (progressBase + progressSpan * (double) juce::jmin<int64_t> (written, outTotal) / (double) juce::jmax<int64_t> (1, outTotal)))
         {
-            error = "Esportazione annullata.";
+            error = TRANS ("Esportazione annullata.");
             writer.reset();
             dest.deleteFile();
             return false;
@@ -275,22 +275,22 @@ juce::String htmlEsc (const juce::String& s) { return s.replace ("&", "&amp;").r
 juce::String reportHtml (const ExportOptions& o, const std::vector<ExportItem>& items, const MixInfo& mi, int unrouted, double seconds, const juce::String& baseName)
 {
     juce::String h;
-    h << "<!DOCTYPE html><html lang=\"it\"><head><meta charset=\"utf-8\"><title>Rapporto di consegna</title><style>"
+    h << TRANS ("<!DOCTYPE html><html lang=\"it\"><head><meta charset=\"utf-8\"><title>Rapporto di consegna</title><style>"
          "body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111;margin:24px}h1{font-size:21px;margin:0 0 4px}.meta{color:#555;font-size:12px;margin-bottom:14px}"
          "table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #bbb;padding:6px 8px;text-align:left}th{background:#eee}td.r{text-align:right;font-variant-numeric:tabular-nums}"
-         ".warn{color:#a30;margin-top:12px;font-size:13px}</style></head><body><h1>Rapporto di consegna - " << htmlEsc (baseName) << "</h1><div class=\"meta\">"
+         ".warn{color:#a30;margin-top:12px;font-size:13px}</style></head><body><h1>Rapporto di consegna - ") << htmlEsc (baseName) << TRANS ("</h1><div class=\"meta\">")
       << htmlEsc (juce::Time::getCurrentTime().formatted ("%d/%m/%Y %H:%M")) << " &middot; " << o.format.toUpperCase() << " " << o.bitDepth << " bit &middot; "
-      << (o.outRate > 0.0 ? juce::String (o.outRate / 1000.0, 1) + " kHz" : juce::String ("frequenza della sessione")) << " &middot; durata " << juce::String (seconds, 1) << " s"
-      << (o.presetName.isNotEmpty() ? " &middot; preset: " + htmlEsc (o.presetName) : juce::String()) << "</div>"
-      << "<table><tr><th>File</th><th>Picco (dBFS)</th><th>True peak (dBTP)</th><th>Loudness (LUFS)</th><th>LRA (LU)</th></tr>";
+      << (o.outRate > 0.0 ? juce::String (o.outRate / 1000.0, 1) + " kHz" : juce::String (TRANS ("frequenza della sessione"))) << TRANS (" &middot; durata ") << juce::String (seconds, 1) << " s"
+      << (o.presetName.isNotEmpty() ? TRANS (" &middot; preset: ") + htmlEsc (o.presetName) : juce::String()) << "</div>"
+      << TRANS ("<table><tr><th>File</th><th>Picco (dBFS)</th><th>True peak (dBTP)</th><th>Loudness (LUFS)</th><th>LRA (LU)</th></tr>");
     for (auto& it : items)
-        h << "<tr><td>" << htmlEsc (juce::File (it.file).getFileName()) << "</td><td class=\"r\">" << juce::String (it.peakDb, 1) << "</td><td class=\"r\">" << juce::String (it.truePeakDb, 1)
-          << "</td><td class=\"r\">" << (it.lufs > -99.0 ? juce::String (it.lufs, 1) : juce::String ("n/d")) << "</td><td class=\"r\">" << (it.lra > 0.0 ? juce::String (it.lra, 1) : juce::String ("-")) << "</td></tr>";
+        h << "<tr><td>" << htmlEsc (juce::File (it.file).getFileName()) << TRANS ("</td><td class=\"r\">") << juce::String (it.peakDb, 1) << TRANS ("</td><td class=\"r\">") << juce::String (it.truePeakDb, 1)
+          << TRANS ("</td><td class=\"r\">") << (it.lufs > -99.0 ? juce::String (it.lufs, 1) : juce::String ("n/d")) << TRANS ("</td><td class=\"r\">") << (it.lra > 0.0 ? juce::String (it.lra, 1) : juce::String ("-")) << "</td></tr>";
     h << "</table>";
     if (o.norm == ExportOptions::Norm::Lufs) h << "<p>Normalizzazione del MIX a " << juce::String (o.normTarget, 1) << " LUFS (guadagno " << (mi.gainDb >= 0 ? "+" : "") << juce::String (mi.gainDb, 1)
-                                                  << " dB, tetto true-peak " << juce::String (mi.ceiling, 1) << " dBTP" << (mi.limited ? ", limiter intervenuto" : "") << "). Gli stem hanno lo stesso guadagno.</p>";
-    h << "<p style=\"font-size:12px;color:#555\">Misura di loudness: programma intero secondo ITU-R BS.1770 / EBU R128 (non limitata al solo dialogo). Gli stem sono presi prima del bus master.</p>";
-    if (unrouted > 0) h << "<div class=\"warn\">" << unrouted << " tracce con clip non sono assegnate a un bus di ruolo (Dialoghi / M&amp;E / Effetti): compaiono solo nel MIX.</div>";
+                                                  << TRANS (" dB, tetto true-peak ") << juce::String (mi.ceiling, 1) << " dBTP" << (mi.limited ? TRANS (", limiter intervenuto") : "") << TRANS ("). Gli stem hanno lo stesso guadagno.</p>");
+    h << TRANS ("<p style=\"font-size:12px;color:#555\">Misura di loudness: programma intero secondo ITU-R BS.1770 / EBU R128 (non limitata al solo dialogo). Gli stem sono presi prima del bus master.</p>");
+    if (unrouted > 0) h << TRANS ("<div class=\"warn\">") << unrouted << TRANS (" tracce con clip non sono assegnate a un bus di ruolo (Dialoghi / M&amp;E / Effetti): compaiono solo nel MIX.</div>");
     h << "</body></html>";
     return h;
 }
@@ -317,7 +317,7 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
         start = juce::jmax<int64_t> (0, o.rangeStart);
         total = o.rangeEnd - start;
     }
-    if (total <= 0) { res.message = "L'intervallo da esportare e' vuoto."; return res; }
+    if (total <= 0) { res.message = TRANS ("L'intervallo da esportare e' vuoto."); return res; }
 
     const Session base = prepare (session, o);
     const auto ext = "." + o.format;
@@ -374,9 +374,9 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
         res.ok = true;
         res.gainDb = mi.gainDb; res.limiterGrDb = mi.gr;
         res.peakDb = items.front().peakDb; res.truePeakDb = items.front().truePeakDb; res.lufs = mi.lufs; res.lra = mi.m.lra;
-        res.message = "Consegna esportata in " + target.getFullPathName() + "\n" + juce::String ((int) items.size()) + " file (MIX" + (active.empty() ? juce::String() : juce::String (" + ") + juce::String ((int) active.size()) + " stem")
-                      + ") e rapporto.\nMIX: " + (mi.lufs > -99.0 ? juce::String (mi.lufs, 1) + " LUFS" : juce::String ("n/d")) + ", true-peak " + juce::String (items.front().truePeakDb, 1) + " dBTP";
-        if (unrouted > 0) res.message << "\nATTENZIONE: " << unrouted << " tracce non sono sul bus di un ruolo e sono solo nel MIX.";
+        res.message = TRANS ("Consegna esportata in ") + target.getFullPathName() + "\n" + juce::String ((int) items.size()) + TRANS (" file (MIX") + (active.empty() ? juce::String() : juce::String (" + ") + juce::String ((int) active.size()) + " stem")
+                      + TRANS (") e rapporto.\nMIX: ") + (mi.lufs > -99.0 ? juce::String (mi.lufs, 1) + " LUFS" : juce::String ("n/d")) + TRANS (", true-peak ") + juce::String (items.front().truePeakDb, 1) + " dBTP";
+        if (unrouted > 0) res.message << "\nATTENZIONE: " << unrouted << TRANS (" tracce non sono sul bus di un ruolo e sono solo nel MIX.");
         return res;
     }
 
@@ -401,7 +401,7 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
             res.files.add (dest.getFullPathName());
         }
         res.ok = true;
-        res.message = juce::String (res.files.size()) + " stem esportati in " + target.getFullPathName();
+        res.message = juce::String (res.files.size()) + TRANS (" stem esportati in ") + target.getFullPathName();
         return res;
     }
 
@@ -419,13 +419,13 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
     res.lufs = mi.lufs;
     res.lra = mi.m.lra;
 
-    juce::String msg = "Esportato in " + target.getFullPathName();
-    msg << "\nLoudness integrato: " << (res.lufs > -99.0 ? juce::String (res.lufs, 1) + " LUFS" : juce::String ("n/d"))
+    juce::String msg = TRANS ("Esportato in ") + target.getFullPathName();
+    msg << TRANS ("\nLoudness integrato: ") << (res.lufs > -99.0 ? juce::String (res.lufs, 1) + " LUFS" : juce::String ("n/d"))
         << "   LRA: " << juce::String (res.lra, 1) << " LU"
-        << "\nPicco: " << juce::String (res.peakDb, 1) << " dBFS   True-peak: " << juce::String (res.truePeakDb, 1) << " dBTP";
-    if (std::abs (mi.gainDb) > 0.005) msg << "\nGuadagno di normalizzazione: " << (mi.gainDb >= 0 ? "+" : "") << juce::String (mi.gainDb, 1) << " dB";
-    if (mi.limited) msg << "\nLimiter true-peak intervenuto (riduzione massima " << juce::String (mi.gr, 1) << " dB)";
-    if (res.peakDb > 0.0) msg << "\nATTENZIONE: il picco supera 0 dBFS, il file puo' distorcere.";
+        << "\nPicco: " << juce::String (res.peakDb, 1) << TRANS (" dBFS   True-peak: ") << juce::String (res.truePeakDb, 1) << " dBTP";
+    if (std::abs (mi.gainDb) > 0.005) msg << TRANS ("\nGuadagno di normalizzazione: ") << (mi.gainDb >= 0 ? "+" : "") << juce::String (mi.gainDb, 1) << " dB";
+    if (mi.limited) msg << TRANS ("\nLimiter true-peak intervenuto (riduzione massima ") << juce::String (mi.gr, 1) << " dB)";
+    if (res.peakDb > 0.0) msg << TRANS ("\nATTENZIONE: il picco supera 0 dBFS, il file puo' distorcere.");
     res.message = msg;
     return res;
 }

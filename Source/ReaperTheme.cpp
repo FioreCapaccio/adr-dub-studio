@@ -129,7 +129,7 @@ theme::Palette paletteFromColors (const ColorMap& m, const juce::String& name)
 bool loadThemeFile (const juce::File& file, theme::Palette& out, juce::String& error)
 {
     juce::String ini, name = file.getFileNameWithoutExtension();
-    if (! file.existsAsFile()) { error = "File non trovato."; return false; }
+    if (! file.existsAsFile()) { error = TRANS ("File non trovato."); return false; }
 
     juce::ZipFile zip (file);
     if (zip.getNumEntries() > 0)
@@ -141,7 +141,7 @@ bool loadThemeFile (const juce::File& file, theme::Palette& out, juce::String& e
             if (fn.endsWithIgnoreCase (".reapertheme") && ! fn.contains ("/") && ! fn.contains ("\\")) { found = i; break; }   // nella radice
             if (fn.endsWithIgnoreCase (".reapertheme") && found < 0) found = i;
         }
-        if (found < 0) { error = "Lo zip non contiene un file .ReaperTheme."; return false; }
+        if (found < 0) { error = TRANS ("Lo zip non contiene un file .ReaperTheme."); return false; }
         std::unique_ptr<juce::InputStream> in (zip.createStreamForEntry (found));
         if (in == nullptr) { error = "Impossibile leggere il tema."; return false; }
         ini = in->readEntireStreamAsString();
@@ -151,7 +151,7 @@ bool loadThemeFile (const juce::File& file, theme::Palette& out, juce::String& e
         ini = file.loadFileAsString();
 
     const auto colors = parseColorTheme (ini);
-    if (colors.empty()) { error = "Il file non e' un tema di Reaper (nessun colore trovato)."; return false; }
+    if (colors.empty()) { error = TRANS ("Il file non e' un tema di Reaper (nessun colore trovato)."); return false; }
     out = paletteFromColors (colors, name);
     return true;
 }

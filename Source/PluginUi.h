@@ -39,7 +39,7 @@ private:
     BuiltinFx& fx;
     std::atomic<bool>& bypass;
     std::function<void()> bypassChanged;
-    juce::TextButton bypassButton { "BYPASS" };
+    juce::TextButton bypassButton { TRANS ("BYPASS") };
     std::vector<std::unique_ptr<Panel>> panels;
     juce::Rectangle<int> headerArea, curveArea;
     std::array<float, 3> shownMeter {};
@@ -90,7 +90,7 @@ private:
     int tab = 0, lastRow = -1;   // 0 tutti, 1 integrati, 2 VST3
     SearchBox search;
     juce::ListBox list { {}, this };
-    juce::TextButton tabs[3] { juce::TextButton ("Tutti"), juce::TextButton ("Integrati"), juce::TextButton ("VST3") };
-    juce::TextButton addButton { "Aggiungi" }, cancelButton { "Annulla" }, browseButton { "Sfoglia..." };
+    juce::TextButton tabs[3] { juce::TextButton (TRANS ("Tutti")), juce::TextButton (TRANS ("Integrati")), juce::TextButton (TRANS ("VST3")) };
+    juce::TextButton addButton { TRANS ("Aggiungi") }, cancelButton { "Annulla" }, browseButton { "Sfoglia..." };
 };
 } // namespace fc

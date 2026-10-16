@@ -14,13 +14,13 @@ VideoViewer::VideoViewer()
         b->setWantsKeyboardFocus (false);
         addAndMakeVisible (*b);
     }
-    detachBtn.setTooltip ("Apre il video in una finestra separata (spostabile su un altro schermo)");
-    fullBtn.setTooltip ("Video a tutto schermo (Esc per uscire)");
-    minusFrame.setTooltip ("Anticipa il video di un fotogramma");
-    plusFrame.setTooltip ("Ritarda il video di un fotogramma");
-    minusMs.setTooltip ("Anticipa il video di 1 ms (tieni premuto per ripetere)");
-    plusMs.setTooltip ("Ritarda il video di 1 ms (tieni premuto per ripetere)");
-    resetBtn.setTooltip ("Azzera l'offset del video");
+    detachBtn.setTooltip (TRANS ("Apre il video in una finestra separata (spostabile su un altro schermo)"));
+    fullBtn.setTooltip (TRANS ("Video a tutto schermo (Esc per uscire)"));
+    minusFrame.setTooltip (TRANS ("Anticipa il video di un fotogramma"));
+    plusFrame.setTooltip (TRANS ("Ritarda il video di un fotogramma"));
+    minusMs.setTooltip (TRANS ("Anticipa il video di 1 ms (tieni premuto per ripetere)"));
+    plusMs.setTooltip (TRANS ("Ritarda il video di 1 ms (tieni premuto per ripetere)"));
+    resetBtn.setTooltip (TRANS ("Azzera l'offset del video"));
     for (auto* b : { &minusFrame, &minusMs, &plusMs, &plusFrame }) b->setRepeatSpeed (450, 45);
 
     detachBtn.onClick = [this] { if (onDetachToggle) onDetachToggle(); };
@@ -37,7 +37,7 @@ VideoViewer::VideoViewer()
     offsetLabel.setColour (juce::Label::backgroundColourId, well);
     offsetLabel.setColour (juce::Label::outlineColourId, border);
     offsetLabel.setColour (juce::Label::textColourId, text);
-    offsetLabel.setTooltip ("Offset del video in millisecondi: positivo = video in ritardo rispetto all'audio. Doppio clic per scrivere un valore.");
+    offsetLabel.setTooltip (TRANS ("Offset del video in millisecondi: positivo = video in ritardo rispetto all'audio. Doppio clic per scrivere un valore."));
     offsetLabel.onTextChange = [this] { commitLabel(); };
     addAndMakeVisible (offsetLabel);
     refreshOffset();
@@ -60,8 +60,8 @@ juce::String VideoViewer::formatTimecode (double seconds, double fps)
 void VideoViewer::setDetached (bool d)
 {
     detached = d;
-    detachBtn.setButtonText (d ? "AGGANCIA" : "STACCA");
-    detachBtn.setTooltip (d ? "Riporta il video nella finestra principale" : "Apre il video in una finestra separata (spostabile su un altro schermo)");
+    detachBtn.setButtonText (d ? TRANS ("AGGANCIA") : TRANS ("STACCA"));
+    detachBtn.setTooltip (d ? TRANS ("Riporta il video nella finestra principale") : TRANS ("Apre il video in una finestra separata (spostabile su un altro schermo)"));
     repaint();
 }
 
@@ -69,7 +69,7 @@ void VideoViewer::refreshOffset()
 {
     const double ms = asset != nullptr ? asset->offsetSec * 1000.0 : 0.0;
     const auto v = (int) std::lround (ms);
-    offsetLabel.setText ((v > 0 ? "+" : "") + juce::String (v) + " ms", juce::dontSendNotification);
+    offsetLabel.setText ((v > 0 ? "+" : "") + juce::String (v) + TRANS (" ms"), juce::dontSendNotification);
     const bool en = asset != nullptr;
     for (auto* c : std::initializer_list<juce::Component*> { &minusFrame, &minusMs, &plusMs, &plusFrame, &resetBtn, &offsetLabel })
         c->setEnabled (en);
@@ -239,13 +239,13 @@ void VideoViewer::paint (juce::Graphics& g)
     g.fillRoundedRectangle (12.0f, 11.0f, 4.0f, 12.0f, 2.0f);
     g.setColour (text);
     g.setFont (font (12.0f, true));
-    g.drawText ("VIDEO", 24, 0, 60, topH, juce::Justification::centredLeft);
+    g.drawText (TRANS ("VIDEO"), 24, 0, 60, topH, juce::Justification::centredLeft);
     if (asset != nullptr)
     {
         g.setColour (dim);
         g.setFont (font (11.0f));
         g.drawText (asset->file.getFileName() + "   " + juce::String (asset->width) + "x" + juce::String (asset->height)
-                        + "   " + juce::String (asset->fps, 3) + " fps",
+                        + "   " + juce::String (asset->fps, 3) + TRANS (" fps"),
                     78, 0, getWidth() - 78 - 212, topH, juce::Justification::centredLeft, true);
     }
 
@@ -261,14 +261,14 @@ void VideoViewer::paint (juce::Graphics& g)
         {
             g.setColour (dim);
             g.setFont (font (13.0f));
-            g.drawText ("Caricamento video...", pic, juce::Justification::centred);
+            g.drawText (TRANS ("Caricamento video..."), pic, juce::Justification::centred);
         }
     }
     else
     {
         g.setColour (dim);
         g.setFont (font (13.0f));
-        g.drawText ("Nessun video", pic, juce::Justification::centred);
+        g.drawText (TRANS ("Nessun video"), pic, juce::Justification::centred);
     }
 
     if (adr.active)
@@ -334,7 +334,7 @@ void VideoViewer::paint (juce::Graphics& g)
     g.setFont (mono (18.0f));
     g.drawText (timecodeText.isEmpty() ? "00:00:00:00" : timecodeText, 12, bar.getY() + 10, 150, bar.getHeight() - 20, juce::Justification::centred);
 
-    drawCaption (g, "Offset video", juce::Rectangle<int> (getWidth() - 12 - 244, bar.getY() + 6, 244, 12), juce::Justification::centredRight);
+    drawCaption (g, TRANS ("Offset video"), juce::Rectangle<int> (getWidth() - 12 - 244, bar.getY() + 6, 244, 12), juce::Justification::centredRight);
 }
 
 } // namespace fc

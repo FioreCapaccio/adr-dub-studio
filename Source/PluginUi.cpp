@@ -24,7 +24,7 @@ BuiltinEditor::BuiltinEditor (BuiltinFx& f, std::atomic<bool>& byp, std::functio
     bypassButton.setClickingTogglesState (true);
     bypassButton.setToggleState (bypass.load(), juce::dontSendNotification);
     bypassButton.setColour (juce::TextButton::buttonOnColourId, soloCol.darker (0.35f));
-    bypassButton.setTooltip ("Esclude l'effetto senza rimuoverlo dalla catena");
+    bypassButton.setTooltip (TRANS ("Esclude l'effetto senza rimuoverlo dalla catena"));
     bypassButton.onClick = [this]
     {
         bypass = bypassButton.getToggleState();
@@ -75,7 +75,7 @@ BuiltinEditor::BuiltinEditor (BuiltinFx& f, std::atomic<bool>& byp, std::functio
                 c->toggle->setBounds (cx + 8, p->bounds.getY() + titleH + nameH + 24, cellW - 16, 30);
                 c->buttonAttach = std::make_unique<juce::ButtonParameterAttachment> (*param, *c->toggle);
                 auto* tb = c->toggle.get();
-                tb->onStateChange = [tb] { tb->setButtonText (tb->getToggleState() ? "ON" : "OFF"); };
+                tb->onStateChange = [tb] { tb->setButtonText (tb->getToggleState() ? TRANS ("ON") : TRANS ("OFF")); };
                 tb->onStateChange();
                 addAndMakeVisible (*c->toggle);
             }
@@ -89,7 +89,7 @@ BuiltinEditor::BuiltinEditor (BuiltinFx& f, std::atomic<bool>& byp, std::functio
                 s->setColour (juce::Slider::textBoxOutlineColourId, border);
                 s->setMouseDragSensitivity (180);
                 s->setDoubleClickReturnValue (true, param->convertFrom0to1 (param->getDefaultValue()));
-                s->setTooltip ("Trascina per regolare, doppio clic per il valore iniziale, rotellina per i passi fini");
+                s->setTooltip (TRANS ("Trascina per regolare, doppio clic per il valore iniziale, rotellina per i passi fini"));
                 const auto range = param->getNormalisableRange();
                 if (range.start < 0.0f && range.end > 0.0f) s->getProperties().set ("centered", true);   // arco dal centro: guadagni e uscite
                 s->getProperties().set ("ticks", 9);
@@ -197,7 +197,7 @@ void BuiltinEditor::paint (juce::Graphics& g)
             g.drawText (juce::String (v, 1), p->meterBounds.getX() - 10, p->meterBounds.getBottom() + 2, p->meterBounds.getWidth() + 20, 12, juce::Justification::centred);
             g.setColour (dim);
             g.setFont (font (8.5f, true));
-            g.drawText ("GR dB", p->meterBounds.getX() - 10, p->meterBounds.getY() - 12, p->meterBounds.getWidth() + 20, 11, juce::Justification::centred);
+            g.drawText (TRANS ("GR dB"), p->meterBounds.getX() - 10, p->meterBounds.getY() - 12, p->meterBounds.getWidth() + 20, 11, juce::Justification::centred);
         }
     }
 }
@@ -213,7 +213,7 @@ void BuiltinEditor::paintOverChildren (juce::Graphics& g)
     g.setColour (yellow);
     g.drawRoundedRectangle (pill.reduced (0.5f), 15.0f, 1.0f);
     g.setFont (font (12.0f, true));
-    g.drawText ("EFFETTO ESCLUSO", pill.toNearestInt(), juce::Justification::centred);
+    g.drawText (TRANS ("EFFETTO ESCLUSO"), pill.toNearestInt(), juce::Justification::centred);
 }
 
 void BuiltinEditor::paintCurve (juce::Graphics& g, juce::Rectangle<float> r)
@@ -321,7 +321,7 @@ PluginBrowser::PluginBrowser (juce::Array<juce::File> vst3Files, Callbacks callb
 
     addButton.onClick = [this] { choose (list.getSelectedRow()); };
     cancelButton.onClick = [this] { closeDialog(); };
-    browseButton.setTooltip ("Scegli un file .vst3 da una cartella qualsiasi");
+    browseButton.setTooltip (TRANS ("Scegli un file .vst3 da una cartella qualsiasi"));
     browseButton.onClick = [this]
     {
         auto callback = cb.browse;
@@ -449,7 +449,7 @@ void PluginBrowser::paint (juce::Graphics& g)
     g.setColour (dim);
     g.setFont (font (13.0f));
     const bool noVst = tab == 2 && search.getText().isEmpty();
-    g.drawFittedText (noVst ? juce::String ("Nessun plug-in VST3 trovato nelle cartelle standard.\nUsa \"Sfoglia...\" per sceglierne uno.") : juce::String ("Nessun risultato."),
+    g.drawFittedText (noVst ? juce::String (TRANS ("Nessun plug-in VST3 trovato nelle cartelle standard.\nUsa \"Sfoglia...\" per sceglierne uno.")) : juce::String (TRANS ("Nessun risultato.")),
                       list.getBounds().reduced (30), juce::Justification::centred, 3);
 }
 

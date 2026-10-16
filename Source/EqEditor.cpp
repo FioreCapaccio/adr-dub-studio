@@ -14,7 +14,7 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
 {
     enableBtn.onClick = [this] { if (! loading) { live->eq.enabled = enableBtn.getToggleState(); changed(); } };
     addAndMakeVisible (enableBtn);
-    resetBtn.setTooltip ("Riporta tutte le bande a 0 dB");
+    resetBtn.setTooltip (TRANS ("Riporta tutte le bande a 0 dB"));
     resetBtn.onClick = [this]
     {
         ParamEq fresh;
@@ -26,12 +26,12 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
     };
     addAndMakeVisible (resetBtn);
 
-    typeLbl.setText ("TIPO DI TRACCIA", juce::dontSendNotification);
+    typeLbl.setText (TRANS ("TIPO DI TRACCIA"), juce::dontSendNotification);
     typeLbl.setFont (font (10.0f, true));
     typeLbl.setColour (juce::Label::textColourId, dim);
     addAndMakeVisible (typeLbl);
     for (int t = 0; t < kNumTrackTypes; ++t) typeBox.addItem (trackTypeName (t), t + 1);
-    typeBox.setTooltip ("Applica una catena consigliata: EQ, compressore, limiter e livello. Si puo' ritoccare tutto dopo");
+    typeBox.setTooltip (TRANS ("Applica una catena consigliata: EQ, compressore, limiter e livello. Si puo' ritoccare tutto dopo"));
     typeBox.onChange = [this]
     {
         if (loading) return;
@@ -74,7 +74,7 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
         auto& u = ui[i];
         for (int t = 0; t < ParamEq::kNumTypes; ++t) u.type.addItem (ParamEq::typeName (t), t + 1);
         u.type.onChange = [this, i] { if (! loading) { live->eq.band[i].type = ui[i].type.getSelectedId() - 1; changed(); } };
-        u.on.setButtonText ("Banda " + juce::String (i + 1));
+        u.on.setButtonText (TRANS ("Banda ") + juce::String (i + 1));
         u.on.setColour (juce::ToggleButton::textColourId, bandColour (i));
         u.on.setColour (juce::ToggleButton::tickColourId, bandColour (i));
         u.on.onClick = [this, i] { if (! loading) { live->eq.band[i].on = ui[i].on.getToggleState(); changed(); } };
@@ -103,9 +103,9 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
             l->setFont (font (10.0f, true));
             l->setColour (juce::Label::textColourId, dim);
         }
-        u.freqLbl.setText ("FREQUENZA", juce::dontSendNotification);
-        u.gainLbl.setText ("GUADAGNO", juce::dontSendNotification);
-        u.qLbl.setText ("Q (LARGHEZZA)", juce::dontSendNotification);
+        u.freqLbl.setText (TRANS ("FREQUENZA"), juce::dontSendNotification);
+        u.gainLbl.setText (TRANS ("GUADAGNO"), juce::dontSendNotification);
+        u.qLbl.setText (TRANS ("Q (LARGHEZZA)"), juce::dontSendNotification);
         for (auto* c : std::initializer_list<juce::Component*> { &u.type, &u.on, &u.freq, &u.gain, &u.q, &u.freqLbl, &u.gainLbl, &u.qLbl }) addAndMakeVisible (*c);
     }
     refresh();
@@ -277,7 +277,7 @@ void EqEditor::paint (juce::Graphics& g)
     g.fillAll (panel);
     g.setColour (text);
     g.setFont (font (13.0f, true));
-    g.drawText ("EQ E COMPRESSORE", 16, 0, 230, 46, juce::Justification::centredLeft);
+    g.drawText (TRANS ("EQ E COMPRESSORE"), 16, 0, 230, 46, juce::Justification::centredLeft);
 
     const auto p = plot();
     g.setColour (well);
@@ -346,7 +346,7 @@ void EqEditor::paint (juce::Graphics& g)
     }
     g.setColour (dim);
     g.setFont (font (10.5f));
-    g.drawText ("Trascina i nodi: frequenza e guadagno. Rotella sul nodo: larghezza (Q). Doppio clic: guadagno a zero.",
+    g.drawText (TRANS ("Trascina i nodi: frequenza e guadagno. Rotella sul nodo: larghezza (Q). Doppio clic: guadagno a zero."),
                 juce::Rectangle<int> (46, (int) plot().getBottom() + 14, getWidth() - 66, 14), juce::Justification::centredLeft);
 
     // riquadro del compressore

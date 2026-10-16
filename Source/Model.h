@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Lang.h"
 #include "Timecode.h"
 #include "ParamEq.h"
 #include "TrackComp.h"
@@ -244,10 +245,10 @@ struct AdrCue
     int activeTake = 0;             // numero del take che suona (0 = nessuno)
 };
 
-inline const char* adrStatusName (int s)
+inline juce::String adrStatusName (int s)
 {
-    static const char* n[] = { "Da registrare", "Registrato", "Approvato", "Da rifare" };
-    return n[juce::jlimit (0, 3, s)];
+    static const char* n[] = { TRX ("Da registrare"), TRX ("Registrato"), TRX ("Approvato"), TRX ("Da rifare") };
+    return juce::translate (n[juce::jlimit (0, 3, s)]);
 }
 
 /** ReConform: pezzo di timeline del vecchio montaggio che nel nuovo sta in un'altra posizione (campioni). */

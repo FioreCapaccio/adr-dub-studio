@@ -64,7 +64,7 @@ private:
     double lastSetPos = -1.0, holdoffUntil = 0.0, lastShown = -1.0;
     juce::String timecodeText;
 
-    juce::TextButton detachBtn { "STACCA" }, fullBtn { "TUTTO SCHERMO" };
+    juce::TextButton detachBtn { TRANS ("STACCA") }, fullBtn { "TUTTO SCHERMO" };
     juce::TextButton minusFrame { "-F" }, minusMs { "-" }, plusMs { "+" }, plusFrame { "+F" }, resetBtn { "0" };
     juce::Label offsetLabel;
 

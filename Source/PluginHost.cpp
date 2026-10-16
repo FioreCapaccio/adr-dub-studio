@@ -84,7 +84,7 @@ juce::String PluginHost::prepareInstance (juce::AudioProcessor& p)
     p.setBusesLayout (layout);
 
     if (p.getTotalNumInputChannels() != 2 || p.getTotalNumOutputChannels() != 2)
-        return "Il plug-in non supporta il layout stereo (e' uno strumento o un effetto mono?).";
+        return TRANS ("Il plug-in non supporta il layout stereo (e' uno strumento o un effetto mono?).");
 
     const double rate = engine.getSampleRate();
     p.setRateAndBufferSizeDetails (rate, kBlock);
@@ -121,7 +121,7 @@ void PluginHost::instantiate (std::shared_ptr<InsertSlot> slot, std::function<vo
 
     if (slot->desc.pluginFormatName == BuiltinFx::formatName)   // effetto integrato: nessun caricamento da file
     {
-        finish (BuiltinFx::create (slot->desc), "Effetto integrato sconosciuto.");
+        finish (BuiltinFx::create (slot->desc), TRANS ("Effetto integrato sconosciuto."));
         return;
     }
 
@@ -156,7 +156,7 @@ void PluginHost::addFromFile (std::shared_ptr<TrackLive> live, const juce::File&
 
     if (found.isEmpty())
     {
-        const juce::String msg = "Impossibile usare " + file.getFileNameWithoutExtension() + ": plug-in non valido, non compatibile o strumento.";
+        const juce::String msg = TRANS ("Impossibile usare ") + file.getFileNameWithoutExtension() + TRANS (": plug-in non valido, non compatibile o strumento.");
         if (onError) onError (msg);
         if (done) done (msg);
         return;
@@ -174,7 +174,7 @@ void PluginHost::addFromFile (std::shared_ptr<TrackLive> live, const juce::File&
                 append (*live, slot);
                 if (onChanged) onChanged();
             }
-            else if (onError) onError ("Errore su " + slot->name + ": " + problem);
+            else if (onError) onError (TRANS ("Errore su ") + slot->name + ": " + problem);
             if (done) done (problem);
         });
     };
@@ -203,7 +203,7 @@ void PluginHost::addBuiltin (std::shared_ptr<TrackLive> live, BuiltinFx::Kind ki
             append (*live, slot);
             if (onChanged) onChanged();
         }
-        else if (onError) onError ("Errore su " + slot->name + ": " + problem);
+        else if (onError) onError (TRANS ("Errore su ") + slot->name + ": " + problem);
         if (done) done (problem);
     });
 }
@@ -237,7 +237,7 @@ void PluginHost::pickAndAdd (std::shared_ptr<TrackLive> live, juce::Component* c
 
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned (browser);
-    o.dialogTitle = "Aggiungi effetto o plug-in";
+    o.dialogTitle = TRANS ("Aggiungi effetto o plug-in");
     o.dialogBackgroundColour = panel;
     o.componentToCentreAround = centreAround;
     o.escapeKeyTriggersCloseButton = true;
@@ -336,7 +336,7 @@ void PluginHost::restoreAll (const Session& s)
             if (xml == nullptr || ! slot->desc.loadFromXml (*xml))
             {
                 slot->name = "?";
-                slot->error = "Descrizione del plug-in non valida.";
+                slot->error = TRANS ("Descrizione del plug-in non valida.");
             }
             else
                 slot->name = slot->desc.name;
@@ -347,7 +347,7 @@ void PluginHost::restoreAll (const Session& s)
             if (slot->error.isEmpty())
                 instantiate (slot, [this, slot] (juce::String problem)
                 {
-                    if (problem.isNotEmpty() && onError) onError ("Plug-in " + slot->name + " non caricato: " + problem);
+                    if (problem.isNotEmpty() && onError) onError ("Plug-in " + slot->name + TRANS (" non caricato: ") + problem);
                 });
         if (onChanged) onChanged();
     };

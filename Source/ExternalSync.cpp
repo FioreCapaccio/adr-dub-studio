@@ -169,10 +169,10 @@ Panel::Panel (Sync& s) : sync (s)
         l.setColour (juce::Label::textColourId, dim);
         addAndMakeVisible (l);
     };
-    label (deviceLbl, "INGRESSO MIDI"); label (offsetLbl, "SPOSTAMENTO (MILLISECONDI)");
+    label (deviceLbl, TRANS ("INGRESSO MIDI")); label (offsetLbl, TRANS ("SPOSTAMENTO (MILLISECONDI)"));
     infos = juce::MidiInput::getAvailableDevices();
     for (int i = 0; i < infos.size(); ++i) devices.addItem (infos[i].name, i + 1);
-    devices.setTextWhenNothingSelected ("(nessun ingresso MIDI)");
+    devices.setTextWhenNothingSelected (TRANS ("(nessun ingresso MIDI)"));
     const auto saved = settings().getValue ("mtc.device", "");
     for (int i = 0; i < infos.size(); ++i) if (infos[i].identifier == saved) devices.setSelectedId (i + 1, juce::dontSendNotification);
     offset.setText (settings().getValue ("mtc.offsetMs", "0"), false);
@@ -184,8 +184,8 @@ Panel::Panel (Sync& s) : sync (s)
     hint.setFont (font (12.0f));
     hint.setColour (juce::Label::textColourId, dim);
     hint.setJustificationType (juce::Justification::topLeft);
-    hint.setText ("Quando arriva il timecode MTC il trasporto si posiziona e parte; se si ferma, si ferma; se la deriva supera 2 fotogrammi si riallinea. "
-                  "La posizione zero della sessione corrisponde all'inizio sessione (File > Impostazioni sessione). Riceve MTC, non lo genera, e non legge l'LTC.",
+    hint.setText (TRANS ("Quando arriva il timecode MTC il trasporto si posiziona e parte; se si ferma, si ferma; se la deriva supera 2 fotogrammi si riallinea. "
+                  "La posizione zero della sessione corrisponde all'inizio sessione (File > Impostazioni sessione). Riceve MTC, non lo genera, e non legge l'LTC."),
                   juce::dontSendNotification);
     for (auto* c : std::initializer_list<juce::Component*> { &devices, &offset, &enable, &status, &hint }) addAndMakeVisible (*c);
     loading = false;
@@ -217,10 +217,10 @@ void Panel::timerCallback()
     const auto st = sync.state();
     juce::String t;
     juce::Colour c = dim;
-    if (! sync.isEnabled()) t = st.valid ? "Non agganciato (ultimo timecode ricevuto " + st.text + ")" : "Non agganciato";
-    else if (! st.valid) t = "In attesa del timecode...";
+    if (! sync.isEnabled()) t = st.valid ? TRANS ("Non agganciato (ultimo timecode ricevuto ") + st.text + ")" : TRANS ("Non agganciato");
+    else if (! st.valid) t = TRANS ("In attesa del timecode...");
     else if (st.running) { t = "AGGANCIATO  " + st.text + "  (" + juce::String (tcFormats()[st.fmtIndex].name) + ")"; c = green; }
-    else { t = "Timecode fermo a " + st.text; c = yellow; }
+    else { t = TRANS ("Timecode fermo a ") + st.text; c = yellow; }
     status.setColour (juce::Label::textColourId, c);
     status.setText (t, juce::dontSendNotification);
 }

@@ -41,8 +41,8 @@ ScriptComponent::ScriptComponent (Project& p, AudioEngine& e) : project (p), eng
 {
     fontSize = juce::jlimit (20, 200, settings().getIntValue ("script.size", 56));
     for (auto* b : { &smaller, &bigger }) addAndMakeVisible (*b);
-    smaller.setTooltip ("Testo piu' piccolo (o rotellina del mouse con Cmd/Ctrl)");
-    bigger.setTooltip ("Testo piu' grande");
+    smaller.setTooltip (TRANS ("Testo piu' piccolo (o rotellina del mouse con Cmd/Ctrl)"));
+    bigger.setTooltip (TRANS ("Testo piu' grande"));
     smaller.onClick = [this] { setFontSize (fontSize - 6); };
     bigger.onClick = [this] { setFontSize (fontSize + 6); };
     startTimerHz (25);
@@ -95,14 +95,14 @@ void ScriptComponent::paint (juce::Graphics& g)
     g.setFont (mono (20.0f));
     g.drawText (project.formatTc ((double) pos / rate), top.removeFromLeft (200), juce::Justification::centredLeft);
     g.setFont (font (14.0f, true));
-    g.drawText (st.valid ? "CUE " + juce::String (st.current + 1) + " / " + juce::String ((int) cues.size()) : juce::String ("NESSUN CUE"), top.withTrimmedRight (110),
+    g.drawText (st.valid ? TRANS ("CUE ") + juce::String (st.current + 1) + " / " + juce::String ((int) cues.size()) : juce::String (TRANS ("NESSUN CUE")), top.withTrimmedRight (110),
                 juce::Justification::centredRight);
 
     if (! st.valid)
     {
         g.setColour (dim);
         g.setFont (font (24.0f));
-        g.drawFittedText ("Importa un copione (ADR > Importa cue...) o aggiungi dei cue per vederli qui.", getLocalBounds().reduced (60), juce::Justification::centred, 3);
+        g.drawFittedText (TRANS ("Importa un copione (ADR > Importa cue...) o aggiungi dei cue per vederli qui."), getLocalBounds().reduced (60), juce::Justification::centred, 3);
         return;
     }
 
@@ -143,7 +143,7 @@ void ScriptComponent::paint (juce::Graphics& g)
     auto head = area.removeFromTop (juce::jmax (40, fontSize));
     g.setColour (trackPalette[colourIndex]);
     g.setFont (font ((float) fontSize * 0.8f, true));
-    g.drawText (c.character.isEmpty() ? juce::String ("(senza personaggio)") : c.character.toUpperCase(), head.removeFromLeft (head.getWidth() * 2 / 3), juce::Justification::centredLeft, true);
+    g.drawText (c.character.isEmpty() ? juce::String (TRANS ("(senza personaggio)")) : c.character.toUpperCase(), head.removeFromLeft (head.getWidth() * 2 / 3), juce::Justification::centredLeft, true);
     g.setColour (dim);
     g.setFont (font (juce::jmax (16.0f, (float) fontSize / 2.5f)));
     g.drawText ((c.scene.isNotEmpty() ? "Scena " + c.scene : juce::String()) + (c.reel.isNotEmpty() ? "   Bobina " + c.reel : juce::String()) + "   #" + juce::String (c.number),
@@ -155,13 +155,13 @@ void ScriptComponent::paint (juce::Graphics& g)
     {
         g.setColour (st.active ? yellow : dim);
         g.setFont (font ((float) fontSize * 0.45f, true));
-        g.drawText (st.active ? "PRONTO... " + juce::String (st.secondsToStart, 1) + " s" : "tra " + juce::String (st.secondsToStart, 1) + " s", status, juce::Justification::centredLeft);
+        g.drawText (st.active ? TRANS ("PRONTO... ") + juce::String (st.secondsToStart, 1) + " s" : TRANS ("tra ") + juce::String (st.secondsToStart, 1) + " s", status, juce::Justification::centredLeft);
     }
     else if (st.progress < 1.0)
     {
         g.setColour (green);
         g.setFont (font ((float) fontSize * 0.45f, true));
-        g.drawText ("ORA", status, juce::Justification::centredLeft);
+        g.drawText (TRANS ("ORA"), status, juce::Justification::centredLeft);
     }
     area.removeFromTop (8);
 
@@ -182,7 +182,7 @@ CueMixPanel::CueMixPanel (AudioEngine& e) : engine (e)
         l.setColour (juce::Label::textColourId, dim);
         addAndMakeVisible (l);
     };
-    label (outLbl, "USCITE CUFFIE"); label (mixLbl, "MIX (dB)"); label (beepLbl, "BIP (dB)"); label (talkLbl, "TALKBACK (dB)"); label (inLbl, "MICROFONO DEL DIRETTORE");
+    label (outLbl, TRANS ("USCITE CUFFIE")); label (mixLbl, TRANS ("MIX (dB)")); label (beepLbl, TRANS ("BIP (dB)")); label (talkLbl, TRANS ("TALKBACK (dB)")); label (inLbl, TRANS ("MICROFONO DEL DIRETTORE"));
     for (auto* s : { &mix, &beep, &talk })
     {
         s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 60, 22);
@@ -214,7 +214,7 @@ CueMixPanel::CueMixPanel (AudioEngine& e) : engine (e)
     outputs.onChange = changed; talkInput.onChange = changed;
     mix.onValueChange = changed; beep.onValueChange = changed; talk.onValueChange = changed;
     talkButton.onStateChange = [this] { engine.cue.talkOn = talkButton.isDown() && enable.getToggleState(); };
-    talkButton.setTooltip ("Tieni premuto per parlare nelle cuffie dell'attore");
+    talkButton.setTooltip (TRANS ("Tieni premuto per parlare nelle cuffie dell'attore"));
     startTimerHz (20);
 }
 
@@ -225,15 +225,15 @@ void CueMixPanel::refreshOutputs()
     int avail = 2;
     if (auto* dev = engine.deviceManager.getCurrentAudioDevice()) avail = dev->getOutputChannelNames().size();
     for (int pair = 1; 2 * (pair + 1) <= avail; ++pair)
-        outputs.addItem ("Uscite " + juce::String (2 * pair + 1) + " - " + juce::String (2 * pair + 2), pair + 1);
+        outputs.addItem (TRANS ("Uscite ") + juce::String (2 * pair + 1) + " - " + juce::String (2 * pair + 2), pair + 1);
     int inputs = 0;
     if (auto* dev = engine.deviceManager.getCurrentAudioDevice()) inputs = dev->getInputChannelNames().size();
-    for (int i = 0; i < juce::jmax (1, inputs); ++i) talkInput.addItem ("Ingresso " + juce::String (i + 1), i + 1);
+    for (int i = 0; i < juce::jmax (1, inputs); ++i) talkInput.addItem (TRANS ("Ingresso ") + juce::String (i + 1), i + 1);
     const bool ok = outputs.getNumItems() > 0;
     enable.setEnabled (ok);
     outputs.setEnabled (ok);
-    status.setText (ok ? "Le cuffie ricevono il mix (con il suo livello), i bip e il microfono del direttore. La prima coppia di uscite resta il master."
-                       : "La scheda audio attuale ha solo " + juce::String (avail) + " uscite: per le cuffie dell'attore serve un'interfaccia con almeno 4 uscite (si sceglie in File > Impostazioni audio).",
+    status.setText (ok ? TRANS ("Le cuffie ricevono il mix (con il suo livello), i bip e il microfono del direttore. La prima coppia di uscite resta il master.")
+                       : TRANS ("La scheda audio attuale ha solo ") + juce::String (avail) + TRANS (" uscite: per le cuffie dell'attore serve un'interfaccia con almeno 4 uscite (si sceglie in File > Impostazioni audio)."),
                     juce::dontSendNotification);
     if (ok && outputs.getSelectedId() == 0) outputs.setSelectedId (outputs.getItemId (0), juce::dontSendNotification);
 }
@@ -290,7 +290,7 @@ void CueMixPanel::paint (juce::Graphics& g)
 {
     g.fillAll (panel);
     auto m = getLocalBounds().reduced (18).removeFromBottom (26);
-    drawCaption (g, "LIVELLO CUFFIE", m.removeFromLeft (110));
+    drawCaption (g, TRANS ("LIVELLO CUFFIE"), m.removeFromLeft (110));
     for (int c = 0; c < 2; ++c)
     {
         auto bar = m.removeFromTop (10).toFloat();

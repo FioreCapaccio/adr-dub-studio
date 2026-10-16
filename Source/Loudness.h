@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Lang.h"
 #include <array>
 #include <vector>
 
@@ -22,14 +23,14 @@ inline const std::vector<Standard>& standards()
 {
     static const std::vector<Standard> list =
     {
-        { "Nessuno", 0.0, 0.0, 0.0, "Nessun obiettivo: la misura LUFS resta attiva." },
-        { "EBU R128 - TV e radio Europa", -23.0, -1.0, 0.5, "TV e radio in Europa, usato anche in Italia. Target -23 LUFS (tolleranza 0,5 LU), picco max -1 dBTP." },
-        { "ATSC A/85 - TV USA", -24.0, -2.0, 2.0, "TV americana (CALM Act). Target -24 LKFS (tolleranza 2 LU), picco max -2 dBTP." },
-        { "ARIB TR-B32 - TV Giappone", -24.0, -1.0, 1.0, "TV giapponese. Target -24 LKFS (tolleranza 1 LU), picco max -1 dBTP." },
-        { "Netflix - dialoghi", -27.0, -2.0, 2.0, "Specifica Netflix: loudness dei dialoghi -27 LKFS (tolleranza 2 LU), picco max -2 dBTP." },
-        { "Podcast - Apple / Amazon", -16.0, -1.0, 1.0, "Raccomandazione per podcast: -16 LUFS (tolleranza 1 LU), picco max -1 dBTP." },
-        { "Streaming - Spotify, YouTube", -14.0, -1.0, 1.0, "Streaming e social video: -14 LUFS, picco max -1 dBTP." },
-        { "Audiolibri - ACX / Audible", -20.0, -3.0, 2.0, "ACX: RMS tra -23 e -18 dB, picco max -3 dB. Target -20 LUFS (centro dell'intervallo)." }
+        { TRX ("Nessuno"), 0.0, 0.0, 0.0, TRX ("Nessun obiettivo: la misura LUFS resta attiva.") },
+        { TRX ("EBU R128 - TV e radio Europa"), -23.0, -1.0, 0.5, TRX ("TV e radio in Europa, usato anche in Italia. Target -23 LUFS (tolleranza 0,5 LU), picco max -1 dBTP.") },
+        { TRX ("ATSC A/85 - TV USA"), -24.0, -2.0, 2.0, TRX ("TV americana (CALM Act). Target -24 LKFS (tolleranza 2 LU), picco max -2 dBTP.") },
+        { TRX ("ARIB TR-B32 - TV Giappone"), -24.0, -1.0, 1.0, TRX ("TV giapponese. Target -24 LKFS (tolleranza 1 LU), picco max -1 dBTP.") },
+        { TRX ("Netflix - dialoghi"), -27.0, -2.0, 2.0, TRX ("Specifica Netflix: loudness dei dialoghi -27 LKFS (tolleranza 2 LU), picco max -2 dBTP.") },
+        { TRX ("Podcast - Apple / Amazon"), -16.0, -1.0, 1.0, TRX ("Raccomandazione per podcast: -16 LUFS (tolleranza 1 LU), picco max -1 dBTP.") },
+        { TRX ("Streaming - Spotify, YouTube"), -14.0, -1.0, 1.0, TRX ("Streaming e social video: -14 LUFS, picco max -1 dBTP.") },
+        { TRX ("Audiolibri - ACX / Audible"), -20.0, -3.0, 2.0, TRX ("ACX: RMS tra -23 e -18 dB, picco max -3 dB. Target -20 LUFS (centro dell'intervallo).") }
     };
     return list;
 }

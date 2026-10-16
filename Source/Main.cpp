@@ -17,6 +17,7 @@
 #include "Conform.h"
 #include "ExternalSync.h"
 #include "ThemeManager.h"
+#include "Lang.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
 class DelayTestProcessor : public juce::AudioProcessor
@@ -116,6 +117,7 @@ private:
         stepBooth();
         stepConform();
         stepMtc();
+        stepLang();
         stepEditing();
         stepPdc();
         stepAux();
@@ -1574,6 +1576,38 @@ private:
     }
 
     // sincronia esterna MTC e scorciatoie
+    void stepLang()
+    {
+        namespace lg = fc::lang;
+        const auto en = lg::catalogText ("en");
+        expect (en.isNotEmpty() && lg::catalogText ("it").isEmpty(), "Lingua: catalogo inglese incorporato, italiano = testi nel codice");
+        expect (lg::translateTo ("en", "Annulla") != "Annulla" || lg::translateTo ("en", "Annulla") == "Cancel", "Lingua: una voce comune e' tradotta");
+        expect (lg::translateTo ("en", "Testo che non esiste nel catalogo xyz") == "Testo che non esiste nel catalogo xyz", "Lingua: senza traduzione resta l'italiano");
+        expect (lg::translateTo ("it", "Salva") == "Salva", "Lingua: l'italiano non cambia nulla");
+        expect (lg::translateTo ("en", "Nessun cue").isNotEmpty(), "Lingua: chiave non vuota");
+
+        // voci con a capo e virgolette (escape del catalogo) e nessuna chiave duplicata
+        juce::StringArray lines; lines.addLines (en);
+        juce::StringArray keys;
+        int dup = 0, entries = 0;
+        for (auto& l : lines)
+        {
+            auto t = l.trim();
+            if (! t.startsWithChar ('"')) continue;
+            ++entries;
+            auto key = t.fromFirstOccurrenceOf ("\"", false, false).upToFirstOccurrenceOf ("\" = \"", false, false);
+            if (keys.contains (key)) ++dup;
+            keys.add (key);
+        }
+        expect (entries > 500 && dup == 0, "Lingua: " + juce::String (entries) + " voci, " + juce::String (dup) + " duplicate");
+        const auto nl = lg::translateTo ("en", "Non ho trovato tagli. Prova ad aumentare la sensibilita'.");
+        expect (nl.startsWith ("I found no cuts"), "Lingua: voce con apostrofo tradotta");
+        const auto multi = lg::translateTo ("en", "Vuoi salvare le modifiche alla sessione?");
+        expect (multi.startsWith ("Do you want"), "Lingua: domanda di salvataggio tradotta");
+        const auto lf = lg::translateTo ("en", "SCORCIATOIE DA TASTIERA\n\n");
+        expect (lf == "KEYBOARD SHORTCUTS\n\n", "Lingua: a capo nel testo chiave e traduzione");
+    }
+
     void stepMtc()
     {
         namespace mt = fc::mtc;
@@ -2567,7 +2601,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.6.0"; }
+    const juce::String getApplicationVersion() override { return "2.7.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -2585,6 +2619,7 @@ public:
             return;
         }
         juce::LookAndFeel::setDefaultLookAndFeel (&laf);
+        fc::lang::apply (fc::lang::savedCode());   // lingua dell'interfaccia (prima di creare le finestre)
         fc::ThemeManager::applySaved();   // tema scelto l'ultima volta (prima di creare la finestra)
         window = std::make_unique<MainWindow> (getApplicationName());
         window->main().importFromCommandLine (juce::StringArray::fromTokens (commandLine, true));

@@ -46,16 +46,16 @@ private:
     Project& project;
     std::shared_ptr<TrackLive> live;
     std::function<double()> rate;
-    juce::ToggleButton enableBtn { "EQ ATTIVO" };
+    juce::ToggleButton enableBtn { TRANS ("EQ ATTIVO") };
     juce::Label typeLbl, typeInfo;
     juce::ComboBox typeBox;   // tipo di traccia: applica una catena consigliata
-    juce::ToggleButton compOn { "COMPRESSORE" };
+    juce::ToggleButton compOn { TRANS ("COMPRESSORE") };
     juce::Slider compThr { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight }, compRatio { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
                  compAtk { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight }, compRel { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
                  compMakeup { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Label compThrLbl, compRatioLbl, compAtkLbl, compRelLbl, compMakeupLbl;
     juce::Rectangle<int> compBox;
-    juce::TextButton resetBtn { "AZZERA" };
+    juce::TextButton resetBtn { TRANS ("AZZERA") };
     BandUi ui[ParamEq::kBands];
     int dragBand = -1;
     bool loading = false;
