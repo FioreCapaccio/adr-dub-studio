@@ -21,7 +21,13 @@ struct ImportResult
     int tcFormatIndex = -1;              // indice in tcFormats() se il file dichiara frequenza e drop
     double sampleRate = 0.0;             // se dichiarata
     juce::StringArray warnings;
+    int maxFrameField = -1;              // il piu' alto numero di fotogrammi scritto nei timecode del file (indica la frequenza vera del file)
+    bool dropFrameMarks = false;         // i timecode usano ';' prima dei fotogrammi (drop-frame)
 };
+
+/** Formato di timecode con cui interpretare il file: quello dichiarato dal file, altrimenti il piu' piccolo che contiene tutti i fotogrammi
+    scritti (un file con fotogrammi fino a 29 non puo' essere a 24 fps). Ritorna l'indice in tcFormats(); 'current' se quello attuale va bene. */
+int suggestedTcFormat (const ImportResult&, int current);
 
 /** Riconosce il formato e legge i cue. result.cues e' vuoto se il file non e' riconosciuto. */
 ImportResult parse (const juce::String& text);

@@ -13,6 +13,18 @@ bool looksLikeTimecode (const juce::String& s)
     return false;
 }
 
+/** Fotogrammi scritti in un timecode "hh:mm:ss:ff" (-1 se non e' un timecode a quattro campi). */
+int frameFieldOf (const juce::String& s, bool* dropMark = nullptr)
+{
+    const auto t = s.trim();
+    if (dropMark != nullptr && t.contains (";")) *dropMark = true;
+    auto parts = juce::StringArray::fromTokens (t.replaceCharacter (';', ':').replaceCharacter ('.', ':').replaceCharacter (',', ':'), ":", "");
+    parts.removeEmptyStrings();
+    if (parts.size() != 4) return -1;
+    for (auto& p : parts) if (! p.containsOnly ("0123456789")) return -1;
+    return parts[3].getIntValue();
+}
+
 juce::String norm (const juce::String& s)
 {
     return s.toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz0123456789#");
@@ -281,7 +293,31 @@ static ImportResult parseTable (const juce::StringArray& lines)
 }
 
 //==============================================================================
+static ImportResult parseFormats (const juce::String& text);
+
 ImportResult parse (const juce::String& text)
+{
+    auto r = parseFormats (text);
+    for (auto& c : r.cues)
+        for (const auto* tc : { &c.tcIn, &c.tcOut })
+            r.maxFrameField = juce::jmax (r.maxFrameField, frameFieldOf (*tc, &r.dropFrameMarks));
+    return r;
+}
+
+int suggestedTcFormat (const ImportResult& r, int current)
+{
+    if (r.tcFormatIndex >= 0) return r.tcFormatIndex;
+    current = juce::jlimit (0, numTcFormats - 1, current);
+    const auto& cur = tcFormats()[current];
+    if (r.maxFrameField < cur.nominal) return current;          // i fotogrammi del file stanno nel formato attuale
+    if (r.dropFrameMarks && r.maxFrameField < 30) return 4;      // 29,97 drop frame
+    if (r.maxFrameField < 25) return 2;                          // 25 fps
+    if (r.maxFrameField < 30) return 5;                          // 30 fps
+    if (r.maxFrameField < 50) return 6;                          // 50 fps
+    return 7;                                                    // 60 fps
+}
+
+static ImportResult parseFormats (const juce::String& text)
 {
     const auto lines = splitLines (text);
     if (lines.isEmpty()) return {};
@@ -305,7 +341,8 @@ ImportResult parse (const juce::String& text)
 std::vector<AdrCue> toCues (const ImportResult& r, const Project& project, double rate, double defaultDur, juce::StringArray& warnings)
 {
     std::vector<AdrCue> out;
-    int index = 0;
+    int index = 0, badOut = 0;
+    juce::String firstBadOut;
     for (auto& ic : r.cues)
     {
         ++index;
@@ -325,7 +362,11 @@ std::vector<AdrCue> toCues (const ImportResult& r, const Project& project, doubl
         if (tlIn < 0.0) { warnings.add (label + ": cade prima dell'inizio della sessione (controlla l'inizio timecode)"); continue; }
 
         bool haveOut = false;
-        if (ic.tcOut.isNotEmpty()) haveOut = project.parseTc (ic.tcOut, tlOut);
+        if (ic.tcOut.isNotEmpty())
+        {
+            haveOut = project.parseTc (ic.tcOut, tlOut);
+            if (! haveOut) { if (badOut++ == 0) firstBadOut = label + " (" + ic.tcOut + ")"; }   // un solo avviso per tutti: i cue sono spesso centinaia
+        }
         if (! haveOut || tlOut <= tlIn) tlOut = tlIn + defaultDur;
 
         AdrCue c;
@@ -339,6 +380,9 @@ std::vector<AdrCue> toCues (const ImportResult& r, const Project& project, doubl
         c.outPos = (int64_t) std::llround (tlOut * rate);
         out.push_back (c);
     }
+    if (badOut > 0)
+        warnings.add (juce::String (badOut) + " cue hanno un timecode di uscita non valido nel formato scelto (primo: " + firstBadOut
+                      + "): per quelli e' stata usata la durata predefinita. Controlla il formato timecode: i fotogrammi del file potrebbero superare quelli del formato.");
     return out;
 }
 

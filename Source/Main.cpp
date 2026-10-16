@@ -487,6 +487,25 @@ private:
         expect (cues2.size() == 2 && warn2.size() == 1, "ADR: i cue prima dell'inizio sessione vengono scartati con un avviso");
         p.tcStartSec = 3600.0;
 
+        // CSV con timecode a 30 fps importato in una sessione a 23,976: i fotogrammi oltre 23 non sono validi
+        {
+            const juce::String csv = "N,TC IN,TC OUT,Personaggio,Dialogo\n1,00:01:15:13,00:01:17:29,Sam,\"Ciao, mondo\"\n2,00:01:20:00,00:01:22:05,Sam,Ok\n";
+            const auto rc = fc::adr::parse (csv);
+            const int fmt = fc::adr::suggestedTcFormat (rc, 0);
+            expect (rc.cues.size() == 2 && rc.maxFrameField == 29 && fmt == 5, "ADR CSV: rilevati fotogrammi fino a " + juce::String (rc.maxFrameField) + ", formato proposto " + juce::String (fc::tcFormats()[fmt].name));
+            expect (fc::adr::suggestedTcFormat (rc, 5) == 5 && fc::adr::suggestedTcFormat (fc::adr::parse ("N,TC IN\n1,00:00:01:05\n"), 0) == 0, "ADR CSV: formato attuale mantenuto se i fotogrammi ci stanno");
+            fc::Project pc (formats, 48000.0);
+            pc.tcFormat = 0;
+            juce::StringArray w;
+            const auto bad = fc::adr::toCues (rc, pc, 48000.0, 4.0, w);
+            expect (w.size() == 1 && bad.size() == 2 && bad[0].outPos - bad[0].inPos == 4 * 48000, "ADR CSV: con il formato sbagliato l'uscita non valida e' segnalata una volta sola (" + juce::String (w.size()) + " avvisi)");
+            pc.tcFormat = fmt;
+            w.clear();
+            const auto good = fc::adr::toCues (rc, pc, 48000.0, 4.0, w);
+            expect (w.isEmpty() && good.size() == 2 && good[0].outPos == (int64_t) std::llround ((77.0 + 29.0 / 30.0) * 48000.0)
+                        && good[0].inPos == (int64_t) std::llround ((75.0 + 13.0 / 30.0) * 48000.0), "ADR CSV: con 30 fps entrata 1:15:13 e uscita 1:17:29 corrette");
+        }
+
         // 2. EDL
         const juce::String edl =
             "TITLE: ADR SPOTTING\n"
@@ -1821,7 +1840,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "1.9.0"; }
+    const juce::String getApplicationVersion() override { return "1.9.1"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

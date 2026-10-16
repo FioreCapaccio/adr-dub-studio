@@ -41,8 +41,14 @@ AdrImportDialog::AdrImportDialog (const Project& p, const adr::ImportResult& r, 
     addAndMakeVisible (info);
 
     for (int i = 0; i < numTcFormats; ++i) tcFormat.addItem (tcFormats()[i].name, i + 1);
-    const int fmt = result.tcFormatIndex >= 0 ? result.tcFormatIndex : project.tcFormat;
+    const int fmt = adr::suggestedTcFormat (result, project.tcFormat);
     tcFormat.setSelectedId (fmt + 1, juce::dontSendNotification);
+    if (result.tcFormatIndex < 0 && fmt != project.tcFormat)
+    {
+        info.setText (info.getText() + "\n\nNel file i fotogrammi arrivano fino a " + juce::String (result.maxFrameField) + ": non sono compatibili con "
+                      + tcFormats()[project.tcFormat].name + ". Ho scelto " + tcFormats()[fmt].name + "; cambia il formato qui sotto se non e' quello giusto.",
+                      juce::dontSendNotification);
+    }
     start.setText (result.sessionStartTc.isNotEmpty() ? result.sessionStartTc : project.formatTc (0.0), false);
     start.setJustification (juce::Justification::centred);
     start.setInputRestrictions (11, "0123456789:;.");
@@ -85,7 +91,7 @@ void AdrImportDialog::close (bool ok)
 void AdrImportDialog::resized()
 {
     auto r = getLocalBounds().reduced (18);
-    info.setBounds (r.removeFromTop (110));
+    info.setBounds (r.removeFromTop (150));
     auto row = [&r] (juce::Label& l, juce::Component& c)
     {
         auto line = r.removeFromTop (28);

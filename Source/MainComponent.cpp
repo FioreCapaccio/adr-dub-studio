@@ -1871,7 +1871,7 @@ void MainComponent::importAdrDialog()
             if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Importazione ADR", msg);
         });
-        dlg->setSize (560, 420);
+        dlg->setSize (560, 470);
         juce::DialogWindow::LaunchOptions lo;
         lo.content.setOwned (dlg);
         lo.dialogTitle = "Importa cue ADR";
