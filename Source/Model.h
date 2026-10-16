@@ -250,6 +250,21 @@ inline const char* adrStatusName (int s)
     return n[juce::jlimit (0, 3, s)];
 }
 
+/** ReConform: pezzo di timeline del vecchio montaggio che nel nuovo sta in un'altra posizione (campioni). */
+struct ConformSegment { int64_t oldStart = 0, oldEnd = 0, newStart = 0; };
+struct ConformPlan
+{
+    std::vector<ConformSegment> segments;                 // ordinati per oldStart
+    std::vector<std::pair<int64_t, int64_t>> coverage;     // zone coperte dal vecchio montaggio: fuori da qui nulla cambia
+    std::vector<std::pair<int64_t, int64_t>> inserted;     // materiale nuovo senza audio (campioni nel nuovo montaggio)
+    bool markInserted = true;
+};
+struct ConformStats
+{
+    int clipsTouched = 0, clipPieces = 0, clipsDropped = 0, cuesMoved = 0, cuesOut = 0, markersMoved = 0, insertedMarkers = 0;
+    double droppedSeconds = 0.0;
+};
+
 struct Session
 {
     double sampleRate = 48000.0;   // frequenza del progetto (serve ai filtri)
@@ -493,6 +508,9 @@ public:
     void markDirty() { dirty = true; sendChangeMessage(); }
     void loadSession (const juce::File& f, std::function<void (juce::String)> done);
     void newSession (bool withDefaultTrack = true);
+
+    /** ReConform: sposta clip, cue e marker secondo il piano. Con apply = false calcola solo il rapporto (nulla cambia). Un solo passo di undo. */
+    ConformStats conform (const ConformPlan&, bool apply);
 
     // media mancanti
     juce::String missingVideoPath;     // video della sessione che non si e' trovato all'apertura (resta nel salvataggio)

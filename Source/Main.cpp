@@ -14,6 +14,7 @@
 #include "Versions.h"
 #include "SessionCheck.h"
 #include "WorkflowGuide.h"
+#include "Conform.h"
 #include "ThemeManager.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
@@ -112,6 +113,7 @@ private:
         stepDelivery();
         stepSync();
         stepBooth();
+        stepConform();
         stepEditing();
         stepPdc();
         stepAux();
@@ -1481,6 +1483,94 @@ private:
         });
     }
 
+    // ReConform: nuovo montaggio da EDL vecchio e nuovo
+    void stepConform()
+    {
+        namespace cf = fc::conform;
+        const juce::String oldEdl =
+            "TITLE: VECCHIO\nFCM: NON-DROP FRAME\n\n"
+            "001  R1  V  C        01:00:00:00 01:00:10:00 01:00:00:00 01:00:10:00\n"
+            "002  R2  V  C        02:00:00:00 02:00:10:00 01:00:10:00 01:00:20:00\n"
+            "* FROM CLIP NAME: SCENA DUE\n"
+            "003  R3  V  C        03:00:00:00 03:00:10:00 01:00:20:00 01:00:30:00\n"
+            "004  AX  A  C        00:00:00:00 00:00:10:00 01:00:00:00 01:00:10:00\n";
+        const juce::String newEdl =
+            "TITLE: NUOVO\nFCM: NON-DROP FRAME\n\n"
+            "001  R3  V  C        03:00:00:00 03:00:10:00 01:00:00:00 01:00:10:00\n"
+            "002  R1  V  C        01:00:02:00 01:00:10:00 01:00:10:00 01:00:18:00\n"
+            "003  R9  V  C        09:00:00:00 09:00:03:00 01:00:18:00 01:00:21:00\n"
+            "004  R2  V  C        02:00:00:00 02:00:10:00 01:00:21:00 01:00:31:00\n"
+            "* FROM CLIP NAME: SCENA DUE\n";
+        const auto po = cf::parseEdl (oldEdl, 2), pn = cf::parseEdl (newEdl, 2);
+        expect (po.events.size() == 3 && pn.events.size() == 4 && po.events[1].clipName == "SCENA DUE" && std::abs (po.events[1].srcIn - 7200.0) < 1.0e-6,
+                "ReConform: eventi video letti (3 e 4), l'evento solo audio e' ignorato, nome del clip letto");
+        const auto map = cf::buildMap (po.events, pn.events);
+        expect (map.segments.size() == 3 && map.removed.size() == 1 && map.inserted.size() == 1
+                    && std::abs (map.removed[0].first - 3600.0) < 1.0e-6 && std::abs (map.removed[0].second - 3602.0) < 1.0e-6
+                    && std::abs (map.inserted[0].first - 3618.0) < 1.0e-6 && std::abs (map.inserted[0].second - 3621.0) < 1.0e-6,
+                "ReConform: mappa con 3 pezzi, 2 s tolti all'inizio di R1 e 3 s di materiale nuovo (" + juce::String ((int) map.segments.size()) + " pezzi)");
+
+        fc::Project p (formats, 48000.0);
+        p.tcFormat = 2;            // 25 fps
+        p.tcStartSec = 3600.0;
+        fc::dub::applyTemplate (p, fc::dub::templates()[2]);   // Dialoghi, M&E, Effetti
+        auto asset = std::make_shared<fc::Asset>();
+        asset->name = "lungo";
+        asset->audio.setSize (1, 30 * 48000);
+        for (int i = 0; i < 30 * 48000; ++i) asset->audio.setSample (0, i, (float) i / 1.0e6f);   // rampa: si riconosce la posizione nel file
+        asset->buildPeaks();
+        {
+            fc::Clip c; c.id = 1; c.asset = asset; c.start = 5 * 48000; c.offset = 5 * 48000; c.length = 20 * 48000; c.fadeIn = 480;
+            p.edit().tracks[0].clips = { c };
+            fc::Clip tail; tail.id = 2; tail.asset = asset; tail.start = 31 * 48000; tail.offset = 0; tail.length = 48000;   // dopo la fine del vecchio montaggio: non si muove
+            p.edit().tracks[1].clips = { tail };
+        }
+        std::vector<fc::AdrCue> cues (3);
+        cues[0].id = 1; cues[0].number = 1; cues[0].inPos = 1 * 48000; cues[0].outPos = 2 * 48000;     // nel pezzo di R1 che viene tolto
+        cues[1].id = 2; cues[1].number = 2; cues[1].inPos = 12 * 48000; cues[1].outPos = 14 * 48000;   // dentro R2
+        cues[2].id = 3; cues[2].number = 3; cues[2].inPos = 25 * 48000; cues[2].outPos = 27 * 48000;   // dentro R3
+        p.addCues (cues, true);
+        p.addMarker (15 * 48000, "scena");
+
+        const auto plan = cf::makePlan (map, p.tcStartSec, 48000.0, true);
+        const auto before = p.getSession().tracks[0].clips[0].start;
+        const auto dry = p.conform (plan, false);
+        expect (p.getSession().tracks[0].clips.size() == 1 && p.getSession().tracks[0].clips[0].start == before && dry.clipPieces == 3 && dry.cuesOut == 1,
+                "ReConform: l'anteprima calcola il rapporto senza cambiare nulla");
+        const auto st = p.conform (plan, true);
+        auto clips = p.getSession().tracks[0].clips;
+        std::sort (clips.begin(), clips.end(), [] (const fc::Clip& a, const fc::Clip& b) { return a.start < b.start; });
+        expect (clips.size() == 3 && clips[0].start == 0 && clips[0].length == 5 * 48000 && clips[0].offset == 20 * 48000
+                    && clips[1].start == 13 * 48000 && clips[1].length == 5 * 48000 && clips[1].offset == 5 * 48000
+                    && clips[2].start == 21 * 48000 && clips[2].length == 10 * 48000 && clips[2].offset == 10 * 48000,
+                "ReConform: il clip e' diviso in 3 pezzi nelle nuove posizioni (R3 in testa, R1 a 13 s, R2 a 21 s) con gli offset giusti");
+        expect (clips[0].fadeIn >= 200 && clips[0].fadeOut == 0 && clips[1].fadeIn == 480 && clips[1].fadeOut >= 200 && clips[2].fadeIn >= 200, "ReConform: breve dissolvenza sui nuovi tagli, il bordo esterno mantiene la sua");
+        expect (p.getSession().tracks[1].clips[0].start == 31 * 48000, "ReConform: l'audio fuori dal vecchio montaggio resta dov'era");
+        const auto& cs = p.getSession().cues;
+        expect (cs[0].status == 3 && cs[0].notes.contains ("Fuori dal nuovo montaggio") && cs[0].inPos == 48000, "ReConform: cue nel materiale tolto segnato Da rifare, non spostato");
+        expect (cs[1].inPos == 23 * 48000 && cs[1].outPos == 25 * 48000 && cs[2].inPos == 5 * 48000 && cs[2].outPos == 7 * 48000, "ReConform: gli altri cue seguono il loro materiale (R2 +11 s, R3 -20 s)");
+        bool sceneMoved = false, insertedMarker = false;
+        for (auto& m : p.getSession().markers) { sceneMoved = sceneMoved || (m.name == "scena" && m.pos == 26 * 48000); insertedMarker = insertedMarker || (m.name.startsWith ("Inserito 1") && m.pos == 18 * 48000); }
+        expect (sceneMoved && insertedMarker && st.insertedMarkers == 1 && st.cuesMoved == 2 && st.cuesOut == 1, "ReConform: marker spostato (+11 s) e marker sul materiale nuovo a 18 s");
+        p.undo();
+        expect (p.getSession().tracks[0].clips.size() == 1 && p.getSession().cues[0].status == 0 && p.getSession().cues[1].inPos == 12 * 48000, "ReConform: un solo undo ripristina clip, cue e marker");
+        expect (cf::describe (map, st, 48000.0).contains ("3 pezzi in comune"), "ReConform: il rapporto descrive la modifica");
+
+        // fotogrammi incompatibili e cambi di velocita'
+        const auto bad = cf::parseEdl ("001  R1  V  C        01:00:00:29 01:00:10:00 01:00:00:00 01:00:10:00\n002  R1  V  C        01:00:10:00 01:00:20:00 01:00:10:00 01:00:20:00\nM2   R1  050.0  01:00:10:00\n", 2);
+        bool warnFrames = false, warnRetime = false;
+        for (auto& w : bad.warnings) { warnFrames = warnFrames || w.contains ("timecode non valido"); warnRetime = warnRetime || w.contains ("M2"); }
+        expect (bad.events.size() == 1 && warnFrames && warnRetime && bad.events[0].retimed, "ReConform: timecode a 29 fotogrammi a 25 fps saltato con avviso, evento M2 riconosciuto");
+        const auto dis = cf::parseEdl ("001  R1  V  D  030  01:00:00:00 01:00:10:00 01:00:00:00 01:00:10:00\n", 2);
+        expect (! dis.events.empty() && dis.warnings.joinIntoString (" ").contains ("dissolvenze"), "ReConform: dissolvenze segnalate e trattate come tagli");
+        const auto none = cf::buildMap (po.events, cf::parseEdl ("001  ZZ  V  C        01:00:00:00 01:00:05:00 01:00:00:00 01:00:05:00\n", 2).events);
+        expect (none.segments.empty() && ! none.warnings.isEmpty(), "ReConform: nessun materiale in comune segnalato");
+        const auto dup = cf::buildMap (po.events, cf::parseEdl ("001  R1  V  C        01:00:00:00 01:00:05:00 01:00:00:00 01:00:05:00\n002  R1  V  C        01:00:00:00 01:00:05:00 01:00:05:00 01:00:10:00\n", 2).events);
+        bool warnDup = false;
+        for (auto& w : dup.warnings) warnDup = warnDup || w.contains ("piu' volte");
+        expect (warnDup && dup.segments.size() == 1, "ReConform: materiale usato due volte, si segue la prima occorrenza");
+    }
+
     // cuffie dell'attore: mix su una seconda coppia di uscite, bip con livello proprio, talkback del direttore
     void stepBooth()
     {
@@ -2389,7 +2479,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.4.0"; }
+    const juce::String getApplicationVersion() override { return "2.5.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

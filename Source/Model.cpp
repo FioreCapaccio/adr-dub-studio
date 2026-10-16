@@ -1408,6 +1408,123 @@ bool Project::saveCopy (const juce::File& f, juce::String& error) const
     return true;
 }
 
+ConformStats Project::conform (const ConformPlan& plan, bool apply)
+{
+    ConformStats st;
+    const auto& segs = plan.segments;
+    Session work = session;
+    int64_t nextId = nextClipId;
+    constexpr int64_t kFade = 240;   // 5 ms a 48 kHz: breve dissolvenza sui nuovi tagli
+
+    auto inCoverage = [&] (int64_t p) { for (auto& c : plan.coverage) if (p >= c.first && p < c.second) return true; return false; };
+    auto segmentAt = [&] (int64_t p) -> const ConformSegment* { for (auto& s : segs) if (p >= s.oldStart && p < s.oldEnd) return &s; return nullptr; };
+
+    for (auto& t : work.tracks)
+    {
+        std::vector<Clip> out;
+        for (auto& c : t.clips)
+        {
+            // punti di taglio: confini dei segmenti e delle zone coperte dentro il clip
+            std::vector<int64_t> cuts { c.start, c.end() };
+            for (auto& s : segs) { if (s.oldStart > c.start && s.oldStart < c.end()) cuts.push_back (s.oldStart); if (s.oldEnd > c.start && s.oldEnd < c.end()) cuts.push_back (s.oldEnd); }
+            for (auto& r : plan.coverage) { if (r.first > c.start && r.first < c.end()) cuts.push_back (r.first); if (r.second > c.start && r.second < c.end()) cuts.push_back (r.second); }
+            std::sort (cuts.begin(), cuts.end());
+            cuts.erase (std::unique (cuts.begin(), cuts.end()), cuts.end());
+
+            std::vector<Clip> pieces;
+            bool changed = false;
+            for (size_t i = 0; i + 1 < cuts.size(); ++i)
+            {
+                const int64_t a = cuts[i], b = cuts[i + 1];
+                Clip piece = c;
+                piece.offset = c.offset + (a - c.start);
+                piece.length = b - a;
+                piece.fadeIn = a == c.start ? c.fadeIn : 0;
+                piece.fadeOut = b == c.end() ? c.fadeOut : 0;
+                if (const auto* s = segmentAt (a))
+                {
+                    piece.start = s->newStart + (a - s->oldStart);
+                    changed = changed || piece.start != a;
+                }
+                else if (inCoverage (a)) { st.droppedSeconds += (double) (b - a) / sampleRate; changed = true; continue; }   // materiale tolto dal nuovo montaggio
+                else piece.start = a;                                                                                            // fuori dal montaggio: non cambia
+                if (a != c.start) piece.fadeIn = juce::jmax (piece.fadeIn, juce::jmin<int64_t> (kFade, piece.length / 2));
+                if (b != c.end()) piece.fadeOut = juce::jmax (piece.fadeOut, juce::jmin<int64_t> (kFade, piece.length / 2));
+                pieces.push_back (piece);
+            }
+            if (! changed) { out.push_back (c); continue; }
+            ++st.clipsTouched;
+            if (pieces.empty()) ++st.clipsDropped;
+            bool first = true;
+            for (auto& pc : pieces)
+            {
+                if (first) { pc.id = c.id; first = false; } else pc.id = nextId++;
+                ++st.clipPieces;
+                out.push_back (pc);
+            }
+        }
+        t.clips = std::move (out);
+    }
+
+    auto mapPos = [&] (int64_t pos, bool& removed) -> int64_t
+    {
+        removed = false;
+        if (const auto* s = segmentAt (pos)) return s->newStart + (pos - s->oldStart);
+        if (inCoverage (pos)) removed = true;
+        return pos;
+    };
+    for (auto& cue : work.cues)
+    {
+        bool removed = false;
+        const int64_t ni = mapPos (cue.inPos, removed);
+        if (removed)
+        {
+            ++st.cuesOut;
+            cue.status = 3;
+            if (! cue.notes.contains ("Fuori dal nuovo montaggio")) cue.notes = (cue.notes.isEmpty() ? juce::String() : cue.notes + " ") + "[Fuori dal nuovo montaggio]";
+            continue;
+        }
+        const int64_t delta = ni - cue.inPos;
+        bool r2 = false;
+        const int64_t no = mapPos (cue.outPos - 1, r2) + 1;
+        cue.outPos = r2 || no <= ni ? cue.outPos + delta : no;
+        cue.inPos = ni;
+        if (delta != 0) ++st.cuesMoved;
+    }
+    for (auto& m : work.markers)
+    {
+        bool removed = false;
+        const int64_t np = mapPos (m.pos, removed);
+        if (np != m.pos) { m.pos = np; ++st.markersMoved; }
+    }
+    if (plan.markInserted)
+    {
+        int n = 0;
+        for (auto& r : plan.inserted)
+        {
+            Marker m;
+            m.id = nextMarkerId + n;
+            m.pos = r.first;
+            m.name = "Inserito " + juce::String (++n) + " (" + juce::String ((double) (r.second - r.first) / sampleRate, 1) + " s)";
+            m.colour = juce::Colour (0xff4cd27a);
+            work.markers.push_back (m);
+            ++st.insertedMarkers;
+        }
+        std::sort (work.markers.begin(), work.markers.end(), [] (const Marker& a, const Marker& b) { return a.pos < b.pos; });
+    }
+
+    if (apply)
+    {
+        beginEdit();
+        session = std::move (work);
+        nextClipId = nextId;
+        nextMarkerId += st.insertedMarkers;
+        selection.clear();
+        changed();
+    }
+    return st;
+}
+
 bool Project::hasOfflineMedia() const noexcept
 {
     if (missingVideoPath.isNotEmpty() && session.video == nullptr) return true;

@@ -164,6 +164,8 @@ private:
     juce::File loadingVideo;
     std::unique_ptr<AdrWindow> adrWindow;
     std::unique_ptr<class BoothWindow> scriptWindow, cueWindow;
+    void reconformDialog();
+    juce::String reconformRun (const juce::File& oldEdl, const juce::File& newEdl, bool markers, bool saveVersion, bool apply);
     void relinkMedia();
     void saveVersionDialog();
     void versionsDialog();

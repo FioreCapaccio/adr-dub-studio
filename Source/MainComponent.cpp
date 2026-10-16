@@ -9,6 +9,7 @@
 #include "Versions.h"
 #include "SessionCheck.h"
 #include "WorkflowGuide.h"
+#include "Conform.h"
 #include "VideoSupport.h"
 #include "Commands.h"
 #include "ExportDialog.h"
@@ -1337,7 +1338,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1410,6 +1411,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAdrExportCsv:  i.setInfo ("Esporta cue sheet (CSV)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportPT:   i.setInfo ("Esporta cue come marker Pro Tools (testo)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportBwf:  i.setInfo ("Esporta take attivi (BWF con timecode)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdReConform:     i.setInfo ("ReConform: nuovo montaggio da EDL...", "", "Modifica", 0); break;
         case cmdRelink:        i.setInfo ("Ricollega i media mancanti...", "", "File", 0); i.setActive (project->hasOfflineMedia()); break;
         case cmdSaveVersion:   i.setInfo ("Salva una versione della sessione...", "", "File", 0); i.setActive (project->getFile() != juce::File()); break;
         case cmdVersions:      i.setInfo ("Versioni della sessione...", "", "File", 0); i.setActive (project->getFile() != juce::File()); break;
@@ -1529,6 +1531,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrExportBwf:  exportAdrBwf(); break;
         case cmdAdrCueSheet:   exportCueSheet(); break;
         case cmdAlignToGuide:  alignSelectedToGuide(); break;
+        case cmdReConform:     reconformDialog(); break;
         case cmdRelink:        relinkMedia(); break;
         case cmdSaveVersion:   saveVersionDialog(); break;
         case cmdVersions:      versionsDialog(); break;
@@ -1759,7 +1762,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck }); break;
         case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
         case 4:
@@ -2067,6 +2070,143 @@ void MainComponent::recordAdrCue (int cueId)
 namespace
 {
 juce::String csvField (const juce::String& s) { return "\"" + s.replace ("\"", "\"\"").replaceCharacters ("\r\n", "  ") + "\""; }
+}
+
+juce::String MainComponent::reconformRun (const juce::File& oldEdl, const juce::File& newEdl, bool markers, bool saveVersion, bool apply)
+{
+    if (! oldEdl.existsAsFile() || ! newEdl.existsAsFile()) return "Scegli i due file EDL: quello del vecchio montaggio e quello del nuovo.";
+    const auto po = conform::parseEdl (oldEdl.loadFileAsString(), project->tcFormat), pn = conform::parseEdl (newEdl.loadFileAsString(), project->tcFormat);
+    juce::String out;
+    for (auto& w : po.warnings) out << "VECCHIO EDL: " << w << "\n";
+    for (auto& w : pn.warnings) out << "NUOVO EDL: " << w << "\n";
+    if (po.events.empty() || pn.events.empty()) return out + "\nUno dei due EDL non contiene eventi utilizzabili: niente da fare.";
+
+    auto map = conform::buildMap (po.events, pn.events);
+    for (auto& w : map.warnings) out << w << "\n";
+    if (map.segments.empty()) return out;
+
+    if (apply && saveVersion && project->getFile() != juce::File())
+    {
+        juce::String err;
+        const auto v = versions::save (*project, "prima del ReConform", err);
+        if (v == juce::File()) return out + "\nNon sono riuscito a salvare la versione di sicurezza (" + err + "): non applico nulla.";
+        out << "Versione di sicurezza salvata: " << v.getFileName() << "\n";
+    }
+    const auto plan = conform::makePlan (map, project->tcStartSec, project->getSampleRate(), markers);
+    const auto st = project->conform (plan, apply);
+    if (! out.isEmpty()) out << "\n";
+    out << conform::describe (map, st, project->getSampleRate()) << "\n\n"
+        << (apply ? "FATTO. Per tornare indietro: Modifica > Annulla.\nOra importa il video del nuovo montaggio (File > Importa video) e controlla la sincronia."
+                  : "Questa e' solo un'anteprima: la sessione non e' cambiata. Premi Applica per eseguire.");
+    if (apply) { timeline->repaint(); adrViewerKey.clear(); }
+    return out;
+}
+
+namespace
+{
+/** Finestra del ReConform: due EDL, opzioni, anteprima e applicazione. */
+class ReconformPanel : public juce::Component
+{
+public:
+    using Runner = std::function<juce::String (const juce::File&, const juce::File&, bool, bool, bool)>;
+    explicit ReconformPanel (Runner r, bool canSaveVersion) : run (std::move (r))
+    {
+        for (auto* l : { &oldLbl, &newLbl }) { l->setFont (font (12.0f, true)); l->setColour (juce::Label::textColourId, dim); addAndMakeVisible (*l); }
+        oldLbl.setText ("EDL DEL VECCHIO MONTAGGIO", juce::dontSendNotification);
+        newLbl.setText ("EDL DEL NUOVO MONTAGGIO", juce::dontSendNotification);
+        for (auto* p : { &oldPath, &newPath }) { p->setReadOnly (true); p->setTextToShowWhenEmpty ("(nessun file)", dim); addAndMakeVisible (*p); }
+        for (auto* b : { &oldBtn, &newBtn, &previewBtn, &applyBtn, &closeBtn }) addAndMakeVisible (*b);
+        addAndMakeVisible (markers);
+        addAndMakeVisible (saveVersion);
+        markers.setToggleState (true, juce::dontSendNotification);
+        saveVersion.setToggleState (canSaveVersion, juce::dontSendNotification);
+        saveVersion.setEnabled (canSaveVersion);
+        report.setMultiLine (true);
+        report.setReadOnly (true);
+        report.setFont (font (12.5f));
+        report.setText ("Scegli l'EDL del montaggio su cui hai lavorato fin qui e quello del nuovo montaggio (stessi nomi di bobina), poi premi Anteprima.\n\n"
+                        "Audio, cue e marker vengono spostati dove si trova ora lo stesso materiale video. Il materiale tolto viene tagliato, i cue che cadono li' diventano \"Da rifare\", "
+                        "il materiale nuovo resta senza audio. Il timecode degli EDL si legge nel formato della sessione.", false);
+        addAndMakeVisible (report);
+        applyBtn.setEnabled (false);
+        oldBtn.onClick = [this] { choose (oldFile, oldPath); };
+        newBtn.onClick = [this] { choose (newFile, newPath); };
+        previewBtn.onClick = [this] { report.setText (run (oldFile, newFile, markers.getToggleState(), false, false), false); applyBtn.setEnabled (oldFile.existsAsFile() && newFile.existsAsFile()); };
+        applyBtn.onClick = [this]
+        {
+            report.setText (run (oldFile, newFile, markers.getToggleState(), saveVersion.getToggleState(), true), false);
+            applyBtn.setEnabled (false);
+        };
+        closeBtn.onClick = [this] { if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) dw->exitModalState (0); };
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (panel); }
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (16);
+        auto row = [&r] (juce::Label& l, juce::TextEditor& t, juce::TextButton& b)
+        {
+            l.setBounds (r.removeFromTop (18));
+            auto line = r.removeFromTop (28);
+            b.setBounds (line.removeFromRight (100));
+            line.removeFromRight (8);
+            t.setBounds (line);
+            r.removeFromTop (8);
+        };
+        row (oldLbl, oldPath, oldBtn);
+        row (newLbl, newPath, newBtn);
+        markers.setBounds (r.removeFromTop (24));
+        saveVersion.setBounds (r.removeFromTop (24));
+        r.removeFromTop (6);
+        auto bottom = r.removeFromBottom (34);
+        r.removeFromBottom (8);
+        report.setBounds (r);
+        closeBtn.setBounds (bottom.removeFromRight (90));
+        bottom.removeFromRight (8);
+        applyBtn.setBounds (bottom.removeFromRight (100));
+        bottom.removeFromRight (8);
+        previewBtn.setBounds (bottom.removeFromRight (110));
+    }
+
+private:
+    void choose (juce::File& target, juce::TextEditor& label)
+    {
+        chooser = std::make_shared<juce::FileChooser> ("Scegli l'EDL (CMX3600)", juce::File(), "*.edl;*.txt");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this, &target, &label] (const juce::FileChooser& fc)
+        {
+            if (fc.getResult() == juce::File()) return;
+            target = fc.getResult();
+            label.setText (target.getFullPathName(), false);
+            applyBtn.setEnabled (false);
+        });
+    }
+
+    Runner run;
+    juce::File oldFile, newFile;
+    std::shared_ptr<juce::FileChooser> chooser;
+    juce::Label oldLbl, newLbl;
+    juce::TextEditor oldPath, newPath, report;
+    juce::TextButton oldBtn { "Scegli..." }, newBtn { "Scegli..." }, previewBtn { "Anteprima" }, applyBtn { "Applica" }, closeBtn { "Chiudi" };
+    juce::ToggleButton markers { "Aggiungi un marker sul materiale nuovo (senza audio)" }, saveVersion { "Salva prima una versione della sessione (consigliato)" };
+};
+} // namespace
+
+void MainComponent::reconformDialog()
+{
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto* panel = new ReconformPanel ([safe] (const juce::File& a, const juce::File& b, bool m, bool v, bool apply) -> juce::String
+    {
+        return safe != nullptr ? safe->reconformRun (a, b, m, v, apply) : juce::String();
+    }, project->getFile() != juce::File());
+    panel->setSize (620, 520);
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (panel);
+    lo.dialogTitle = "ReConform: nuovo montaggio";
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = true;
+    lo.launchAsync();
 }
 
 void MainComponent::relinkMedia()
