@@ -255,7 +255,11 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     refresh();
 }
 
-AdrPanel::~AdrPanel() { project.removeChangeListener (this); }
+AdrPanel::~AdrPanel()
+{
+    project.removeChangeListener (this);
+    table.setModel (nullptr);   // la tabella vive piu' del modello (questo pannello): senza, l'accessibilita' lo interroga a oggetto gia' distrutto
+}
 
 const AdrCue* AdrPanel::cueAtRow (int row) const
 {
@@ -542,6 +546,12 @@ void AdrPanel::resized()
     auto place = [&bar] (juce::Component& c, int w) { c.setBounds (bar.removeFromLeft (w)); bar.removeFromLeft (6); };
     place (importBtn, 100); place (addBtn, 72); place (delBtn, 80); place (settingsBtn, 118);
     place (csvBtn, 110); place (ptBtn, 150); place (bwfBtn, 160);
+    r.removeFromTop (8);
+    auto fr = r.removeFromTop (26);
+    lblFilter.setBounds (fr.removeFromLeft (120));
+    cbFilter.setBounds (fr.removeFromLeft (220));
+    fr.removeFromLeft (10);
+    lblCount.setBounds (fr.removeFromLeft (120));
     r.removeFromTop (8);
 
     // area dei dettagli in basso
