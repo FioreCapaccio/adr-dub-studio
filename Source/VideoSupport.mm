@@ -47,6 +47,7 @@ Info probe (const juce::File& f)
         info.duration = dur;
         const float fps = t.nominalFrameRate;
         info.fps = fps > 1.0f ? (double) fps : 25.0;
+        info.fpsKnown = fps > 1.0f;
         const CGSize sz = CGSizeApplyAffineTransform (t.naturalSize, t.preferredTransform);
         info.width = (int) std::abs (sz.width);
         info.height = (int) std::abs (sz.height);

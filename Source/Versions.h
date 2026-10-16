@@ -15,7 +15,7 @@ struct Entry
 /** Cartella delle versioni di una sessione: <cartella>/<nome>_versioni. */
 juce::File folderFor (const juce::File& sessionFile);
 
-/** Salva una copia numerata della sessione (<nome>_vNNN_AAAAMMGG-HHMM.arostudio) con la nota in un file .txt accanto. Ritorna il file, o File() con 'error'. */
+/** Salva una copia numerata della sessione (<nome>_vNNN_AAAAMMGG-HHMM.adb) con la nota in un file .txt accanto. Ritorna il file, o File() con 'error'. */
 juce::File save (const Project&, const juce::String& note, juce::String& error);
 
 /** Le versioni della sessione, dalla piu' recente. */

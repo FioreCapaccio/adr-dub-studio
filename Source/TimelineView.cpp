@@ -29,14 +29,22 @@ int TimelineView::heightOf (int i) const
 {
     const auto& t = project.getSession().tracks;
     if (i < 0 || i >= (int) t.size()) return 96;
+    if (const auto* g = project.findGroup (t[(size_t) i].groupId); g != nullptr && g->collapsed) return 0;
     return juce::jlimit (minTrackH, maxTrackH, t[(size_t) i].live->height.load());
+}
+
+int TimelineView::bandOf (int i) const
+{
+    const auto& t = project.getSession().tracks;
+    if (i < 0 || i >= (int) t.size() || t[(size_t) i].groupId == 0) return 0;
+    return i == 0 || t[(size_t) i - 1].groupId != t[(size_t) i].groupId ? groupBandH : 0;
 }
 
 int TimelineView::contentTop (int idx) const
 {
     int y = 0;
-    for (int i = 0; i < idx; ++i) y += heightOf (i);
-    return y;
+    for (int i = 0; i < idx; ++i) y += bandOf (i) + heightOf (i);
+    return y + bandOf (idx);   // l'inizio della corsia, sotto l'eventuale barra del gruppo
 }
 
 int TimelineView::contentHeight() const
@@ -80,7 +88,7 @@ int TimelineView::trackIndexAtY (int y) const noexcept
     int top = 0;
     for (int i = 0; i < n; ++i)
     {
-        const int h = heightOf (i);
+        const int h = bandOf (i) + heightOf (i);
         if (cy < top + h) return i;
         top += h;
     }
@@ -852,7 +860,7 @@ void TimelineView::paint (juce::Graphics& g)
         for (int i = 0; i < nTracks; ++i)
         {
             const int y = laneTop (i), h = heightOf (i);
-            if (y + h < lanes.getY() || y > lanes.getBottom()) continue;
+            if (h == 0 || y + h < lanes.getY() || y > lanes.getBottom()) continue;
             g.setColour (i % 2 == 0 ? lane : laneAlt);
             g.fillRect (lanes.getX(), y, lanes.getWidth(), h);
             if (s.tracks[(size_t) i].id == project.selectedTrackId)
@@ -877,7 +885,7 @@ void TimelineView::paint (juce::Graphics& g)
         for (int i = 0; i < nTracks; ++i)
         {
             const int y = laneTop (i), h = heightOf (i);
-            if (y + h < lanes.getY() || y > lanes.getBottom()) { anyClip |= ! s.tracks[(size_t) i].clips.empty(); continue; }
+            if (h == 0 || y + h < lanes.getY() || y > lanes.getBottom()) { anyClip |= ! s.tracks[(size_t) i].clips.empty(); continue; }
             for (auto& c : s.tracks[(size_t) i].clips)
             {
                 anyClip = true;
@@ -889,6 +897,7 @@ void TimelineView::paint (juce::Graphics& g)
         for (int i = 0; i < nTracks; ++i)
         {
             const auto& cl = s.tracks[(size_t) i].clips;
+            if (heightOf (i) == 0) continue;
             for (size_t a = 0; a < cl.size(); ++a)
                 for (size_t b = 0; b < cl.size(); ++b)
                 {
@@ -919,7 +928,7 @@ void TimelineView::paint (juce::Graphics& g)
             const int mode = tr.live->autoMode.load();
             const int y = laneTop (i), h = heightOf (i);
             const bool showAlways = tool == Tool::Automation && tr.id == project.selectedTrackId;   // con la traccia selezionata la linea si vede subito, anche a zero
-            if ((mode == 0 && ! showAlways) || y + h < lanes.getY() || y > lanes.getBottom()) continue;
+            if ((mode == 0 && ! showAlways) || h == 0 || y + h < lanes.getY() || y > lanes.getBottom()) continue;
             const int param = tr.live->autoParam.load();
             const auto& lane = tr.lane (param);
             const juce::Colour lc = mode == 2 ? accent : (mode == 1 ? green : blue.brighter (0.3f));
@@ -1029,7 +1038,7 @@ void TimelineView::paint (juce::Graphics& g)
             const float rx0 = sampleToX (engine.getRecordStart()), rx1 = sampleToX (engine.getPosition());
             for (int i = 0; i < nTracks; ++i)
             {
-                if (! s.tracks[(size_t) i].live->armed.load()) continue;
+                if (! s.tracks[(size_t) i].live->armed.load() || heightOf (i) == 0) continue;
                 juce::Rectangle<float> rr (rx0, (float) laneTop (i) + 4.0f, juce::jmax (2.0f, rx1 - rx0), (float) heightOf (i) - 8.0f);
                 g.setColour (accent.withAlpha (0.26f));
                 g.fillRoundedRectangle (rr, 5.0f);
@@ -1081,8 +1090,9 @@ void TimelineView::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState ss (g);
         g.reduceClipRegion (0, lanes.getY(), headerW, lanes.getHeight());
         for (int i = 0; i < nTracks; ++i)
-            if (laneTop (i) + heightOf (i) >= lanes.getY() && laneTop (i) <= lanes.getBottom()) drawHeader (g, i);
+            if (heightOf (i) > 0 && laneTop (i) + heightOf (i) >= lanes.getY() && laneTop (i) <= lanes.getBottom()) drawHeader (g, i);
     }
+    drawGroupBars (g);
 
     drawVideoLane (g);
     drawRuler (g);
@@ -1178,7 +1188,7 @@ TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
     for (int i = 0; i < n; ++i)
     {
         const int bottom = laneTop (i) + heightOf (i);
-        if (std::abs (p.y - bottom) <= 3 && bottom >= lanes.getY())
+        if (heightOf (i) > 0 && std::abs (p.y - bottom) <= 3 && bottom >= lanes.getY())
         {
             h.type = HitType::TrackResize;
             h.trackIndex = i;
@@ -1186,6 +1196,17 @@ TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
             return h;
         }
     }
+
+    // barra di un gruppo (sopra la prima traccia): freccia/clic = comprimi, M e S = muto/solo di tutto il gruppo
+    for (int i = 0; i < n; ++i)
+        if (bandOf (i) > 0 && p.y >= laneTop (i) - groupBandH && p.y < laneTop (i))
+        {
+            h.type = HitType::GroupBar;
+            h.group = tracks[(size_t) i].groupId;
+            h.trackIndex = i;
+            h.groupPart = p.x >= headerW - 66 && p.x < headerW - 40 ? 1 : (p.x >= headerW - 36 && p.x < headerW - 10 ? 2 : 0);
+            return h;
+        }
 
     const int ti = trackIndexAtY (p.y);
     if (ti < 0 || ti >= n)
@@ -1536,6 +1557,7 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
                 return;
             }
         }
+        if (hit.type == HitType::GroupBar) { showGroupMenu (hit.group); return; }
         if (hit.type == HitType::ExportBar) { showExportBarMenu(); return; }
         if (hit.type == HitType::Marker) { showMarkerMenu (hit.markerId); return; }
         if (hit.type == HitType::Ruler) { showMarkerMenu (0); return; }
@@ -1550,6 +1572,13 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
         }
         else if (hit.track >= 0) showTrackMenu (hit.track);
         else showTrackMenu (-1);
+        return;
+    }
+
+    if (hit.type == HitType::GroupBar)
+    {
+        if (hit.groupPart == 0) { if (const auto* g = project.findGroup (hit.group)) project.setGroupCollapsed (hit.group, ! g->collapsed); }
+        else project.setGroupMuteSolo (hit.group, hit.groupPart == 2, ! groupAll (hit.group, hit.groupPart == 2));
         return;
     }
 
@@ -2038,7 +2067,13 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
 void TimelineView::mouseUp (const juce::MouseEvent& e)
 {
     if (drag == Drag::Marquee && ! dragStarted && ! e.mods.isPopupMenu())
-        engine.setPosition (juce::jmax<int64_t> (0, xToSample (e.x)));
+    {
+        const auto pos = juce::jmax<int64_t> (0, xToSample (e.x));
+        engine.setPosition (pos);
+        // un clic dentro un cue lo seleziona (la finestra ADR lo mostra)
+        for (auto& cue : project.getSession().cues)
+            if (pos >= cue.inPos && pos < cue.outPos) { project.selectedCueId = cue.id; break; }
+    }
     else if (drag == Drag::VideoMove && ! dragStarted)
         engine.setPosition (juce::jmax<int64_t> (0, xToSample (e.x)));
     else if (drag == Drag::TrackResize)
@@ -2118,6 +2153,7 @@ void TimelineView::mouseDoubleClick (const juce::MouseEvent& e)
 {
     const auto hit = hitTest (e.getPosition());
     if (hit.type == HitType::Marker) { renameMarkerDialog (hit.markerId); return; }
+    if (hit.type == HitType::GroupBar) { renameGroupDialog (hit.group); return; }
     if (hit.type == HitType::TrackResize && hit.trackIndex >= 0)
     {
         // doppio clic sul bordo: altezza predefinita
@@ -2195,6 +2231,112 @@ void TimelineView::renameTrackDialog (int trackId)
     aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, trackId] (int r)
     {
         if (r == 1 && safe != nullptr) safe->project.renameTrack (trackId, aw->getTextEditorContents ("name"));
+    }), true);
+}
+
+bool TimelineView::groupAll (int groupId, bool solo) const
+{
+    bool any = false;
+    for (auto& t : project.getSession().tracks)
+        if (t.groupId == groupId)
+        {
+            any = true;
+            if (! (solo ? t.live->solo : t.live->mute).load()) return false;
+        }
+    return any;
+}
+
+void TimelineView::drawGroupBars (juce::Graphics& g)
+{
+    const auto lanes = laneArea();
+    juce::Graphics::ScopedSaveState ss (g);
+    g.reduceClipRegion (0, lanes.getY(), lanes.getRight(), lanes.getHeight());
+    const auto& tracks = project.getSession().tracks;
+    for (int i = 0; i < (int) tracks.size(); ++i)
+    {
+        if (bandOf (i) == 0) continue;
+        const int y = laneTop (i) - groupBandH;
+        if (y + groupBandH < lanes.getY() || y > lanes.getBottom()) continue;
+        const auto* grp = project.findGroup (tracks[(size_t) i].groupId);
+        if (grp == nullptr) continue;
+        int members = 0;
+        for (auto& t : tracks) if (t.groupId == grp->id) ++members;
+
+        g.setGradientFill (juce::ColourGradient (panelHi, 0.0f, (float) y, panelTop, 0.0f, (float) (y + groupBandH), false));
+        g.fillRect (0, y, lanes.getRight(), groupBandH);
+        g.setColour (blue.withAlpha (0.85f));
+        g.fillRect (0, y, 4, groupBandH);
+        g.setColour (border);
+        g.drawHorizontalLine (y + groupBandH - 1, 0.0f, (float) lanes.getRight());
+
+        juce::Path arrow;   // ▶ compresso, ▼ aperto
+        const float ax = 14.0f, ay = (float) y + groupBandH * 0.5f;
+        if (grp->collapsed) arrow.addTriangle (ax - 3.0f, ay - 5.0f, ax - 3.0f, ay + 5.0f, ax + 4.0f, ay);
+        else arrow.addTriangle (ax - 5.0f, ay - 3.0f, ax + 5.0f, ay - 3.0f, ax, ay + 4.0f);
+        g.setColour (text);
+        g.fillPath (arrow);
+        g.setFont (font (11.5f, true));
+        g.drawText (grp->name.toUpperCase() + "   (" + juce::String (members) + ")", juce::Rectangle<int> (26, y, headerW - 100, groupBandH), juce::Justification::centredLeft, true);
+
+        for (int part = 1; part <= 2; ++part)
+        {
+            const bool on = groupAll (grp->id, part == 2);
+            const juce::Rectangle<int> r (headerW - (part == 1 ? 66 : 36), y + 3, 26, groupBandH - 6);
+            g.setColour (on ? (part == 1 ? accent : juce::Colour (0xffffc94d)) : panel);
+            g.fillRoundedRectangle (r.toFloat(), 3.0f);
+            g.setColour (on ? juce::Colours::black : dim);
+            g.setFont (font (10.5f, true));
+            g.drawText (part == 1 ? "M" : "S", r, juce::Justification::centred);
+        }
+    }
+}
+
+void TimelineView::showGroupMenu (int groupId)
+{
+    const auto* grp = project.findGroup (groupId);
+    if (grp == nullptr) return;
+    juce::PopupMenu m;
+    m.addItem (1, grp->collapsed ? TRANS ("Espandi il gruppo") : TRANS ("Comprimi il gruppo"));
+    m.addItem (2, TRANS ("Rinomina il gruppo..."));
+    m.addItem (3, TRANS ("Sciogli il gruppo (le tracce restano)"));
+    juce::Component::SafePointer<TimelineView> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options(), [safe, groupId] (int r)
+    {
+        if (safe == nullptr || r == 0) return;
+        auto& p = safe->project;
+        if (r == 1) { if (const auto* g = p.findGroup (groupId)) p.setGroupCollapsed (groupId, ! g->collapsed); }
+        else if (r == 2) safe->renameGroupDialog (groupId);
+        else if (r == 3) p.removeGroup (groupId);
+    });
+}
+
+void TimelineView::renameGroupDialog (int groupId)
+{
+    const auto* grp = project.findGroup (groupId);
+    if (grp == nullptr) return;
+    auto* aw = new juce::AlertWindow (TRANS ("Rinomina il gruppo"), "", juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("name", grp->name);
+    aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<TimelineView> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, groupId] (int r)
+    {
+        if (r == 1 && safe != nullptr) safe->project.renameGroup (groupId, aw->getTextEditorContents ("name"));
+    }), true);
+}
+
+void TimelineView::newGroupDialog (int trackId)
+{
+    auto* aw = new juce::AlertWindow (TRANS ("Nuovo gruppo"), TRANS ("Nome del gruppo (per esempio Dialoghi)"), juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("name", TRANS ("Dialoghi"));
+    aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<TimelineView> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, trackId] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        auto& p = safe->project;
+        p.setTrackGroup (trackId, p.addGroup (aw->getTextEditorContents ("name")));
     }), true);
 }
 
@@ -2276,6 +2418,16 @@ void TimelineView::showTrackMenu (int trackId)
         m.addSubMenu (TRANS ("Colore"), colours);
         m.addItem (2, TRANS ("Elimina traccia"), project.getSession().tracks.size() > 1);
         {
+            juce::PopupMenu groups;
+            const auto* tr = project.findTrack (trackId);
+            for (auto& g : project.getSession().groups) groups.addItem (400 + g.id, g.name, true, tr != nullptr && tr->groupId == g.id);
+            if (! project.getSession().groups.empty()) groups.addSeparator();
+            groups.addItem (398, TRANS ("Nuovo gruppo con questa traccia..."));
+            groups.addItem (397, TRANS ("Gruppo Dialoghi con tutte le tracce Dialoghi"));
+            groups.addItem (399, TRANS ("Fuori dai gruppi"), tr != nullptr && tr->groupId != 0);
+            m.addSubMenu (TRANS ("Gruppo"), groups);
+        }
+        {
             // tipo di traccia: applica la catena consigliata (EQ, compressore, limiter, livello)
             juce::PopupMenu types;
             const int cur = project.findTrack (trackId) != nullptr ? project.findTrack (trackId)->live->trackType.load() : 0;
@@ -2301,6 +2453,16 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 4 && safe->onImportRequested) safe->onImportRequested();
         else if (r == 5) safe->fitTrackHeights();
         else if (r == 6) p.clearAutomation (trackId);
+        else if (r == 399) p.setTrackGroup (trackId, 0);
+        else if (r == 398) safe->newGroupDialog (trackId);
+        else if (r == 397)
+        {
+            const int g = p.addGroup (TRANS ("Dialoghi"));
+            std::vector<int> ids;
+            for (auto& t : p.getSession().tracks) if (t.live->trackType.load() == TrackDialogue) ids.push_back (t.id);
+            for (int id : ids) p.setTrackGroup (id, g);
+        }
+        else if (r >= 400) p.setTrackGroup (trackId, r - 400);
         else if (r >= 200 && r < 200 + kNumTrackTypes) p.setTrackType (trackId, r - 200);
         else if (r >= 100) p.setTrackColour (trackId, trackPalette[r - 100]);
     });

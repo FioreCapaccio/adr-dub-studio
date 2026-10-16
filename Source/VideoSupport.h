@@ -12,6 +12,7 @@ struct Info
     bool ok = false;
     double duration = 0.0;   // secondi
     double fps = 25.0;
+    bool fpsKnown = false;   // false: il file non dichiara la frequenza e fps e' un valore di ripiego
     int width = 0, height = 0;
     bool hasAudio = false;
     juce::String error;

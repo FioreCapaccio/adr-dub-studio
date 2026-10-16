@@ -549,7 +549,8 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
             if (std::abs (rate - sampleRate) > 0.5) { if (done) done (TRANS ("La frequenza di campionamento e' cambiata.")); return; }
             beginEdit();
             session.video = va;
-            if (tcFormat == 2 && std::abs (va->fps - 25.0) > 0.01) tcFormat = tcFormatForFps (va->fps);
+            // il timecode della sessione prende la frequenza del video (il drop-frame resta se la frequenza e' la stessa)
+            if (info.fpsKnown && std::abs (va->fps - tcFmt().fps) > 0.01) tcFormat = tcFormatForFps (va->fps);
             if (audio != nullptr)
             {
                 // la traccia dell'audio del video sta in cima, accanto alla corsia video; una prima traccia vuota si riusa
@@ -1024,6 +1025,74 @@ void Project::trimToPlayhead (bool trimStart, int64_t pos)
     if (any) changed();
 }
 
+const TrackGroup* Project::findGroup (int groupId) const noexcept
+{
+    for (auto& g : session.groups) if (g.id == groupId) return &g;
+    return nullptr;
+}
+
+int Project::addGroup (const juce::String& name)
+{
+    const auto n = name.trim().isEmpty() ? juce::String ("Gruppo") : name.trim();
+    for (auto& g : session.groups) if (g.name.equalsIgnoreCase (n)) return g.id;
+    beginEdit();
+    int id = 1;
+    for (auto& g : session.groups) id = juce::jmax (id, g.id + 1);
+    session.groups.push_back ({ id, n, false });
+    changed();
+    return id;
+}
+
+void Project::setTrackGroup (int trackId, int groupId)
+{
+    const int from = trackIndexForId (trackId);
+    if (from < 0 || (groupId != 0 && findGroup (groupId) == nullptr) || session.tracks[(size_t) from].groupId == groupId) return;
+    beginEdit();
+    auto& tracks = session.tracks;
+    tracks[(size_t) from].groupId = groupId;
+    if (groupId != 0)   // accanto all'ultima traccia del gruppo, cosi' il gruppo resta compatto
+    {
+        int last = -1;
+        for (int i = 0; i < (int) tracks.size(); ++i) if (i != from && tracks[(size_t) i].groupId == groupId) last = i;
+        if (last >= 0)
+        {
+            auto t = std::move (tracks[(size_t) from]);
+            tracks.erase (tracks.begin() + from);
+            if (from < last) --last;
+            tracks.insert (tracks.begin() + last + 1, std::move (t));
+        }
+    }
+    changed();
+}
+
+void Project::renameGroup (int groupId, const juce::String& name)
+{
+    for (auto& g : session.groups)
+        if (g.id == groupId && name.trim().isNotEmpty()) { beginEdit(); g.name = name.trim(); changed(); return; }
+}
+
+void Project::removeGroup (int groupId)
+{
+    beginEdit();
+    for (auto& t : session.tracks) if (t.groupId == groupId) t.groupId = 0;
+    session.groups.erase (std::remove_if (session.groups.begin(), session.groups.end(), [groupId] (const TrackGroup& g) { return g.id == groupId; }), session.groups.end());
+    changed();
+}
+
+void Project::setGroupCollapsed (int groupId, bool collapsed)
+{
+    for (auto& g : session.groups) if (g.id == groupId) g.collapsed = collapsed;
+    markDirty();
+    sendChangeMessage();
+}
+
+void Project::setGroupMuteSolo (int groupId, bool solo, bool on)
+{
+    for (auto& t : session.tracks)
+        if (t.groupId == groupId) (solo ? t.live->solo : t.live->mute) = on;
+    liveChanged();
+}
+
 void Project::moveTrackTo (int from, int to)
 {
     const int n = (int) session.tracks.size();
@@ -1034,6 +1103,11 @@ void Project::moveTrackTo (int from, int to)
     auto t = std::move (session.tracks[(size_t) from]);
     session.tracks.erase (session.tracks.begin() + from);
     session.tracks.insert (session.tracks.begin() + to, std::move (t));
+    // la traccia entra nel gruppo dei vicini; se i vicini divergono resta nel suo gruppo solo se uno dei due e' lo stesso
+    auto& tracks = session.tracks;
+    const int prev = to > 0 ? tracks[(size_t) to - 1].groupId : 0, next = to + 1 < n ? tracks[(size_t) to + 1].groupId : 0;
+    auto& g = tracks[(size_t) to].groupId;
+    g = prev == next ? prev : ((g != 0 && (g == prev || g == next)) ? g : 0);
     changed();
 }
 
@@ -1306,6 +1380,7 @@ juce::var Project::toVar() const
     {
         auto* o = new juce::DynamicObject();
         o->setProperty ("name", t.name);
+        o->setProperty ("group", t.groupId);
         o->setProperty ("colour", t.colour.toString());
         o->setProperty ("volumeDb", (double) t.live->volumeDb.load());
         o->setProperty ("pan", (double) t.live->pan.load());
@@ -1380,6 +1455,16 @@ juce::var Project::toVar() const
         tracks.add (juce::var (o));
     }
     root->setProperty ("tracks", tracks);
+    juce::Array<juce::var> groups;
+    for (auto& g : session.groups)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("id", g.id);
+        o->setProperty ("name", g.name);
+        o->setProperty ("collapsed", g.collapsed);
+        groups.add (juce::var (o));
+    }
+    root->setProperty ("trackGroups", groups);
     return juce::var (root);
 }
 
@@ -1679,11 +1764,21 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     mk.colour = juce::Colour::fromString (mv.getProperty ("colour", "ffffc94d").toString());
                     result->markers.push_back (mk);
                 }
+            if (auto* ga = parsed.getProperty ("trackGroups", {}).getArray())
+                for (auto& gv : *ga)
+                {
+                    TrackGroup g;
+                    g.id = (int) gv.getProperty ("id", 0);
+                    g.name = gv.getProperty ("name", "Gruppo").toString();
+                    g.collapsed = (bool) gv.getProperty ("collapsed", false);
+                    if (g.id > 0) result->groups.push_back (g);
+                }
             if (auto* ta = parsed.getProperty ("tracks", {}).getArray())
                 for (auto& tv : *ta)
                 {
                     Track t;
                     t.name = tv.getProperty ("name", "Audio").toString();
+                    t.groupId = (int) tv.getProperty ("group", 0);
                     t.colour = juce::Colour::fromString (tv.getProperty ("colour", "ffe5584c").toString());
                     t.live->volumeDb = (float) (double) tv.getProperty ("volumeDb", 0.0);
                     t.live->pan = (float) (double) tv.getProperty ("pan", 0.0);
@@ -1786,6 +1881,12 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     result->tracks.push_back (std::move (t));
                 }
             if (result->tracks.empty()) { ok = false; errors = TRANS ("La sessione non contiene tracce."); }
+            for (auto& t : result->tracks)   // un gruppo che non esiste piu' non lascia tracce nascoste
+            {
+                bool known = false;
+                for (auto& g : result->groups) known = known || g.id == t.groupId;
+                if (! known) t.groupId = 0;
+            }
 
             const auto vpath = parsed.getProperty ("video", "").toString();
             if (ok && vpath.isNotEmpty())

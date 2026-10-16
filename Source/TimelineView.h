@@ -16,7 +16,7 @@ class TimelineView : public juce::Component,
 {
 public:
     static inline int headerW = 264;   // larghezza dell'intestazione delle tracce: cambia con il layout (Vista > Layout)
-    static constexpr int knobW = 50, cueStripH = 14, exportH = 12, rulerH = 44, sbSize = 12, videoH = 66, minTrackH = 48, maxTrackH = 400;
+    static constexpr int knobW = 50, cueStripH = 14, groupBandH = 24, exportH = 12, rulerH = 44, sbSize = 12, videoH = 66, minTrackH = 48, maxTrackH = 400;
 
     TimelineView (Project&, AudioEngine&);
     ~TimelineView() override;
@@ -75,15 +75,16 @@ private:
     enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, Trim, AutoSegment, TrackResize, VideoMove,
                       Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove };
     enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderInput, TrackResize,
-                         Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane };
-    struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; };
+                         Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane, GroupBar };
+    struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; int group = 0, groupPart = 0; /* 0 barra, 1 muto, 2 solo */ };
     struct Origin { int64_t id, start, offset, length, fadeIn, fadeOut; int track; };
 
     // geometria
     bool hasVideo() const noexcept { return project.getSession().video != nullptr; }
     int lanesTop() const noexcept { return rulerH + (hasVideo() ? videoH : 0); }
     juce::Rectangle<int> laneArea() const { return { headerW, lanesTop(), juce::jmax (0, getWidth() - headerW - sbSize), juce::jmax (0, getHeight() - lanesTop() - sbSize) }; }
-    int heightOf (int trackIdx) const;
+    int heightOf (int trackIdx) const;       // 0 se la traccia e' in un gruppo compresso
+    int bandOf (int trackIdx) const;         // barra del gruppo sopra la traccia, se e' la prima di una serie di tracce dello stesso gruppo
     int contentTop (int trackIdx) const;     // somma delle altezze precedenti
     int contentHeight() const;
     int laneTop (int trackIdx) const { return lanesTop() + contentTop (trackIdx) - scrollY; }
@@ -132,6 +133,11 @@ private:
     bool handleToolMouseDown (const juce::MouseEvent&, const Hit&);
     void beginDragEdit();
     void showTrackMenu (int trackId);
+    void showGroupMenu (int groupId);
+    void renameGroupDialog (int groupId);
+    void newGroupDialog (int trackId);
+    void drawGroupBars (juce::Graphics&);
+    bool groupAll (int groupId, bool solo) const;   // tutte le tracce del gruppo mute / in solo
     void showClipMenu (int64_t clipId);
     void showMarkerMenu (int markerId);
     void showExportBarMenu();

@@ -19,7 +19,7 @@ std::vector<Entry> list (const juce::File& sessionFile)
 {
     std::vector<Entry> out;
     if (sessionFile == juce::File()) return out;
-    for (const auto& e : juce::RangedDirectoryIterator (folderFor (sessionFile), false, "*.arostudio", juce::File::findFiles))
+    for (const auto& e : juce::RangedDirectoryIterator (folderFor (sessionFile), false, "*.adb;*.arostudio", juce::File::findFiles))
     {
         Entry v;
         v.file = e.getFile();
@@ -42,7 +42,7 @@ juce::File save (const Project& p, const juce::String& note, juce::String& error
     int next = 1;
     for (auto& v : list (file)) next = juce::jmax (next, v.number + 1);
     const auto name = file.getFileNameWithoutExtension() + "_v" + juce::String (next).paddedLeft ('0', 3) + "_" + juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M");
-    const auto dest = dir.getChildFile (name + ".arostudio");
+    const auto dest = dir.getChildFile (name + ".adb");
     if (! p.saveCopy (dest, error)) return {};
     if (note.trim().isNotEmpty()) dest.withFileExtension ("txt").replaceWithText (note.trim());
     return dest;

@@ -774,7 +774,7 @@ void MainComponent::confirmDiscard (std::function<void()> proceed)
             }
             else
             {
-                safe->chooser = std::make_unique<juce::FileChooser> ("Salva sessione", juce::File(), "*.arostudio");
+                safe->chooser = std::make_unique<juce::FileChooser> ("Salva sessione", juce::File(), "*.adb");
                 safe->chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                                                 | juce::FileBrowserComponent::warnAboutOverwriting,
                                             [safe, proceed] (const juce::FileChooser& fc)
@@ -782,7 +782,7 @@ void MainComponent::confirmDiscard (std::function<void()> proceed)
                     auto f = fc.getResult();
                     if (safe == nullptr || f == juce::File()) return;
                     juce::String err;
-                    if (safe->project->save (f.withFileExtension ("arostudio"), err)) proceed(); else safe->showError (err);
+                    if (safe->project->save (f.withFileExtension ("adb"), err)) proceed(); else safe->showError (err);
                 });
             }
         }
@@ -1067,7 +1067,7 @@ void MainComponent::importFromCommandLine (const juce::StringArray& paths)
         juce::File f (p);
         if (f.existsAsFile())
         {
-            if (f.hasFileExtension ("arostudio")) { project->loadSession (f, [] (juce::String) {}); return; }
+            if (isSessionFile (f)) { project->loadSession (f, [] (juce::String) {}); return; }
             if (video::isVideoFile (f)) { loadVideo (f); continue; }
             files.add (f);
         }
@@ -1090,11 +1090,16 @@ void MainComponent::loadVideo (const juce::File& f)
     loadingVideo = f;
 
     juce::Component::SafePointer<MainComponent> safe (this);
-    project->setVideo (f, [safe] (juce::String msg)
+    const int formatBefore = project->tcFormat;
+    project->setVideo (f, [safe, formatBefore] (juce::String msg)
     {
         if (safe == nullptr) return;
         safe->loadingVideo = juce::File();
         if (msg.isNotEmpty()) safe->showError (msg);
+        else if (auto v = safe->project->getSession().video; v != nullptr && safe->project->tcFormat != formatBefore)
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Frequenza di fotogrammi"),
+                                                    TRANS ("Il video e' a ") + juce::String (v->fps, 3) + TRANS (" fps: ho impostato il timecode della sessione su ")
+                                                        + juce::String (safe->project->tcFmt().name) + TRANS (". Si cambia in ADR > Impostazioni sessione."));
         safe->timeline->zoomToFit();
     });
 }
@@ -1268,7 +1273,7 @@ void MainComponent::runExport (const ExportOptions& o)
 
 void MainComponent::saveAs()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Salva sessione", project->getFile(), "*.arostudio");
+    chooser = std::make_unique<juce::FileChooser> ("Salva sessione", project->getFile(), "*.adb");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::warnAboutOverwriting,
@@ -1277,8 +1282,8 @@ void MainComponent::saveAs()
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
         juce::String err;
-        if (! safe->project->save (f.withFileExtension ("arostudio"), err)) safe->showError (err);
-        else safe->addRecent (f.withFileExtension ("arostudio"));
+        if (! safe->project->save (f.withFileExtension ("adb"), err)) safe->showError (err);
+        else safe->addRecent (f.withFileExtension ("adb"));
     });
 }
 
@@ -1295,7 +1300,7 @@ void MainComponent::openDialog()
     confirmDiscard ([safe]
     {
         if (safe == nullptr) return;
-        safe->chooser = std::make_unique<juce::FileChooser> ("Apri sessione", juce::File(), "*.arostudio");
+        safe->chooser = std::make_unique<juce::FileChooser> ("Apri sessione", juce::File(), "*.adb;*.arostudio");
         safe->chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                                     [safe] (const juce::FileChooser& fc)
         {

@@ -237,14 +237,19 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     cbFilter.onChange = [this]
     {
         filterChar = cbFilter.getSelectedId() > 1 ? cbFilter.getText() : juce::String();
-        rebuildShown();
         // se il cue selezionato non fa parte del filtro, passa al primo cue del personaggio
-        if (! shown.empty() && selectedRow() < 0)
-        {
-            project.selectedCueId = project.getSession().cues[shown.front()].id;
-            project.sendChangeMessage();
-            if (actions.goToCue) actions.goToCue (project.selectedCueId);
-        }
+        const auto& cues = project.getSession().cues;
+        const auto matches = [this] (const AdrCue& c) { return filterChar.isEmpty() || c.character.trim().equalsIgnoreCase (filterChar); };
+        const auto* sel = project.findCue (project.selectedCueId);
+        if (sel == nullptr || ! matches (*sel))
+            for (auto& c : cues)
+                if (matches (c))
+                {
+                    project.selectedCueId = c.id;
+                    project.sendChangeMessage();
+                    if (actions.goToCue) actions.goToCue (c.id);
+                    break;
+                }
         refresh();
     };
     addAndMakeVisible (lblFilter);
@@ -280,6 +285,9 @@ void AdrPanel::rebuildShown()
     for (auto& c : cues) if (c.character.trim().isNotEmpty()) names.addIfNotAlreadyThere (c.character.trim());
     names.sortNatural();
     if (filterChar.isNotEmpty() && ! names.contains (filterChar, true)) filterChar = {};
+    // un cue scelto da fuori (timeline) che il filtro nasconderebbe: torna a mostrare tutti
+    if (const auto* sel = project.findCue (project.selectedCueId); sel != nullptr && filterChar.isNotEmpty() && ! sel->character.trim().equalsIgnoreCase (filterChar))
+        filterChar = {};
 
     cbFilter.clear (juce::dontSendNotification);
     cbFilter.addItem (TRANS ("Tutti i personaggi"), 1);

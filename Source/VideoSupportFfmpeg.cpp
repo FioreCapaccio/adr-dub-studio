@@ -88,6 +88,7 @@ Info probe (const juce::File& f)
         double fps = parseRate (s.getProperty ("avg_frame_rate", "0").toString());
         if (fps < 1.0) fps = parseRate (s.getProperty ("r_frame_rate", "0").toString());
         info.fps = fps > 1.0 ? fps : 25.0;
+        info.fpsKnown = fps > 1.0;
         // durata del contenitore (comprende l'eventuale ritardo iniziale del video): e' quella che conta per il montaggio
         double dur = juce::jmax (s.getProperty ("duration", "0").toString().getDoubleValue(),
                                  json.getProperty ("format", {}).getProperty ("duration", "0").toString().getDoubleValue());

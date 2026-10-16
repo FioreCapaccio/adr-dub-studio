@@ -14,6 +14,9 @@
 
 namespace fc
 {
+/** File di sessione: .adb (le sessioni salvate con le versioni precedenti, .arostudio, si aprono ancora). */
+inline bool isSessionFile (const juce::File& f) { return f.hasFileExtension ("adb;arostudio"); }
+
 inline float dbToGain (float db) noexcept { return db <= -79.5f ? 0.0f : juce::Decibels::decibelsToGain (db); }
 
 //==============================================================================
@@ -201,9 +204,18 @@ inline float evalAutomationDb (const std::vector<AutoPoint>& pts, int64_t pos)
     return (float) ((double) pts[lo].db + t * (double) (pts[hi].db - pts[lo].db));
 }
 
+/** Gruppo di tracce (cartella): le tracce con lo stesso groupId, di norma vicine, si mostrano sotto una barra comune e si comprimono insieme. */
+struct TrackGroup
+{
+    int id = 0;
+    juce::String name;
+    bool collapsed = false;
+};
+
 struct Track
 {
     int id = 0;
+    int groupId = 0;   // 0 = nessun gruppo
     juce::String name;
     juce::Colour colour;
     std::shared_ptr<TrackLive> live = std::make_shared<TrackLive>();
@@ -270,6 +282,7 @@ struct Session
 {
     double sampleRate = 48000.0;   // frequenza del progetto (serve ai filtri)
     std::vector<Track> tracks;
+    std::vector<TrackGroup> groups;
     std::vector<Marker> markers;
     std::vector<AdrCue> cues;
     std::shared_ptr<VideoAsset> video;
@@ -401,6 +414,14 @@ public:
     /** Applica a una traccia il preset del tipo scelto (EQ, compressore, limiter, livello) e ne ricorda il tipo. */
     void setTrackType (int trackId, int type);
     void moveTrackTo (int fromIndex, int toIndex);
+    // gruppi di tracce
+    int addGroup (const juce::String& name);                  // ritorna l'id (esiste gia' un gruppo con quel nome: lo riusa)
+    void setTrackGroup (int trackId, int groupId);            // 0 = fuori dai gruppi; la traccia si sposta accanto alle altre del gruppo
+    void renameGroup (int groupId, const juce::String& name);
+    void removeGroup (int groupId);                           // le tracce restano, senza gruppo
+    void setGroupCollapsed (int groupId, bool collapsed);     // solo vista: nessun passo di undo
+    void setGroupMuteSolo (int groupId, bool solo, bool on);  // muto/solo di tutte le tracce del gruppo
+    const TrackGroup* findGroup (int groupId) const noexcept;
     void duplicateTrack (int id);
     void renameTrack (int id, const juce::String& name);
     void setTrackColour (int id, juce::Colour c);

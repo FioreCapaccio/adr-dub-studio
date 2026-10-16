@@ -118,6 +118,7 @@ private:
         stepConform();
         stepMtc();
         stepLang();
+        stepTrackFolders();
         stepEditing();
         stepPdc();
         stepAux();
@@ -205,7 +206,7 @@ private:
         project->addMarker (9 * 48000, "Scena 2");
 
         // salvataggio e caricamento sessione
-        auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest.arostudio");
+        auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest.adb");
         juce::String err;
         project->getSession().group[2]->volumeDb = -3.0f;   // gruppi: i parametri e l'instradamento si salvano (un gruppo a 0 dB non cambia il mix)
         project->getSession().tracks[0].live->outBus = 4;
@@ -635,6 +636,8 @@ private:
         const auto& f2398 = fc::tcFormats()[0];
         const auto& fdf = fc::tcFormats()[4];
         const auto& fndf = fc::tcFormats()[3];
+        expect (fc::tcFormatForFps (24000.0 / 1001.0) == 0 && fc::tcFormatForFps (23.976) == 0 && fc::tcFormatForFps (29.97) == 3 && fc::tcFormatForFps (24.0) == 1 && fc::tcFormatForFps (30.0) == 5 && fc::tcFormatForFps (50.0) == 6 && fc::tcFormatForFps (59.94) == 7,
+                "fps del video -> formato di timecode piu' vicino (23,976 / 24 / 29,97 / 30 / 50 / 59,94)");
         expect (fc::secondsToTimecode (3600.0, f25) == "01:00:00:00", "timecode 25 fps: 3600 s = 01:00:00:00");
         double sec = 0.0;
         expect (fc::timecodeToSeconds ("01:00:10:12", f25, sec) && std::abs (sec - 3610.48) < 1.0e-6, "timecode 25 fps: lettura di 01:00:10:12");
@@ -1384,7 +1387,9 @@ private:
             fc::Clip c; c.id = 1; c.asset = asset; c.start = 24000; c.offset = 4800; c.length = 30000; c.gainDb = -3.0f;
             p.edit().tracks[3].clips = { c };
         }
-        const auto sess = dir.getChildFile ("sessione.arostudio");
+        p.setTrackGroup (p.getSession().tracks[1].id, p.addGroup ("Dialoghi"));
+        p.setGroupCollapsed (p.getSession().groups[0].id, true);
+        const auto sess = dir.getChildFile ("sessione.adb");
         expect (p.save (sess, err), "media mancanti: sessione salvata " + err);
 
         // il file sparisce
@@ -1400,6 +1405,8 @@ private:
             expect (c != nullptr && c->asset->offline && c->start == 24000 && c->offset == 4800 && c->length == 30000 && std::abs (c->gainDb + 3.0f) < 1.0e-4f,
                     "media mancanti: il clip resta nella sessione (offline) con posizione, offset, lunghezza e guadagno");
             expect (e.contains ("File non trovato") && project2->hasOfflineMedia(), "media mancanti: segnalati all'apertura");
+            expect (s2.groups.size() == 1 && s2.groups[0].name == "Dialoghi" && s2.groups[0].collapsed && s2.tracks[1].groupId == s2.groups[0].id && s2.tracks[0].groupId == 0,
+                    "Gruppi: nome, compresso e appartenenza si ritrovano dopo il salvataggio");
 
             fc::Mixer m;
             juce::AudioBuffer<float> buf (2, 512);
@@ -1407,7 +1414,7 @@ private:
             expect (buf.getMagnitude (0, 512) == 0.0f, "media mancanti: il clip offline non suona (e non manda in crash il mixer)");
 
             // risalvando il percorso non si perde
-            const auto again = dir.getChildFile ("risalvata.arostudio");
+            const auto again = dir.getChildFile ("risalvata.adb");
             juce::String er;
             project2->saveCopy (again, er);
             expect (juce::JSON::parse (again).toString().isEmpty() == false || again.loadFileAsString().contains ("voce.wav"), "media mancanti: il percorso del file resta nella sessione risalvata");
@@ -1573,6 +1580,50 @@ private:
         bool warnDup = false;
         for (auto& w : dup.warnings) warnDup = warnDup || w.contains ("piu' volte");
         expect (warnDup && dup.segments.size() == 1, "ReConform: materiale usato due volte, si segue la prima occorrenza");
+    }
+
+    // gruppi di tracce (cartelle)
+    void stepTrackFolders()
+    {
+        fc::Project p (formats, 48000.0);
+        for (int i = 0; i < 4; ++i) p.addTrack();
+        auto id = [&p] (int i) { return p.getSession().tracks[(size_t) i].id; };
+        auto grp = [&p] (int i) { return p.getSession().tracks[(size_t) i].groupId; };
+        const int t0 = id (0), t1 = id (1), t2 = id (2), t3 = id (3);
+
+        const int g = p.addGroup ("Dialoghi");
+        expect (g > 0 && p.addGroup ("dialoghi") == g && p.getSession().groups.size() == 1, "Gruppi: stesso nome = stesso gruppo");
+        p.setTrackGroup (t3, g);
+        p.setTrackGroup (t1, g);
+        expect (p.getSession().tracks[2].id == t3 && p.getSession().tracks[3].id == t1 && grp (2) == g && grp (3) == g && grp (0) == 0,
+                "Gruppi: una traccia entra nel gruppo accanto alle altre");
+
+        p.moveTrackTo (3, 2);   // t1 e t3 si scambiano: restano nel gruppo
+        expect (grp (2) == g && grp (3) == g, "Gruppi: spostare dentro il gruppo lo mantiene");
+        p.moveTrackTo (0, 3);   // t0 (senza gruppo) in mezzo/fine: prende il gruppo se i vicini coincidono
+        expect (p.getSession().tracks[3].id == t0, "Gruppi: sposta la traccia");
+        p.moveTrackTo (3, 0);
+        expect (grp (0) == 0, "Gruppi: fuori dal gruppo resta senza gruppo");
+
+        p.setGroupCollapsed (g, true);
+        expect (p.findGroup (g)->collapsed, "Gruppi: compresso");
+        p.setGroupMuteSolo (g, false, true);
+        int muted = 0;
+        for (auto& t : p.getSession().tracks) muted += t.live->mute.load() ? 1 : 0;
+        expect (muted == 2, "Gruppi: muto del gruppo = solo le sue tracce (" + juce::String (muted) + ")");
+
+        // salvataggio e ricaricamento
+        const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_gruppi.adb");
+        juce::String err;
+        expect (p.save (f, err), "Gruppi: sessione salvata " + err);
+        expect (f.loadFileAsString().contains ("\"collapsed\"") && f.loadFileAsString().contains ("Dialoghi"), "Gruppi: il file della sessione contiene i gruppi");
+        f.deleteFile();
+
+        p.removeGroup (g);
+        expect (p.getSession().groups.empty() && grp (2) == 0 && grp (3) == 0, "Gruppi: sciogliere il gruppo lascia le tracce");
+        p.undo();
+        expect (p.getSession().groups.size() == 1 && grp (2) == g, "Gruppi: undo dello scioglimento");
+        (void) t2;
     }
 
     // sincronia esterna MTC e scorciatoie
@@ -2339,7 +2390,7 @@ private:
             for (int c = 0; c < 2; ++c) for (int i = 0; i < 2048; ++i) finite = finite && std::isfinite (buf.getSample (c, i));
             expect (finite && buf.getMagnitude (0, 2048) > 0.0f, "audio attraverso il plug-in: valido, picco " + juce::String (buf.getMagnitude (0, 2048), 3));
 
-            auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_plugin.arostudio");
+            auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_plugin.adb");
             juce::String err;
             expect (project->save (tmp, err), "salva sessione con plug-in");
 
@@ -2474,10 +2525,12 @@ private:
         if (! videoFile.existsAsFile()) { std::cout << "     (nessun video passato: salto i test video)" << std::endl; finishCb (fails); return; }
 
         const int tracksBefore = (int) project->getSession().tracks.size();
+        project->tcFormat = 1;   // sessione a 24 fps: il video a 25 fps deve portarla a 25
         project->setVideo (videoFile, [this, tracksBefore] (juce::String msg)
         {
             auto v = project->getSession().video;
             expect (msg.isEmpty() && v != nullptr, "video caricato " + msg);
+            expect (project->tcFormat == 2, "fps del video riconosciuti: il timecode della sessione passa da 24 a 25 fps");
             if (v == nullptr) { finishCb (fails); return; }
             expect (std::abs (v->duration - 20.0) < 0.1 && std::abs (v->fps - 25.0) < 0.01 && v->width == 640 && v->height == 360,
                     "probe video: " + juce::String (v->duration, 2) + " s, " + juce::String (v->fps, 2) + " fps, " + juce::String (v->width) + "x" + juce::String (v->height));
@@ -2492,7 +2545,7 @@ private:
                         + juce::String (t.clips.empty() ? 0 : (juce::int64) t.clips[0].length));
 
             // salva/ricarica con video
-            auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_video.arostudio");
+            auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_video.adb");
             juce::String err;
             expect (project->save (tmp, err), "salva sessione con video");
             project2 = std::make_unique<fc::Project> (formats, 48000.0);
@@ -2572,7 +2625,7 @@ private:
                 // offset e altezze tracce sopravvivono a salvataggio e caricamento
                 project->setVideoOffset (0.123);
                 project->getSession().tracks[0].live->height = 150;
-                auto tmp3 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_offset.arostudio");
+                auto tmp3 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_offset.adb");
                 juce::String err3;
                 project->save (tmp3, err3);
                 project3 = std::make_unique<fc::Project> (formats, 48000.0);
@@ -2601,7 +2654,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.8.1"; }
+    const juce::String getApplicationVersion() override { return "2.9.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
