@@ -163,6 +163,9 @@ private:
     std::shared_ptr<VideoAsset> shownVideo;
     juce::File loadingVideo;
     std::unique_ptr<AdrWindow> adrWindow;
+    std::unique_ptr<class BoothWindow> scriptWindow, cueWindow;
+    void toggleScriptWindow();
+    void toggleCueWindow();
     AdrPanel* adrPanel = nullptr;
     int adrRecCue = 0;                // cue in registrazione (0 = nessuno)
     int64_t adrRecStop = 0;

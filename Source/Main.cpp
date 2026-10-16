@@ -9,6 +9,7 @@
 #include "CueSheet.h"
 #include "AudioAlign.h"
 #include "AutoDuck.h"
+#include "BoothTools.h"
 #include "ThemeManager.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
@@ -106,6 +107,7 @@ private:
         stepWorkflow();
         stepDelivery();
         stepSync();
+        stepBooth();
         stepEditing();
         stepPdc();
         stepAux();
@@ -1345,6 +1347,114 @@ private:
         expect (ok && peakAt == 1000 && std::abs (peakV - amp) < 0.01f, "export: impulso al campione " + juce::String (peakAt) + " (atteso 1000)");
     }
 
+    // cuffie dell'attore: mix su una seconda coppia di uscite, bip con livello proprio, talkback del direttore
+    void stepBooth()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>();
+        a->name = "tono";
+        a->audio.setSize (2, 96000);
+        for (int i = 0; i < 96000; ++i) { const float v = 0.4f * std::sin (0.05f * (float) i); a->audio.setSample (0, i, v); a->audio.setSample (1, i, v); }
+        a->buildPeaks();
+        auto& t = p.edit().tracks[0];
+        fc::Clip c; c.id = 1; c.asset = a; c.start = 0; c.length = 96000;
+        t.clips = { c };
+        t.live->limiterOn = false; t.live->eq.enabled = false; t.live->comp.enabled = false; t.live->volumeDb = 0.0f;
+        p.edit().master->limiterOn = false;
+
+        constexpr int block = 256;
+        auto run = [&] (fc::AudioEngine& eng, int numOut, bool withInput, int blocks, std::vector<std::vector<float>>& outs, float inLevel = 0.2f)
+        {
+            outs.assign ((size_t) numOut, std::vector<float> ((size_t) block, 0.0f));
+            std::vector<float> in ((size_t) block, inLevel);
+            const float* ins[1] = { in.data() };
+            for (int b = 0; b < blocks; ++b)
+            {
+                std::vector<float*> ptr;
+                for (auto& o : outs) ptr.push_back (o.data());
+                eng.audioDeviceIOCallbackWithContext (withInput ? ins : nullptr, withInput ? 1 : 0, ptr.data(), numOut, block, juce::AudioIODeviceCallbackContext());
+            }
+        };
+        auto peakOf = [] (const std::vector<float>& v) { float m = 0.0f; for (auto x : v) m = juce::jmax (m, std::abs (x)); return m; };
+
+        // lettore copione: quale cue mostrare, conto alla rovescia, avanzamento
+        {
+            std::vector<fc::AdrCue> cues (3);
+            const int64_t sr48 = 48000;
+            cues[0].number = 2; cues[0].inPos = 20 * sr48; cues[0].outPos = 24 * sr48;
+            cues[1].number = 1; cues[1].inPos = 10 * sr48; cues[1].outPos = 14 * sr48;
+            cues[2].number = 3; cues[2].inPos = 30 * sr48; cues[2].outPos = 31 * sr48;
+            const auto sc = fc::script::sorted (cues);
+            expect (sc[0].number == 1 && sc[1].number == 2 && sc[2].number == 3, "copione: cue ordinati per posizione");
+            auto st = fc::script::stateAt (sc, 5 * sr48, 48000.0, 3.0);
+            expect (st.valid && st.current == 0 && ! st.active && std::abs (st.secondsToStart - 5.0) < 1.0e-6, "copione: prima del primo cue mostra il prossimo, non ancora attivo");
+            st = fc::script::stateAt (sc, 8 * sr48, 48000.0, 3.0);
+            expect (st.current == 0 && st.active && std::abs (st.secondsToStart - 2.0) < 1.0e-6 && st.progress == 0.0, "copione: nei 3 s prima dell'ingresso e' attivo con il conto alla rovescia");
+            st = fc::script::stateAt (sc, 12 * sr48, 48000.0, 3.0);
+            expect (st.current == 0 && st.active && std::abs (st.progress - 0.5) < 1.0e-6, "copione: a meta' del cue l'avanzamento e' 50%");
+            st = fc::script::stateAt (sc, 15 * sr48, 48000.0, 3.0);
+            expect (st.current == 1 && ! st.active, "copione: finito un cue passa al successivo");
+            st = fc::script::stateAt (sc, 40 * sr48, 48000.0, 3.0);
+            expect (st.valid && st.current == 2 && st.progress == 1.0, "copione: dopo l'ultimo resta l'ultimo, concluso");
+            expect (! fc::script::stateAt ({}, 0, 48000.0, 3.0).valid, "copione: nessun cue = niente da mostrare");
+        }
+
+        // 1. cuffie spente: la seconda coppia resta muta
+        {
+            fc::AudioEngine eng;
+            eng.setNumInputChannelsForTest (1);
+            eng.publish (std::make_shared<const fc::Session> (p.getSession()));
+            eng.play();
+            std::vector<std::vector<float>> o;
+            run (eng, 4, true, 8, o);
+            expect (peakOf (o[0]) > 0.3f && peakOf (o[2]) == 0.0f && peakOf (o[3]) == 0.0f, "cuffie spente: master suona (" + juce::String (peakOf (o[0]), 2) + "), uscite 3-4 mute");
+        }
+        // 2. cuffie accese: stessa musica sulle uscite 3-4 con il livello del mix
+        {
+            fc::AudioEngine eng;
+            eng.setNumInputChannelsForTest (1);
+            eng.publish (std::make_shared<const fc::Session> (p.getSession()));
+            eng.cue.enabled = true; eng.cue.pair = 1; eng.cue.mixDb = -6.0f;
+            eng.play();
+            std::vector<std::vector<float>> o;
+            run (eng, 4, true, 8, o);
+            const float m = peakOf (o[0]), cu = peakOf (o[2]);
+            expect (std::abs (cu / m - 0.5f) < 0.02f && std::abs (peakOf (o[3]) - cu) < 0.01f, "cuffie: mix a -6 dB sulle uscite 3-4 (rapporto " + juce::String (cu / m, 3) + ")");
+            run (eng, 2, true, 2, o);
+            expect (peakOf (o[0]) > 0.3f, "cuffie accese con una scheda a sole 2 uscite: il master non ne risente");
+            // 3. talkback: il microfono del direttore va solo nelle cuffie e il mix si abbassa
+            eng.cue.talkOn = true; eng.cue.talkDb = 0.0f; eng.cue.mixDuckDb = -12.0f; eng.cue.mixDb = 0.0f; eng.cue.talkInput = 0;
+            run (eng, 4, true, 8, o, 0.2f);
+            const float masterPk = peakOf (o[0]);
+            const float expectCue = 0.4f * std::pow (10.0f, -12.0f / 20.0f) + 0.2f;   // mix abbassato + microfono
+            expect (masterPk > 0.35f && masterPk < 0.45f && std::abs (peakOf (o[2]) - expectCue) < 0.05f, "talkback: nelle cuffie mix -12 dB + microfono (" + juce::String (peakOf (o[2]), 3) + ", atteso " + juce::String (expectCue, 3) + "), nel master niente (" + juce::String (masterPk, 3) + ")");
+        }
+        // 4. motore fermo: il talkback funziona lo stesso
+        {
+            fc::AudioEngine eng;
+            eng.setNumInputChannelsForTest (1);
+            eng.publish (std::make_shared<const fc::Session> (p.getSession()));
+            eng.cue.enabled = true; eng.cue.talkOn = true; eng.cue.talkDb = -6.0f;
+            std::vector<std::vector<float>> o;
+            run (eng, 4, true, 4, o, 0.4f);
+            expect (peakOf (o[0]) == 0.0f && std::abs (peakOf (o[2]) - 0.2f) < 0.01f, "talkback a motore fermo: solo nelle cuffie (" + juce::String (peakOf (o[2]), 3) + ")");
+        }
+        // 5. bip: stesso istante, livello proprio nelle cuffie
+        {
+            fc::Project q (formats, 48000.0);
+            q.edit().master->limiterOn = false;
+            fc::AudioEngine eng;
+            eng.publish (std::make_shared<const fc::Session> (q.getSession()));
+            eng.cue.enabled = true; eng.cue.beepDb = -20.0f;
+            eng.setBeeps ({ 0 });
+            eng.play();
+            std::vector<std::vector<float>> o;
+            float mainPk = 0.0f, cuePk = 0.0f;
+            for (int b = 0; b < 12; ++b) { run (eng, 4, false, 1, o); mainPk = juce::jmax (mainPk, peakOf (o[0])); cuePk = juce::jmax (cuePk, peakOf (o[2])); }
+            expect (mainPk > 0.2f && std::abs (cuePk / mainPk - 0.1f) < 0.02f, "bip: nelle cuffie a -20 dB rispetto al master (" + juce::String (cuePk / juce::jmax (0.001f, mainPk), 3) + ")");
+        }
+    }
+
     // sincronia: allineamento alla guida e ducking automatico
     void stepSync()
     {
@@ -2145,7 +2255,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.2.0"; }
+    const juce::String getApplicationVersion() override { return "2.3.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

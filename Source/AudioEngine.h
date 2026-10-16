@@ -174,6 +174,21 @@ public:
         beepCount = n;
     }
     void clearBeeps() { beepCount = 0; }
+    /** Mix per le cuffie dell'attore su una seconda coppia di uscite (la prima coppia e' il master): mix, bip e talkback del direttore con livelli propri. */
+    struct CueMix
+    {
+        std::atomic<bool> enabled { false };
+        std::atomic<int> pair { 1 };               // coppia di uscite: 1 = uscite 3-4, 2 = 5-6...
+        std::atomic<float> mixDb { 0.0f }, beepDb { 0.0f }, talkDb { 0.0f };
+        std::atomic<float> mixDuckDb { -12.0f };   // di quanto si abbassa il mix mentre il direttore parla
+        std::atomic<int> talkInput { 0 };          // ingresso del microfono del direttore (0 = il primo)
+        std::atomic<bool> talkOn { false };        // tasto talkback premuto
+        std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
+    };
+    CueMix cue;
+    int getNumOutputChannels() const noexcept { return numOutputs.load(); }
+    /** Apre le uscite necessarie alla coppia indicata (thread messaggi). Ritorna un errore, o stringa vuota se va bene. */
+    juce::String openCueOutputs (int pair);
     std::atomic<bool> monitorInput { false };
     std::atomic<float> inPeakL { 0.0f }, inPeakR { 0.0f };
     std::function<void (double)> onSampleRateChanged; // thread messaggi
@@ -198,6 +213,11 @@ private:
     };
 
     void processChunk (int n, const float* const* in, int numIn, int inOffset);
+    void processChunkMain (int n, const float* const* in, int numIn, int inOffset);
+    void finishCue (int n, const float* const* in, int numIn, int inOffset);
+    juce::AudioBuffer<float> cueBuf { 2, Mixer::kChunk };
+    bool cueReady = false;
+    std::atomic<int> numOutputs { 2 };
 
     static constexpr int kSpecCap = 16384;   // potenza di 2
     std::array<float, kSpecCap> specRing {};

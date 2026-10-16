@@ -4,6 +4,7 @@
 #include "CueSheet.h"
 #include "AudioAlign.h"
 #include "AutoDuck.h"
+#include "BoothTools.h"
 #include "VideoSupport.h"
 #include "Commands.h"
 #include "ExportDialog.h"
@@ -283,6 +284,8 @@ MainComponent::~MainComponent()
     autosaveFile().deleteFile();
     autosaveInfo().deleteFile();
     if (videoWindow != nullptr) { videoWindow->clearContentComponent(); videoWindow.reset(); }
+    scriptWindow.reset();
+    cueWindow.reset();
     adrWindow.reset();
 
     if (auto xml = engine.deviceManager.createStateXml())
@@ -1302,7 +1305,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1375,6 +1378,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAdrExportCsv:  i.setInfo ("Esporta cue sheet (CSV)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportPT:   i.setInfo ("Esporta cue come marker Pro Tools (testo)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportBwf:  i.setInfo ("Esporta take attivi (BWF con timecode)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdScriptReader:  i.setInfo ("Lettore copione per l'attore", "", "ADR", 0); i.setTicked (scriptWindow != nullptr); break;
+        case cmdCueMix:        i.setInfo ("Cuffie dell'attore e talkback...", "", "ADR", 0); i.setTicked (cueWindow != nullptr); break;
         case cmdAlignToGuide:  i.setInfo ("Allinea alla guida (sincronia automatica)...", "", "Modifica", 0); break;
         case cmdAutoDuck:      i.setInfo ("Ducking automatico del fondo sotto i dialoghi...", "", "Traccia", 0); break;
         case cmdDetectCuts:    i.setInfo ("Rileva i tagli del video (marker)...", "", "Marker", 0); i.setActive (project->getSession().video != nullptr); break;
@@ -1487,6 +1492,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrExportBwf:  exportAdrBwf(); break;
         case cmdAdrCueSheet:   exportCueSheet(); break;
         case cmdAlignToGuide:  alignSelectedToGuide(); break;
+        case cmdScriptReader:  toggleScriptWindow(); break;
+        case cmdCueMix:        toggleCueWindow(); break;
         case cmdAutoDuck:      autoDuckDialog(); break;
         case cmdDetectCuts:    detectVideoCuts(); break;
         case cmdRulerTc:       project->rulerTimecode = ! project->rulerTimecode; project->markDirty(); timeline->repaint(); break;
@@ -1722,7 +1729,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 m.addItem (1000 + (int) i, marks[i].name + "   " + project->formatTc ((double) marks[i].pos / project->getSampleRate()));
             break;
         }
-        case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdSessionSettings }); break;
+        case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, 0, cmdSessionSettings }); break;
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig }); break;
         case 8: add ({ cmdShortcuts }); break;
         case 7:
@@ -2018,6 +2025,39 @@ void MainComponent::recordAdrCue (int cueId)
 namespace
 {
 juce::String csvField (const juce::String& s) { return "\"" + s.replace ("\"", "\"\"").replaceCharacters ("\r\n", "  ") + "\""; }
+}
+
+void MainComponent::toggleScriptWindow()
+{
+    if (scriptWindow != nullptr) { scriptWindow.reset(); commandManager.commandStatusChanged(); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    scriptWindow = std::make_unique<BoothWindow> ("Lettore copione - ADR Dub Studio", [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->scriptWindow.reset(); safe->commandManager.commandStatusChanged(); } });
+    });
+    scriptWindow->setContentOwned (new ScriptComponent (*project, engine), false);
+    scriptWindow->setResizeLimits (480, 320, 4000, 3000);
+    scriptWindow->addKeyListener (commandManager.getKeyMappings());
+    scriptWindow->setSize (900, 520);
+    scriptWindow->centreAroundComponent (this, 900, 520);
+    scriptWindow->setVisible (true);
+    commandManager.commandStatusChanged();
+}
+
+void MainComponent::toggleCueWindow()
+{
+    if (cueWindow != nullptr) { cueWindow.reset(); commandManager.commandStatusChanged(); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    cueWindow = std::make_unique<BoothWindow> ("Cuffie dell'attore - ADR Dub Studio", [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->cueWindow.reset(); safe->commandManager.commandStatusChanged(); } });
+    });
+    cueWindow->setContentOwned (new CueMixPanel (engine), false);
+    cueWindow->setResizable (false, false);
+    cueWindow->setSize (520, 560);
+    cueWindow->centreAroundComponent (this, 520, 560);
+    cueWindow->setVisible (true);
+    commandManager.commandStatusChanged();
 }
 
 void MainComponent::alignSelectedToGuide()

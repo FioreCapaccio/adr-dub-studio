@@ -529,6 +529,7 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     loudness.prepare (rate);
     busNeedsReset = true;
     numInputs = device->getActiveInputChannels().countNumberOfSetBits();
+    numOutputs = device->getActiveOutputChannels().countNumberOfSetBits();
     playGain = 0.0f;
     juce::MessageManager::callAsync ([this, rate]
     {
@@ -609,11 +610,59 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* in, int 
             for (int c = 0; c < juce::jmin (2, numOut); ++c)
                 if (out[c] != nullptr) juce::FloatVectorOperations::copy (out[c] + done, master.getReadPointer (c), n);
         }
+        if (cue.enabled.load())   // cuffie dell'attore sulla coppia scelta
+        {
+            const int first = 2 * cue.pair.load();
+            for (int c = 0; c < 2; ++c)
+                if (first + c < numOut && out[first + c] != nullptr) juce::FloatVectorOperations::copy (out[first + c] + done, cueBuf.getReadPointer (c), n);
+        }
         done += n;
     }
 }
 
+juce::String AudioEngine::openCueOutputs (int pair)
+{
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr) return "Nessun dispositivo audio aperto.";
+    const int need = 2 * (pair + 1), avail = dev->getOutputChannelNames().size();
+    if (avail < need) return "La scheda audio ha solo " + juce::String (avail) + " uscite: per le cuffie dell'attore ne servono almeno " + juce::String (need) + ".";
+    auto setup = deviceManager.getAudioDeviceSetup();
+    setup.useDefaultOutputChannels = false;
+    setup.outputChannels.clear();
+    setup.outputChannels.setRange (0, need, true);
+    return deviceManager.setAudioDeviceSetup (setup, true);
+}
+
+/** Mix per le cuffie: se il blocco principale non l'ha preparato (motore fermo) parte dal silenzio; poi talkback e misuratore. */
+void AudioEngine::finishCue (int n, const float* const* in, int numIn, int inOffset)
+{
+    if (! cue.enabled.load()) return;
+    if (! cueReady) cueBuf.clear (0, n);
+    if (cue.talkOn.load() && in != nullptr)
+    {
+        const int ch = cue.talkInput.load();
+        if (ch >= 0 && ch < numIn && in[ch] != nullptr)
+        {
+            const float g = dbToGain (cue.talkDb.load());
+            for (int c = 0; c < 2; ++c) juce::FloatVectorOperations::addWithMultiply (cueBuf.getWritePointer (c), in[ch] + inOffset, g, n);
+        }
+    }
+    for (int c = 0; c < 2; ++c)
+    {
+        const float pk = cueBuf.getMagnitude (c, 0, n);
+        auto& dest = c == 0 ? cue.peakL : cue.peakR;
+        if (pk > dest.load()) dest.store (pk);
+    }
+}
+
 void AudioEngine::processChunk (int n, const float* const* in, int numIn, int inOffset)
+{
+    cueReady = false;
+    processChunkMain (n, in, numIn, inOffset);
+    finishCue (n, in, numIn, inOffset);
+}
+
+void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, int inOffset)
 {
     int64_t pos = position.load();
     const auto seek = pendingSeek.exchange (-1);
@@ -716,6 +765,20 @@ void AudioEngine::processChunk (int n, const float* const* in, int numIn, int in
         specPos.store (sp, std::memory_order_release);
     }
 
+    // mix per le cuffie dell'attore: il master prima dei bip, con il suo livello (e abbassato se il direttore sta parlando)
+    const bool cueOn = cue.enabled.load();
+    if (cueOn)
+    {
+        float g = dbToGain (cue.mixDb.load());
+        if (cue.talkOn.load()) g *= dbToGain (cue.mixDuckDb.load());
+        for (int c = 0; c < 2; ++c)
+        {
+            juce::FloatVectorOperations::copy (cueBuf.getWritePointer (c), master.getReadPointer (c), n);
+            cueBuf.applyGain (c, 0, n, g);
+        }
+        cueReady = true;
+    }
+
     // bip di conteggio (ADR): solo in uscita, non entrano nelle misure ne' nelle registrazioni
     if (const int nb = beepCount.load(); nb > 0)
     {
@@ -738,6 +801,7 @@ void AudioEngine::processChunk (int n, const float* const* in, int numIn, int in
                 const float v = 0.35f * env * (float) std::sin (juce::MathConstants<double>::twoPi * 1000.0 * (double) idx / rate);
                 l[i] += v;
                 r[i] += v;
+                if (cueOn) { const float vc = v * dbToGain (cue.beepDb.load()); cueBuf.getWritePointer (0)[i] += vc; cueBuf.getWritePointer (1)[i] += vc; }
             }
         }
     }
