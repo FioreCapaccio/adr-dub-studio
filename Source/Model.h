@@ -389,6 +389,9 @@ public:
     void addRecordings (std::vector<RecItem> items, std::function<void (juce::StringArray)> done);
 
     // automazione: le prime quattro lavorano sulla curva scelta della traccia (TrackLive::autoParam)
+    int nextAutoPointId() noexcept { return nextAutoId++; }   // per chi scrive curve in blocco (ducking)
+    /** Aggiunge in un solo passo di undo i marker (posizione, nome), per esempio dal rilevamento dei tagli del video. */
+    void addMarkers (const std::vector<std::pair<int64_t, juce::String>>& list, juce::Colour colour);
     int addAutoPoint (int trackId, int64_t pos, float value);                    // con undo
     void removeAutoPoint (int trackId, int pointId);                             // con undo
     void clearAutomation (int trackId);                                          // con undo

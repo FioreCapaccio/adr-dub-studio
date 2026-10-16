@@ -789,6 +789,23 @@ Marker* Project::findMarker (int id) noexcept
     return nullptr;
 }
 
+void Project::addMarkers (const std::vector<std::pair<int64_t, juce::String>>& list, juce::Colour colour)
+{
+    if (list.empty()) return;
+    beginEdit();
+    for (auto& e : list)
+    {
+        Marker m;
+        m.id = nextMarkerId++;
+        m.pos = juce::jmax<int64_t> (0, e.first);
+        m.name = e.second;
+        m.colour = colour;
+        session.markers.push_back (m);
+    }
+    std::sort (session.markers.begin(), session.markers.end(), [] (const Marker& a, const Marker& b) { return a.pos < b.pos; });
+    changed();
+}
+
 int Project::addMarker (int64_t pos, const juce::String& name)
 {
     beginEdit();

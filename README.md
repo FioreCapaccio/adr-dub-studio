@@ -2,7 +2,7 @@
 
 DAW per doppiaggio e ADR (JUCE / C++): timeline e mixer, registrazione, video, cue ADR stile Pro Tools,
 EQ parametrico, limiter, automazione ed esportazioni. Effetti integrati (filtro HP/LP, de-esser, gate, riverbero, delay,
-saturazione, chorus, compressore multibanda), supporto ai plug-in VST3 come insert, temi (anche importati dai temi di Reaper: ne usa i colori) e layout. Flusso di doppiaggio: ruoli di traccia (Dialoghi, Guida, M&E, Effetti) con bus dedicati, modelli di sessione, una traccia per personaggio dall'importazione del copione, schema dei nomi dei take e foglio cue stampabile. Consegna: pacchetto MIX + stem Dialoghi/M&E/Effetti con rapporto, esclusione della Guida, preset TV e streaming, video di revisione con burn-in (macOS).
+saturazione, chorus, compressore multibanda), supporto ai plug-in VST3 come insert, temi (anche importati dai temi di Reaper: ne usa i colori) e layout. Flusso di doppiaggio: ruoli di traccia (Dialoghi, Guida, M&E, Effetti) con bus dedicati, modelli di sessione, una traccia per personaggio dall'importazione del copione, schema dei nomi dei take e foglio cue stampabile. Consegna: pacchetto MIX + stem Dialoghi/M&E/Effetti con rapporto, esclusione della Guida, preset TV e streaming, video di revisione con burn-in (macOS). Sincronia: allineamento automatico del take alla guida, ducking automatico del fondo sotto i dialoghi, rilevamento dei tagli del video.
 
 - **macOS** (universale, Apple Silicon e Intel) e **Windows** (x64, con il video: usa ffmpeg, incluso nello zip): vedi le [Release](../../releases).
 - Build automatica con GitHub Actions (`.github/workflows/build.yml`); per pubblicare una versione basta pushare un tag `v*`.

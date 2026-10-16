@@ -176,6 +176,9 @@ private:
     int layoutIndex = 1;
     void applyLayout (int index, bool resizeTracks);
     void exportCueSheet();
+    void alignSelectedToGuide();
+    void autoDuckDialog();
+    void detectVideoCuts();
     void newFromTemplate (int index);
     void importThemeFile (const juce::File&);
     void chooseThemeFile();
@@ -183,6 +186,7 @@ private:
     juce::PopupMenu buildLayoutMenu();
     std::unique_ptr<ExportJob> exportJob;
     std::unique_ptr<VideoExportJob> videoJob;
+    std::unique_ptr<class CutJob> cutJob;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

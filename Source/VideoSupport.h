@@ -31,6 +31,10 @@ std::vector<juce::Image> thumbnails (const juce::File&, double interval, int cou
 bool muxAudio (const juce::File& video, const juce::File& audio, const juce::File& out, double videoOffsetSec,
                const std::function<bool (double)>& progress, juce::String& error, double rangeStartSec = 0.0, double rangeEndSec = -1.0);
 
+/** Cerca i cambi di inquadratura: istanti (secondi dall'inizio del video) in cui comincia un nuovo piano. sensitivity 0..1 (piu' alta = piu' tagli,
+    anche dissolvenze veloci). progress 0..1, restituisce false per annullare. */
+bool detectCuts (const juce::File& video, double sensitivity, const std::function<bool (double)>& progress, std::vector<double>& cuts, juce::String& error);
+
 /** Testo da incidere sul video per la revisione (burn-in): timecode in alto a sinistra, personaggio in alto a destra, battuta in basso. */
 struct BurnInLine { double from = 0.0, to = 0.0; juce::String character, text; int number = 0; };   // secondi della timeline
 struct BurnIn

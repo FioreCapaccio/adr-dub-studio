@@ -7,6 +7,8 @@
 #include "BuiltinFx.h"
 #include "DubWorkflow.h"
 #include "CueSheet.h"
+#include "AudioAlign.h"
+#include "AutoDuck.h"
 #include "ThemeManager.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
@@ -103,6 +105,7 @@ private:
         stepTheme();
         stepWorkflow();
         stepDelivery();
+        stepSync();
         stepEditing();
         stepPdc();
         stepAux();
@@ -1342,6 +1345,136 @@ private:
         expect (ok && peakAt == 1000 && std::abs (peakV - amp) < 0.01f, "export: impulso al campione " + juce::String (peakAt) + " (atteso 1000)");
     }
 
+    // sincronia: allineamento alla guida e ducking automatico
+    void stepSync()
+    {
+        namespace dub = fc::dub;
+        constexpr double sr = 48000.0;
+        // "parlato" sintetico: rumore con un inviluppo a sillabe; due voci diverse hanno lo stesso inviluppo ma portante diversa
+        auto speech = [&] (int seconds, int seed, float amp)
+        {
+            auto a = std::make_shared<fc::Asset>();
+            a->name = "voce";
+            const int n = seconds * (int) sr;
+            a->audio.setSize (1, n);
+            juce::Random rng (seed), env (77);
+            std::vector<float> syl;
+            for (int i = 0; i < seconds * 6; ++i) syl.push_back (env.nextFloat() < 0.2f ? 0.0f : 0.3f + 0.7f * env.nextFloat());   // sillabe di ~160 ms, qualcuna di pausa
+            float lp = 0.0f;
+            for (int i = 0; i < n; ++i)
+            {
+                const double pos = (double) i / sr * 6.0;
+                const int k = (int) pos;
+                const float frac = (float) (pos - k), e0 = syl[(size_t) k], e1 = syl[(size_t) juce::jmin ((int) syl.size() - 1, k + 1)];
+                const float e = e0 + (e1 - e0) * frac;
+                lp += 0.3f * ((rng.nextFloat() * 2.0f - 1.0f) - lp);   // rumore passa-basso: la portante
+                a->audio.setSample (0, i, amp * e * lp);
+            }
+            a->buildPeaks();
+            return a;
+        };
+
+        fc::Project p (formats, sr);
+        dub::applyTemplate (p, dub::templates()[0]);   // Guida, M&E, Effetti, Dialoghi
+        auto& tr = p.edit().tracks;
+        const int len = 6 * (int) sr;
+        fc::Clip g; g.id = 100; g.asset = speech (6, 1, 0.5f); g.start = 4 * (int) sr; g.length = len;
+        tr[0].clips = { g };
+        fc::Clip t; t.id = 101; t.asset = speech (6, 2, 0.4f); t.start = 4 * (int) sr + (int) std::llround (0.137 * sr); t.length = len;   // in ritardo di 137 ms
+        tr[3].clips = { t };
+        fc::Clip other; other.id = 102; other.asset = speech (6, 3, 0.4f); other.start = 4 * (int) sr; other.length = len;
+        {
+            // un take con un altro "testo": inviluppo diverso -> somiglianza bassa, non va spostato
+            auto a = std::make_shared<fc::Asset>(); a->name = "altro";
+            a->audio.setSize (1, len);
+            juce::Random r (9);
+            for (int i = 0; i < len; ++i) a->audio.setSample (0, i, (((i / 24000) % 3) == 1 ? 0.0f : 0.4f) * (r.nextFloat() * 2.0f - 1.0f));
+            other.asset = a;
+        }
+        tr[2].clips = { other };
+
+        const auto items = fc::align::alignToGuide (p, { 101 }, 1.5, 0.3, false);
+        expect (items.size() == 1 && items[0].applied && std::abs (items[0].shiftMs + 137.0) < 3.0 && items[0].confidence > 0.5,
+                "allineamento: take in ritardo di 137 ms riportato sulla guida (spostamento " + juce::String (items.empty() ? 0.0 : items[0].shiftMs, 1) + " ms, somiglianza " + juce::String (items.empty() ? 0.0 : items[0].confidence, 2) + ")");
+        expect (std::abs ((double) p.findClip (101)->start - 4.0 * sr) < 0.003 * sr, "allineamento: il clip e' tornato in posizione (" + juce::String ((double) (p.findClip (101)->start - 4 * (int) sr) / sr * 1000.0, 1) + " ms)");
+        p.undo();
+        expect (p.findClip (101)->start == 4 * (int) sr + (int) std::llround (0.137 * sr), "allineamento: un solo passo di undo lo ripristina");
+
+        const auto bad = fc::align::alignToGuide (p, { 102 }, 1.5, 0.6, false);
+        expect (bad.size() == 1 && ! bad[0].applied, "allineamento: un take diverso dalla guida non viene spostato (somiglianza " + juce::String (bad.empty() ? 0.0 : bad[0].confidence, 2) + ")");
+        const auto onGuide = fc::align::alignToGuide (p, { 100 }, 1.5, 0.3, false);
+        expect (onGuide.size() == 1 && ! onGuide[0].applied, "allineamento: i clip della traccia Guida sono ignorati");
+
+        // inizio e fine del parlato
+        {
+            juce::AudioBuffer<float> b (1, 48000);
+            b.clear();
+            for (int i = 12000; i < 36000; ++i) b.setSample (0, i, 0.3f * std::sin (0.2f * (float) i));
+            const auto sp = fc::align::speechBounds (b, sr);
+            expect (sp.ok && std::abs ((double) sp.start - 12000.0) <= 960 && std::abs ((double) sp.end - 36000.0) <= 960, "parlato: inizio e fine individuati (" + juce::String ((juce::int64) sp.start) + " - " + juce::String ((juce::int64) sp.end) + ")");
+        }
+
+        // modalita' adattamento durata: il take e' piu' lungo del 10%: ratio ~0,91
+        {
+            auto slow = std::make_shared<fc::Asset>(); slow->name = "lento";
+            const auto src = speech (6, 2, 0.4f);
+            const int n2 = (int) (src->length() * 1.10);
+            slow->audio.setSize (1, n2);
+            for (int i = 0; i < n2; ++i) slow->audio.setSample (0, i, src->audio.getSample (0, (int) ((double) i / 1.10)));
+            slow->buildPeaks();
+            p.edit().tracks[3].clips[0].asset = slow;
+            p.edit().tracks[3].clips[0].length = n2;
+            p.edit().tracks[3].clips[0].start = 4 * (int) sr;
+            const auto it = fc::align::alignToGuide (p, { 101 }, 1.5, 0.3, true);
+            expect (it.size() == 1 && it[0].applied && it[0].stretchRatio > 0.85 && it[0].stretchRatio < 0.96, "allineamento con durata: rapporto " + juce::String (it.empty() ? 0.0 : it[0].stretchRatio, 3) + " (atteso ~0,91)");
+        }
+
+        // rilevamento dei tagli del video (solo se accanto al video di prova ci sono cuts.mp4 e smooth.mp4: tagli a 2,0 / 3,5 / 6,0 s)
+        {
+            const auto cutsFile = videoFile.getSiblingFile ("cuts.mp4"), smoothFile = videoFile.getSiblingFile ("smooth.mp4");
+            if (cutsFile.existsAsFile() && smoothFile.existsAsFile())
+            {
+                std::vector<double> cuts, none;
+                juce::String err;
+                const bool ok1 = fc::video::detectCuts (cutsFile, 0.5, [] (double) { return true; }, cuts, err);
+                const bool ok2 = fc::video::detectCuts (smoothFile, 0.5, [] (double) { return true; }, none, err);
+                juce::String found;
+                for (auto c : cuts) found << juce::String (c, 2) << " ";
+                expect (ok1 && cuts.size() == 3 && std::abs (cuts[0] - 2.0) < 0.1 && std::abs (cuts[1] - 3.5) < 0.1 && std::abs (cuts[2] - 6.0) < 0.1, "tagli video: trovati a " + found + "(attesi 2,0 3,5 6,0) " + err);
+                expect (ok2 && none.empty(), "tagli video: nessun falso taglio in un video senza stacchi (" + juce::String ((int) none.size()) + ")");
+            }
+            else
+                std::cout << "     (cuts.mp4 / smooth.mp4 non presenti: salto il test dei tagli)" << std::endl;
+        }
+
+        // ducking: i dialoghi parlano da 2 a 4 s e da 4,2 a 5 s (pausa breve) e poi da 9 a 10 s
+        {
+            fc::Project q (formats, sr);
+            dub::applyTemplate (q, dub::templates()[0]);
+            auto& qt = q.edit().tracks;
+            auto tone = [&] (int seconds, float amp) { auto a = std::make_shared<fc::Asset>(); a->name = "t"; a->audio.setSize (1, seconds * (int) sr); for (int i = 0; i < seconds * (int) sr; ++i) a->audio.setSample (0, i, amp * std::sin (0.1f * (float) i)); a->buildPeaks(); return a; };
+            auto put = [&] (size_t ti, int id, int startSec, int secs, float amp) { fc::Clip c; c.id = id; c.asset = tone (secs, amp); c.start = startSec * (int64_t) sr; c.length = secs * (int64_t) sr; qt[ti].clips.push_back (c); };
+            put (3, 1, 2, 2, 0.1f); put (3, 2, 4, 1, 0.0f); put (3, 3, 9, 1, 0.1f);   // clip 2: silenzio (pausa tra le battute)
+            put (1, 4, 0, 12, 0.3f);                                                    // M&E sotto tutto
+            qt[1].live->volumeDb = -6.0f;
+            fc::duck::Settings st;
+            const auto iv = fc::duck::speechIntervals (q.getSession(), sr, st);
+            expect (iv.size() == 2 && std::abs ((double) iv[0].first - 2.0 * sr) < 0.03 * sr && std::abs ((double) iv[0].second - 4.0 * sr) < 0.03 * sr && std::abs ((double) iv[1].first - 9.0 * sr) < 0.03 * sr,
+                    "ducking: due zone di parlato trovate (" + juce::String ((int) iv.size()) + ")");
+            const auto curve = fc::duck::duckCurve (iv, sr, st);
+            expect (curve.size() == 8 && curve[0].second == 0.0f && curve[1].second == -12.0f && curve[2].second == -12.0f && curve[3].second == 0.0f
+                        && curve[1].first < iv[0].first && curve[3].first > iv[0].second, "ducking: curva scende prima del parlato e risale dopo (" + juce::String ((int) curve.size()) + " punti)");
+            const int touched = fc::duck::apply (q, st, -1);
+            auto& lane = q.getSession().tracks[1].volAuto;
+            expect (touched == 3 + 0 || touched == 2, "ducking: applicato alle tracce M&E ed Effetti (" + juce::String (touched) + ")");
+            bool dips = false, base = false;
+            for (auto& a : lane) { dips = dips || std::abs (a.db + 18.0f) < 0.01f; base = base || std::abs (a.db + 6.0f) < 0.01f; }
+            expect (lane.size() == 8 && dips && base && q.getSession().tracks[1].live->autoMode.load() == 1, "ducking: il volume del M&E scende di 12 dB attorno al suo fader (-6 -> -18 dB), automazione in lettura");
+            q.undo();
+            expect (q.getSession().tracks[1].volAuto.empty(), "ducking: un solo passo di undo");
+        }
+    }
+
     // consegna: pacchetto MIX + stem per ruolo + rapporto, esclusione della Guida
     void stepDelivery()
     {
@@ -2012,7 +2145,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.1.0"; }
+    const juce::String getApplicationVersion() override { return "2.2.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

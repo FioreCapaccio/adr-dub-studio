@@ -273,6 +273,92 @@ void drawBurnIn (CVPixelBufferRef pb, double timelineSec, const BurnIn& b)
 }
 } // namespace
 
+bool detectCuts (const juce::File& video, double sensitivity, const std::function<bool (double)>& progress, std::vector<double>& cuts, juce::String& error)
+{
+    cuts.clear();
+    @autoreleasepool
+    {
+        AVURLAsset* a = [AVURLAsset URLAssetWithURL: urlFor (video) options: nil];
+        AVAssetTrack* vt = [[a tracksWithMediaType: AVMediaTypeVideo] firstObject];
+        if (vt == nil) { error = "Il file non contiene video."; return false; }
+        NSError* err = nil;
+        AVAssetReader* reader = [[AVAssetReader alloc] initWithAsset: a error: &err];
+        if (reader == nil) { error = "Impossibile leggere il video: " + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
+        constexpr int W = 64, H = 36;
+        AVAssetReaderTrackOutput* out = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack: vt
+                                                                                   outputSettings: @{ (id) kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+                                                                                                      (id) kCVPixelBufferWidthKey: @(W), (id) kCVPixelBufferHeightKey: @(H) }];
+        [reader addOutput: out];
+        if (! [reader startReading]) { error = "Impossibile leggere il video."; return false; }
+
+        const double thr = 0.55 - 0.40 * juce::jlimit (0.0, 1.0, sensitivity);
+        const double total = juce::jmax (0.001, CMTimeGetSeconds (a.duration));
+        std::vector<float> prevLum ((size_t) (W * H), 0.0f), lum ((size_t) (W * H), 0.0f);
+        double prevHist[32] = {}, hist[32] = {};
+        bool havePrev = false;
+        std::vector<double> recent;   // punteggi recenti senza i tagli: la "normalita'" del movimento
+        double lastCut = -10.0;
+
+        while (CMSampleBufferRef sb = [out copyNextSampleBuffer])
+        {
+            const double t = CMTimeGetSeconds (CMSampleBufferGetPresentationTimeStamp (sb));
+            if (CVImageBufferRef pb = CMSampleBufferGetImageBuffer (sb))
+            {
+                CVPixelBufferLockBaseAddress (pb, kCVPixelBufferLock_ReadOnly);
+                const uint8_t* base = (const uint8_t*) CVPixelBufferGetBaseAddress (pb);
+                const size_t stride = CVPixelBufferGetBytesPerRow (pb);
+                const int w = (int) juce::jmin<size_t> (W, CVPixelBufferGetWidth (pb)), h = (int) juce::jmin<size_t> (H, CVPixelBufferGetHeight (pb));
+                std::fill (std::begin (hist), std::end (hist), 0.0);
+                for (int y = 0; y < h; ++y)
+                    for (int x = 0; x < w; ++x)
+                    {
+                        const uint8_t* px = base + (size_t) y * stride + (size_t) x * 4;   // BGRA
+                        const float l = 0.114f * px[0] + 0.587f * px[1] + 0.299f * px[2];
+                        lum[(size_t) (y * W + x)] = l;
+                        hist[juce::jmin (31, (int) l / 8)] += 1.0;
+                    }
+                CVPixelBufferUnlockBaseAddress (pb, kCVPixelBufferLock_ReadOnly);
+                const double n = (double) (w * h);
+                for (auto& v : hist) v /= n;
+
+                if (havePrev)
+                {
+                    double hd = 0.0, pd = 0.0;
+                    for (int i = 0; i < 32; ++i) hd += std::abs (hist[i] - prevHist[i]);
+                    hd *= 0.5;
+                    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) pd += std::abs (lum[(size_t) (y * W + x)] - prevLum[(size_t) (y * W + x)]);
+                    pd /= n * 255.0;
+                    const double score = 0.6 * hd + 0.4 * juce::jmin (1.0, pd * 4.0);
+                    double avg = 0.0;
+                    for (auto r : recent) avg += r;
+                    avg = recent.empty() ? 0.0 : avg / (double) recent.size();
+                    if (score > thr && score > 2.5 * avg + 0.05 && t - lastCut > 0.5)
+                    {
+                        cuts.push_back (t);
+                        lastCut = t;
+                    }
+                    else
+                    {
+                        recent.push_back (score);
+                        if (recent.size() > 8) recent.erase (recent.begin());
+                    }
+                }
+                prevLum = lum;
+                std::copy (std::begin (hist), std::end (hist), std::begin (prevHist));
+                havePrev = true;
+            }
+            CFRelease (sb);
+            if (progress && ! progress (juce::jlimit (0.0, 1.0, t / total))) { [reader cancelReading]; error = "Analisi annullata."; return false; }
+        }
+        if (reader.status == AVAssetReaderStatusFailed)
+        {
+            error = reader.error != nil ? juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String) : juce::String ("Lettura del video non riuscita.");
+            return false;
+        }
+    }
+    return true;
+}
+
 bool burnInSupported() { return true; }
 
 bool muxAudioBurnIn (const juce::File& video, const juce::File& audio, const juce::File& out, double videoOffsetSec, const BurnIn& burn,

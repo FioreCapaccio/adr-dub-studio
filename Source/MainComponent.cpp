@@ -2,6 +2,8 @@
 #include "ThemeManager.h"
 #include "DubWorkflow.h"
 #include "CueSheet.h"
+#include "AudioAlign.h"
+#include "AutoDuck.h"
 #include "VideoSupport.h"
 #include "Commands.h"
 #include "ExportDialog.h"
@@ -63,6 +65,28 @@ private:
     juce::String baseName;
     std::function<void (ExportResult)> done;
     ExportResult result;
+};
+
+/** Rilevamento dei tagli del video in un thread, con barra di avanzamento. */
+class CutJob : public juce::ThreadWithProgressWindow
+{
+public:
+    CutJob (juce::File v, double sens, std::function<void (bool, std::vector<double>, juce::String)> d)
+        : juce::ThreadWithProgressWindow ("Analisi del video: ricerca dei tagli...", true, true), file (std::move (v)), sensitivity (sens), done (std::move (d)) {}
+
+    void run() override
+    {
+        ok = video::detectCuts (file, sensitivity, [this] (double p) { setProgress (p); return ! threadShouldExit(); }, cuts, error);
+    }
+    void threadComplete (bool) override { if (done) done (ok, cuts, error); }
+
+private:
+    juce::File file;
+    double sensitivity;
+    std::function<void (bool, std::vector<double>, juce::String)> done;
+    std::vector<double> cuts;
+    juce::String error;
+    bool ok = false;
 };
 
 /** Esporta un .mov con il video originale (non ricodificato) e il mix della sessione come audio. */
@@ -1278,7 +1302,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1351,6 +1375,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAdrExportCsv:  i.setInfo ("Esporta cue sheet (CSV)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportPT:   i.setInfo ("Esporta cue come marker Pro Tools (testo)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportBwf:  i.setInfo ("Esporta take attivi (BWF con timecode)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdAlignToGuide:  i.setInfo ("Allinea alla guida (sincronia automatica)...", "", "Modifica", 0); break;
+        case cmdAutoDuck:      i.setInfo ("Ducking automatico del fondo sotto i dialoghi...", "", "Traccia", 0); break;
+        case cmdDetectCuts:    i.setInfo ("Rileva i tagli del video (marker)...", "", "Marker", 0); i.setActive (project->getSession().video != nullptr); break;
         case cmdAdrCueSheet:   i.setInfo ("Foglio cue e copione per personaggio (stampabile)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdSessionSettings: i.setInfo ("Impostazioni sessione: timecode e ADR...", "", "File", 0); break;
         case cmdRulerTc:       i.setInfo ("Righello in timecode", "", "Vista", 0); i.setTicked (project->rulerTimecode); break;
@@ -1459,6 +1486,9 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrExportPT:   exportAdrProTools(); break;
         case cmdAdrExportBwf:  exportAdrBwf(); break;
         case cmdAdrCueSheet:   exportCueSheet(); break;
+        case cmdAlignToGuide:  alignSelectedToGuide(); break;
+        case cmdAutoDuck:      autoDuckDialog(); break;
+        case cmdDetectCuts:    detectVideoCuts(); break;
         case cmdRulerTc:       project->rulerTimecode = ! project->rulerTimecode; project->markDirty(); timeline->repaint(); break;
         case cmdShortcuts:     showShortcuts(); break;
         case cmdCollectMedia:  collectMedia(); break;
@@ -1680,12 +1710,12 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
-        case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck }); break;
         case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
         case 4:
         {
-            add ({ cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers });
+            add ({ cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdDetectCuts });
             const auto& marks = project->getSession().markers;
             if (! marks.empty()) m.addSeparator();
             for (size_t i = 0; i < marks.size() && i < 60; ++i)
@@ -1988,6 +2018,121 @@ void MainComponent::recordAdrCue (int cueId)
 namespace
 {
 juce::String csvField (const juce::String& s) { return "\"" + s.replace ("\"", "\"\"").replaceCharacters ("\r\n", "  ") + "\""; }
+}
+
+void MainComponent::alignSelectedToGuide()
+{
+    bool haveGuide = false;
+    for (auto& t : project->getSession().tracks) haveGuide = haveGuide || (t.live->trackType.load() == TrackGuide && ! t.clips.empty());
+    if (! haveGuide) { showError ("Serve una traccia Guida con il dialogo originale.\n\nImposta il tipo della traccia su Guida (clic destro sulla traccia, Tipo di traccia) e mettici l'audio di riferimento."); return; }
+
+    std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
+    if (ids.empty())   // nessun clip selezionato: il take attivo del cue selezionato
+        if (const auto* cue = project->findCue (project->selectedCueId))
+            for (auto& t : project->getSession().tracks)
+                for (auto& c : t.clips) if (c.cueId == cue->id && c.takeNo == cue->activeTake) ids.push_back (c.id);
+    if (ids.empty()) { showError ("Seleziona i clip da allineare (o un cue ADR con un take attivo)."); return; }
+
+    auto* aw = new juce::AlertWindow ("Allinea alla guida", "Sposta i clip selezionati finche' il parlato coincide con quello della traccia Guida (si confronta l'andamento del volume, non le parole).",
+                                      juce::MessageBoxIconType::NoIcon);
+    aw->addComboBox ("mode", { "Solo spostamento (consigliato)", "Spostamento e adatta la durata del parlato" }, "Modo");
+    aw->addTextEditor ("range", "1500", "Spostamento massimo (millisecondi)");
+    aw->addButton ("Allinea", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, ids] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        const bool adapt = aw->getComboBoxComponent ("mode")->getSelectedItemIndex() == 1;
+        const double range = juce::jlimit (50.0, 5000.0, aw->getTextEditorContents ("range").replaceCharacter (',', '.').getDoubleValue()) / 1000.0;
+        auto& p = *safe->project;
+        const auto items = align::alignToGuide (p, ids, range, 0.55, adapt);
+
+        const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+        auto report = [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); };
+        int done = 0;
+        juce::String msg;
+        for (auto& it : items)
+        {
+            const auto* c = p.findClip (it.clipId);
+            const juce::String name = c != nullptr && c->asset != nullptr ? c->asset->name : juce::String ("clip");
+            if (it.applied) ++done;
+            msg << name << ": " << (it.applied ? (juce::String (it.shiftMs >= 0 ? "+" : "") + juce::String (it.shiftMs, 0) + " ms") : juce::String ("non spostato"))
+                << " (" << it.note << (it.applied ? ", somiglianza " + juce::String (it.confidence, 2) : juce::String()) << ")\n";
+            if (it.applied && it.stretchRatio != 1.0) p.stretchClip (it.clipId, it.stretchRatio, true, folder, report, it.stretchStart);
+        }
+        safe->timeline->repaint();
+        juce::AlertWindow::showMessageBoxAsync (done > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, "Allinea alla guida",
+                                                juce::String (done) + " di " + juce::String ((int) items.size()) + " clip allineati.\n\n" + msg
+                                                    + (done > 0 ? "\nSe il risultato non ti convince, annulla con Modifica > Annulla." : juce::String()));
+    }), true);
+}
+
+void MainComponent::autoDuckDialog()
+{
+    bool haveDialogue = false;
+    for (auto& t : project->getSession().tracks) haveDialogue = haveDialogue || (t.live->trackType.load() == TrackDialogue && ! t.clips.empty());
+    if (! haveDialogue) { showError ("Serve almeno una traccia Dialoghi con dei clip.\n\nImposta il tipo delle tracce con i dialoghi su Dialoghi (clic destro sulla traccia, Tipo di traccia)."); return; }
+
+    auto* aw = new juce::AlertWindow ("Ducking automatico", "Abbassa M&E ed Effetti quando parlano i Dialoghi, scrivendo l'automazione del volume (annullabile).", juce::MessageBoxIconType::NoIcon);
+    duck::Settings d;
+    aw->addTextEditor ("depth", juce::String (d.depthDb, 0), "Quanto abbassare il fondo (dB)");
+    aw->addTextEditor ("thr", juce::String (d.thresholdDb, 0), "Soglia del dialogo (dBFS: sotto e' silenzio)");
+    aw->addTextEditor ("atk", juce::String ((int) (d.attackSec * 1000.0)), "Discesa (ms)");
+    aw->addTextEditor ("rel", juce::String ((int) (d.releaseSec * 1000.0)), "Risalita (ms)");
+    aw->addButton ("Applica", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        auto num = [aw] (const char* n) { return aw->getTextEditorContents (n).replaceCharacter (',', '.').getDoubleValue(); };
+        duck::Settings st;
+        st.depthDb = juce::jlimit (1.0, 40.0, std::abs (num ("depth")));
+        st.thresholdDb = juce::jlimit (-80.0, -10.0, num ("thr"));
+        st.attackSec = juce::jlimit (0.02, 3.0, num ("atk") / 1000.0);
+        st.releaseSec = juce::jlimit (0.05, 5.0, num ("rel") / 1000.0);
+        const int n = duck::apply (*safe->project, st, safe->project->selectedTrackId);
+        safe->timeline->repaint();
+        juce::AlertWindow::showMessageBoxAsync (n > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, "Ducking automatico",
+            n > 0 ? "Automazione del volume scritta su " + juce::String (n) + (n == 1 ? " traccia" : " tracce") + ".\nLe tracce sono in modalita' lettura: la curva si vede e si modifica nella corsia VOL.\n\nPer togliere tutto: Modifica > Annulla."
+                  : "Non ho trovato parlato sopra la soglia, oppure non ci sono tracce M&E / Effetti (o una traccia selezionata) su cui scrivere.");
+    }), true);
+}
+
+void MainComponent::detectVideoCuts()
+{
+    auto video = project->getSession().video;
+    if (video == nullptr) { showError ("Importa prima un video."); return; }
+    if (videoJob != nullptr || exportJob != nullptr) return;
+
+    auto* aw = new juce::AlertWindow ("Rileva i tagli del video", "Cerca i cambi di inquadratura e mette un marker su ciascuno. Con un film lungo puo' volerci qualche minuto.", juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("sens", "5", "Sensibilita' (da 1 a 10: piu' alta = piu' tagli, anche dissolvenze veloci)");
+    aw->addButton ("Analizza", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, video] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        const double sens = (juce::jlimit (1.0, 10.0, aw->getTextEditorContents ("sens").replaceCharacter (',', '.').getDoubleValue()) - 1.0) / 9.0;
+        safe->cutJob = std::make_unique<CutJob> (video->file, sens, [safe, video] (bool ok, std::vector<double> cuts, juce::String err)
+        {
+            juce::MessageManager::callAsync ([safe, video, ok, cuts, err]
+            {
+                if (safe == nullptr) return;
+                safe->cutJob.reset();
+                if (! ok) { if (err != "Analisi annullata.") safe->showError (err); return; }
+                const double rate = safe->project->getSampleRate();
+                std::vector<std::pair<int64_t, juce::String>> marks;
+                int n = 0;
+                for (auto t : cuts) marks.emplace_back ((int64_t) std::llround ((t + video->offsetSec) * rate), "Taglio " + juce::String (++n));
+                safe->project->addMarkers (marks, juce::Colour (0xff7aa7c7));
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Tagli del video",
+                    cuts.empty() ? juce::String ("Non ho trovato tagli. Prova ad aumentare la sensibilita'.") : "Ho aggiunto " + juce::String ((int) cuts.size()) + " marker sui cambi di inquadratura.\n\nSi vedono nel righello e nel menu Marker; se sono troppi o troppo pochi, annulla e cambia la sensibilita'.");
+            });
+        });
+        safe->cutJob->launchThread();
+    }), true);
 }
 
 void MainComponent::exportCueSheet()

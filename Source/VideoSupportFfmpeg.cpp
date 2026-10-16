@@ -147,6 +147,27 @@ bool extractAudio (const juce::File& video, const juce::File& wavOut, juce::Stri
     return true;
 }
 
+bool detectCuts (const juce::File& video, double sensitivity, const std::function<bool (double)>& progress, std::vector<double>& cuts, juce::String& error)
+{
+    cuts.clear();
+    const double thr = 0.55 - 0.40 * juce::jlimit (0.0, 1.0, sensitivity);
+    juce::String output;
+    const auto filter = "select='gt(scene," + juce::String (thr, 3) + ")',showinfo";
+    if (runTool ("ffmpeg", { "-hide_banner", "-nostats", "-i", video.getFullPathName(), "-vf", filter, "-an", "-f", "null", "-" }, output, true, 3600000) < 0)
+    {
+        error = "Non trovo ffmpeg: serve accanto all'app o nel PATH.";
+        return false;
+    }
+    for (auto line : juce::StringArray::fromLines (output))
+        if (line.contains ("pts_time:"))
+        {
+            const double t = line.fromFirstOccurrenceOf ("pts_time:", false, false).upToFirstOccurrenceOf (" ", false, false).getDoubleValue();
+            if (cuts.empty() || t - cuts.back() > 0.5) cuts.push_back (t);
+        }
+    if (progress) progress (1.0);
+    return true;
+}
+
 bool burnInSupported() { return false; }
 
 bool muxAudioBurnIn (const juce::File&, const juce::File&, const juce::File&, double, const BurnIn&, const std::function<bool (double)>&, juce::String& error, double, double)
