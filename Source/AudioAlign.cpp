@@ -121,7 +121,7 @@ juce::AudioBuffer<float> renderMono (const std::vector<const Clip*>& clips, int6
     float* d = out.getWritePointer (0);
     for (auto* c : clips)
     {
-        if (c == nullptr || c->asset == nullptr || c->muted) continue;
+        if (c == nullptr || c->asset == nullptr || c->asset->offline || c->muted) continue;
         const int64_t a = juce::jmax (t0, c->start), z = juce::jmin (t0 + n, c->end());
         if (z <= a) continue;
         const float g = dbToGain (c->gainDb);

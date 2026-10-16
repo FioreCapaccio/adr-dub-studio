@@ -164,6 +164,13 @@ private:
     juce::File loadingVideo;
     std::unique_ptr<AdrWindow> adrWindow;
     std::unique_ptr<class BoothWindow> scriptWindow, cueWindow;
+    void relinkMedia();
+    void saveVersionDialog();
+    void versionsDialog();
+    void checkSessionDialog();
+    void workflowDialog();
+    bool deliveredThisSession = false, lastCheckClean = false;
+    std::unique_ptr<class RelinkJob> relinkJob;
     void toggleScriptWindow();
     void toggleCueWindow();
     AdrPanel* adrPanel = nullptr;

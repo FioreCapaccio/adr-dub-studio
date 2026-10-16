@@ -628,6 +628,21 @@ void TimelineView::drawVideoLane (juce::Graphics& g)
                 16, rulerH + 42, headerW - 24, 16, juce::Justification::centredLeft, true);
 }
 
+/** Clip il cui file non e' stato trovato: righe oblique rosse e il nome del file. */
+void TimelineView::drawOfflineClip (juce::Graphics& g, const Clip& c, juce::Rectangle<float> wf)
+{
+    juce::Graphics::ScopedSaveState ss (g);
+    g.reduceClipRegion (wf.toNearestInt());
+    g.setColour (accent.withAlpha (0.16f));
+    g.fillRect (wf);
+    g.setColour (accent.withAlpha (0.45f));
+    for (float x = wf.getX() - wf.getHeight(); x < wf.getRight(); x += 10.0f)
+        g.drawLine (x, wf.getBottom(), x + wf.getHeight(), wf.getY(), 1.0f);
+    g.setColour (accent.brighter (0.4f));
+    g.setFont (font (11.0f, true));
+    g.drawText ("OFFLINE - " + c.asset->file.getFileName() + " (File > Ricollega i media)", wf.toNearestInt().reduced (6, 0).withX (juce::jmax (wf.toNearestInt().getX() + 6, 0)), juce::Justification::centredLeft, true);
+}
+
 void TimelineView::drawWaveformChannel (juce::Graphics& g, const Clip& c, juce::Rectangle<float> wf, juce::Rectangle<int> lanes, int channel)
 {
     const auto& a = *c.asset;
@@ -763,6 +778,7 @@ void TimelineView::drawClip (juce::Graphics& g, const Track& t, int ti, const Cl
     auto wf = r.withTrimmedTop (18.0f).reduced (0.0f, 3.0f);
     g.setColour (col.brighter (0.8f).withAlpha (0.92f));
     if (preview) g.drawImage (stretchImg, wf, juce::RectanglePlacement::stretchToFit);   // anteprima in tempo reale: l'onda scalata
+    else if (c.asset->offline) drawOfflineClip (g, c, wf);
     else drawWaveform (g, c, wf, lanes);
 
     g.setColour (col.brighter (0.4f).withAlpha (0.22f));
@@ -1304,7 +1320,7 @@ bool TimelineView::handleToolMouseDown (const juce::MouseEvent& e, const Hit& hi
         {
             if (! onClip) return false;
             auto* c = project.findClip (hit.clip);
-            if (c == nullptr || c->asset == nullptr) return false;
+            if (c == nullptr || c->asset == nullptr || c->asset->offline) return false;
             project.selectedTrackId = hit.track;
             project.selection = { c->id };
             primaryId = c->id;

@@ -15,7 +15,7 @@ std::vector<std::pair<int64_t, int64_t>> speechIntervals (const Session& s, doub
         if (t.live->trackType.load() != TrackDialogue || t.live->mute.load()) continue;
         for (auto& c : t.clips)
         {
-            if (c.asset == nullptr || c.muted) continue;
+            if (c.asset == nullptr || c.asset->offline || c.muted) continue;
             const float g = dbToGain (c.gainDb);
             const int chn = c.asset->numChannels();
             for (int64_t pos = c.start; pos < c.end(); pos += hop)

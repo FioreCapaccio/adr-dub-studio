@@ -5,6 +5,10 @@
 #include "AudioAlign.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
+#include "Relink.h"
+#include "Versions.h"
+#include "SessionCheck.h"
+#include "WorkflowGuide.h"
 #include "VideoSupport.h"
 #include "Commands.h"
 #include "ExportDialog.h"
@@ -66,6 +70,27 @@ private:
     juce::String baseName;
     std::function<void (ExportResult)> done;
     ExportResult result;
+};
+
+/** Ricerca dei media mancanti in una cartella, in un thread con barra di avanzamento. */
+class RelinkJob : public juce::ThreadWithProgressWindow
+{
+public:
+    RelinkJob (juce::AudioFormatManager& f, Session s, juce::File dir, double r, juce::String videoName, std::function<void (relink::Result)> d)
+        : juce::ThreadWithProgressWindow ("Cerco i media mancanti...", true, true),
+          fm (f), session (std::move (s)), folder (std::move (dir)), rate (r), video (std::move (videoName)), done (std::move (d)) {}
+
+    void run() override { result = relink::search (fm, session, folder, rate, video, [this] (double p) { setProgress (p); return ! threadShouldExit(); }); }
+    void threadComplete (bool) override { if (done) done (result); }
+
+private:
+    juce::AudioFormatManager& fm;
+    Session session;
+    juce::File folder;
+    double rate;
+    juce::String video;
+    std::function<void (relink::Result)> done;
+    relink::Result result;
 };
 
 /** Rilevamento dei tagli del video in un thread, con barra di avanzamento. */
@@ -789,7 +814,13 @@ void MainComponent::checkRecovery()
             safe->project->setFile (original.isNotEmpty() ? juce::File (original) : juce::File());
             safe->project->markDirty();
             safe->timeline->zoomToFit();
-            if (errs.isNotEmpty()) safe->showError (errs);
+            if (safe->project->hasOfflineMedia())
+            {
+                auto opts = juce::MessageBoxOptions::makeOptionsYesNo (juce::MessageBoxIconType::WarningIcon, "Media mancanti",
+                    errs + "\n\nI clip restano nella sessione come OFFLINE (senza audio) e non vanno persi se salvi. Vuoi cercare i file in una cartella?", "Cerca...", "Piu' tardi");
+                juce::NativeMessageBox::showAsync (opts, [safe] (int r) { if (r == 0 && safe != nullptr) safe->relinkMedia(); });
+            }
+            else if (errs.isNotEmpty()) safe->showError (errs);
         });
     });
 }
@@ -1182,12 +1213,13 @@ void MainComponent::runExport (const ExportOptions& o)
     {
         if (safe == nullptr) return;
         safe->exportJob = std::make_unique<ExportJob> (safe->project->getSession().cloneDetached(), safe->project->getSampleRate(), o, target, base,
-                                                       [safe] (ExportResult r)
+                                                       [safe, delivery = o.delivery] (ExportResult r)
         {
-            juce::MessageManager::callAsync ([safe, r]
+            juce::MessageManager::callAsync ([safe, r, delivery]
             {
                 if (safe == nullptr) return;
                 safe->exportJob.reset();
+                if (r.ok && delivery) safe->deliveredThisSession = true;
                 if (! r.ok)
                 {
                     juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Esportazione", r.message);
@@ -1305,7 +1337,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1378,6 +1410,11 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAdrExportCsv:  i.setInfo ("Esporta cue sheet (CSV)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportPT:   i.setInfo ("Esporta cue come marker Pro Tools (testo)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportBwf:  i.setInfo ("Esporta take attivi (BWF con timecode)...", "", "ADR", 0); i.setActive (! project->getSession().cues.empty()); break;
+        case cmdRelink:        i.setInfo ("Ricollega i media mancanti...", "", "File", 0); i.setActive (project->hasOfflineMedia()); break;
+        case cmdSaveVersion:   i.setInfo ("Salva una versione della sessione...", "", "File", 0); i.setActive (project->getFile() != juce::File()); break;
+        case cmdVersions:      i.setInfo ("Versioni della sessione...", "", "File", 0); i.setActive (project->getFile() != juce::File()); break;
+        case cmdCheckSession:  i.setInfo ("Controlla la sessione prima della consegna...", "", "File", 0); break;
+        case cmdWorkflow:      i.setInfo ("Flusso di lavoro del doppiaggio", "", "Aiuto", 0); break;
         case cmdScriptReader:  i.setInfo ("Lettore copione per l'attore", "", "ADR", 0); i.setTicked (scriptWindow != nullptr); break;
         case cmdCueMix:        i.setInfo ("Cuffie dell'attore e talkback...", "", "ADR", 0); i.setTicked (cueWindow != nullptr); break;
         case cmdAlignToGuide:  i.setInfo ("Allinea alla guida (sincronia automatica)...", "", "Modifica", 0); break;
@@ -1492,6 +1529,11 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrExportBwf:  exportAdrBwf(); break;
         case cmdAdrCueSheet:   exportCueSheet(); break;
         case cmdAlignToGuide:  alignSelectedToGuide(); break;
+        case cmdRelink:        relinkMedia(); break;
+        case cmdSaveVersion:   saveVersionDialog(); break;
+        case cmdVersions:      versionsDialog(); break;
+        case cmdCheckSession:  checkSessionDialog(); break;
+        case cmdWorkflow:      workflowDialog(); break;
         case cmdScriptReader:  toggleScriptWindow(); break;
         case cmdCueMix:        toggleCueWindow(); break;
         case cmdAutoDuck:      autoDuckDialog(); break;
@@ -1709,7 +1751,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             if (recent.getNumItems() > 0) { recent.addSeparator(); recent.addCommandItem (&commandManager, cmdClearRecent); }
             m.addSubMenu ("Apri recente", recent, recent.getNumItems() > 0);
             m.addSeparator();
-            add ({ cmdSave, cmdSaveAs, cmdCollectMedia, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings,
+            add ({ cmdSave, cmdSaveAs, cmdSaveVersion, cmdVersions, 0, cmdCollectMedia, cmdRelink, cmdCheckSession, 0, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings,
 #if ! JUCE_MAC
                   0, cmdQuit
 #endif
@@ -1731,7 +1773,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         }
         case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, 0, cmdSessionSettings }); break;
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig }); break;
-        case 8: add ({ cmdShortcuts }); break;
+        case 8: add ({ cmdWorkflow, cmdShortcuts }); break;
         case 7:
             add ({ cmdSnap, cmdFollow, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer });
             menuActions.clear();
@@ -2027,6 +2069,198 @@ namespace
 juce::String csvField (const juce::String& s) { return "\"" + s.replace ("\"", "\"\"").replaceCharacters ("\r\n", "  ") + "\""; }
 }
 
+void MainComponent::relinkMedia()
+{
+    if (! project->hasOfflineMedia()) { showError ("Tutti i media della sessione sono presenti."); return; }
+    chooser = std::make_unique<juce::FileChooser> ("Scegli la cartella in cui cercare i file mancanti (si cerca anche nelle sottocartelle)", juce::File::getSpecialLocation (juce::File::userHomeDirectory));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe] (const juce::FileChooser& fc)
+    {
+        const auto folder = fc.getResult();
+        if (safe == nullptr || folder == juce::File()) return;
+        const juce::String videoName = safe->project->getSession().video == nullptr && safe->project->missingVideoPath.isNotEmpty() ? juce::File (safe->project->missingVideoPath).getFileName() : juce::String();
+        safe->relinkJob = std::make_unique<RelinkJob> (safe->project->getFormats(), safe->project->getSession().cloneDetached(), folder, safe->project->getSampleRate(), videoName,
+                                                       [safe] (relink::Result r)
+        {
+            juce::MessageManager::callAsync ([safe, r]
+            {
+                if (safe == nullptr) return;
+                safe->relinkJob.reset();
+                safe->project->replaceAssets (r.replacements);
+                if (r.video != juce::File())
+                {
+                    safe->project->relinkVideo (r.video, [safe] (juce::String err) { if (safe != nullptr) { safe->timeline->repaint(); if (err.isNotEmpty()) safe->showError (err); } });
+                }
+                juce::String msg = juce::String (r.found) + (r.found == 1 ? " file ricollegato" : " file ricollegati") + (r.video != juce::File() ? " e il video" : juce::String()) + ".";
+                if (! r.tooShort.isEmpty()) msg << "\n\nTrovati ma troppo corti (non usati): " << r.tooShort.joinIntoString (", ");
+                if (! r.notFound.isEmpty()) msg << "\n\nNon trovati: " << r.notFound.joinIntoString (", ");
+                safe->commandManager.commandStatusChanged();
+                safe->timeline->repaint();
+                juce::AlertWindow::showMessageBoxAsync (r.notFound.isEmpty() && r.tooShort.isEmpty() ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, "Ricollega i media", msg);
+            });
+        });
+        safe->relinkJob->launchThread();
+    });
+}
+
+void MainComponent::saveVersionDialog()
+{
+    if (project->getFile() == juce::File()) { showError ("Salva prima la sessione: le versioni stanno in una cartella accanto al file."); return; }
+    auto* aw = new juce::AlertWindow ("Salva una versione", "Copia numerata della sessione cosi' com'e' adesso, per poter tornare indietro (anche dopo aver chiuso il programma).", juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("note", "", "Nota (facoltativa, per esempio \"prima del nuovo montaggio\")");
+    aw->addButton ("Salva versione", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton ("Annulla", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        juce::String err;
+        const auto f = versions::save (*safe->project, aw->getTextEditorContents ("note"), err);
+        if (f == juce::File()) safe->showError (err);
+        else juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Versione salvata", f.getFileName() + "\n\nSi ritrova in File > Versioni della sessione.");
+    }), true);
+}
+
+namespace
+{
+/** Elenco delle versioni di una sessione con Apri ed Elimina. */
+class VersionsPanel : public juce::Component, private juce::ListBoxModel
+{
+public:
+    VersionsPanel (juce::File session, std::function<void (juce::File)> open) : sessionFile (std::move (session)), openFn (std::move (open))
+    {
+        list.setRowHeight (40);
+        list.setColour (juce::ListBox::backgroundColourId, bg);
+        list.setColour (juce::ListBox::outlineColourId, border);
+        list.setOutlineThickness (1);
+        addAndMakeVisible (list);
+        addAndMakeVisible (openBtn);
+        addAndMakeVisible (delBtn);
+        openBtn.onClick = [this] { const int r = list.getSelectedRow(); if (r >= 0 && r < (int) items.size()) { auto f = items[(size_t) r].file; if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) dw->exitModalState (0); openFn (f); } };
+        delBtn.onClick = [this]
+        {
+            const int r = list.getSelectedRow();
+            if (r < 0 || r >= (int) items.size()) return;
+            versions::remove (items[(size_t) r]);
+            refresh();
+        };
+        refresh();
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (panel); }
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (14);
+        auto bottom = r.removeFromBottom (32);
+        r.removeFromBottom (8);
+        list.setBounds (r);
+        openBtn.setBounds (bottom.removeFromRight (110));
+        bottom.removeFromRight (8);
+        delBtn.setBounds (bottom.removeFromRight (100));
+    }
+
+private:
+    void refresh() { items = versions::list (sessionFile); list.updateContent(); list.repaint(); if (! items.empty()) list.selectRow (0); }
+    int getNumRows() override { return (int) items.size(); }
+    void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected) override
+    {
+        if (row < 0 || row >= (int) items.size()) return;
+        const auto& v = items[(size_t) row];
+        if (selected) { g.setColour (blue.withAlpha (0.3f)); g.fillRect (0, 0, w, h); }
+        g.setColour (text);
+        g.setFont (font (13.0f, true));
+        g.drawText ("Versione " + juce::String (v.number) + "   " + v.time.formatted ("%d/%m/%Y %H:%M"), 12, 3, w - 24, 18, juce::Justification::centredLeft);
+        g.setColour (dim);
+        g.setFont (font (12.0f));
+        g.drawText (v.note.isEmpty() ? juce::String ("(nessuna nota)") : v.note, 12, 21, w - 24, 16, juce::Justification::centredLeft, true);
+    }
+    void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override { openBtn.triggerClick(); }
+
+    juce::File sessionFile;
+    std::function<void (juce::File)> openFn;
+    std::vector<versions::Entry> items;
+    juce::ListBox list { {}, this };
+    juce::TextButton openBtn { "Apri" }, delBtn { "Elimina" };
+};
+} // namespace
+
+void MainComponent::versionsDialog()
+{
+    if (project->getFile() == juce::File()) { showError ("Salva prima la sessione."); return; }
+    if (versions::list (project->getFile()).empty()) { showError ("Non ci sono ancora versioni: usa File > Salva una versione."); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto* panel = new VersionsPanel (project->getFile(), [safe] (juce::File f) { juce::MessageManager::callAsync ([safe, f] { if (safe != nullptr) safe->openFile (f); }); });
+    panel->setSize (480, 360);
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (panel);
+    lo.dialogTitle = "Versioni della sessione";
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = false;
+    lo.launchAsync();
+}
+
+void MainComponent::checkSessionDialog()
+{
+    auto issues = check::checkSession (*project);
+    lastCheckClean = true;
+    for (auto& i : issues) lastCheckClean = lastCheckClean && i.level == check::Issue::Info;
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto* panel = new check::Panel (std::move (issues),
+        [safe] (const check::Issue& i)
+        {
+            if (safe == nullptr) return;
+            if (i.cueId > 0) { safe->goToAdrCue (i.cueId); safe->showAdrWindow(); }
+            else if (i.trackId > 0) { safe->project->selectedTrackId = i.trackId; safe->project->sendChangeMessage(); }
+        },
+        [safe] { if (safe != nullptr) safe->relinkMedia(); });
+    panel->setSize (640, 420);
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (panel);
+    lo.dialogTitle = "Controllo della sessione";
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = true;
+    lo.launchAsync();
+}
+
+void MainComponent::workflowDialog()
+{
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto* panel = new workflow::Panel (workflow::steps (*project, lastCheckClean, deliveredThisSession), [safe] (int a)
+    {
+        if (safe == nullptr) return;
+        switch (a)
+        {
+            case workflow::ActImportVideo:   safe->importVideoDialog(); break;
+            case workflow::ActImportScript:  safe->importAdrDialog(); break;
+            case workflow::ActTracks:
+            {
+                const int n = dub::createCharacterTracks (*safe->project, safe->project->getSession().cues);
+                safe->showError (n > 0 ? juce::String (n) + " tracce Dialoghi create, una per personaggio." : "Non c'e' nulla da creare: servono dei cue con i personaggi, oppure le tracce esistono gia'.");
+                break;
+            }
+            case workflow::ActRecord: case workflow::ActApprove: safe->showAdrWindow(); break;
+            case workflow::ActCheck:         safe->checkSessionDialog(); break;
+            case workflow::ActDeliver:       safe->exportDialog(); break;
+            default: break;
+        }
+    });
+    panel->setSize (560, 14 + 7 * 52 + 14);
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (panel);
+    lo.dialogTitle = "Flusso di lavoro del doppiaggio";
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = false;
+    lo.launchAsync();
+}
+
 void MainComponent::toggleScriptWindow()
 {
     if (scriptWindow != nullptr) { scriptWindow.reset(); commandManager.commandStatusChanged(); return; }
@@ -2301,6 +2535,7 @@ int exportAdrTakes (const Project& p, const juce::File& folder, juce::StringArra
                 if (w == nullptr) { errors.add ("Impossibile creare " + file.getFileName()); continue; }
                 os.release();
 
+                if (c.asset->offline) { errors.add ("Il file di " + c.asset->name + " non e' stato trovato: il take non si puo' esportare."); continue; }
                 juce::AudioBuffer<float> buf (c.asset->numChannels(), (int) c.length);
                 for (int ch = 0; ch < buf.getNumChannels(); ++ch)
                     buf.copyFrom (ch, 0, c.asset->audio, ch, (int) c.offset, (int) c.length);

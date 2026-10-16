@@ -31,8 +31,13 @@ struct Asset
     juce::AudioBuffer<float> audio;
     std::vector<PeakLevel> levels;
 
-    int64_t length() const noexcept { return audio.getNumSamples(); }
-    int numChannels() const noexcept { return audio.getNumChannels(); }
+    // file non trovato all'apertura della sessione: il clip resta (con il percorso) ma non suona; si ricollega con File > Ricollega i media
+    bool offline = false;
+    int64_t offlineLength = 0;      // lunghezza minima ricordata dai clip della sessione
+    int offlineChannels = 2;
+
+    int64_t length() const noexcept { return offline ? offlineLength : audio.getNumSamples(); }
+    int numChannels() const noexcept { return offline ? offlineChannels : audio.getNumChannels(); }
     void buildPeaks();
 };
 using AssetPtr = std::shared_ptr<Asset>;
@@ -488,6 +493,15 @@ public:
     void markDirty() { dirty = true; sendChangeMessage(); }
     void loadSession (const juce::File& f, std::function<void (juce::String)> done);
     void newSession (bool withDefaultTrack = true);
+
+    // media mancanti
+    juce::String missingVideoPath;     // video della sessione che non si e' trovato all'apertura (resta nel salvataggio)
+    double missingVideoOffset = 0.0;
+    bool hasOfflineMedia() const noexcept;
+    /** Sostituisce, in tutti i clip, gli asset indicati (per esempio quelli offline appena ricollegati). Un solo passo di undo. */
+    void replaceAssets (const std::map<const Asset*, AssetPtr>& replacements);
+    /** Rilega il video mancante senza toccare l'audio della sessione; mantiene l'offset salvato. */
+    void relinkVideo (const juce::File& f, std::function<void (juce::String)> done);
 
 private:
     int addTrackInternal();

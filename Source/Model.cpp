@@ -170,8 +170,18 @@ void Project::setSampleRate (double newRate)
         auto it = cache.find (key);
         if (it == cache.end())
         {
-            juce::String err;
-            it = cache.emplace (key, loadAsset (formats, a->file, newRate, err)).first;
+            if (a->offline)   // un file mancante resta mancante: si adatta solo la lunghezza ricordata
+            {
+                auto off = std::make_shared<Asset>();
+                off->file = a->file; off->name = a->name; off->offline = true; off->offlineChannels = a->offlineChannels;
+                off->offlineLength = (int64_t) std::llround ((double) a->offlineLength * ratio);
+                it = cache.emplace (key, off).first;
+            }
+            else
+            {
+                juce::String err;
+                it = cache.emplace (key, loadAsset (formats, a->file, newRate, err)).first;
+            }
         }
         if (it->second == nullptr) return false;
         a = it->second;
@@ -1098,6 +1108,7 @@ void Project::normalizeClip (int64_t id)
     auto* c = findClip (id);
     if (c == nullptr || c->asset == nullptr) return;
     float peak = 0.0f;
+    if (c->asset->offline) return;
     for (int ch = 0; ch < c->asset->numChannels(); ++ch)
         peak = juce::jmax (peak, c->asset->audio.getMagnitude (ch, (int) c->offset, (int) c->length));
     if (peak <= 1.0e-5f) return;
@@ -1110,6 +1121,7 @@ void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce:
 {
     auto* c = findClip (id);
     if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done ("Clip non valido."); return; }
+    if (c->asset->offline) { if (done) done ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media."); return; }
     ratio = juce::jlimit (0.25, 4.0, ratio);
     const auto src = c->asset;
     const int off = (int) c->offset, len = (int) c->length;
@@ -1283,6 +1295,11 @@ juce::var Project::toVar() const
         root->setProperty ("video", session.video->file.getFullPathName());
         root->setProperty ("videoOffset", session.video->offsetSec);
     }
+    else if (missingVideoPath.isNotEmpty())   // video non trovato all'apertura: il percorso non va perso
+    {
+        root->setProperty ("video", missingVideoPath);
+        root->setProperty ("videoOffset", missingVideoOffset);
+    }
 
     juce::Array<juce::var> tracks;
     for (auto& t : session.tracks)
@@ -1391,9 +1408,67 @@ bool Project::saveCopy (const juce::File& f, juce::String& error) const
     return true;
 }
 
+bool Project::hasOfflineMedia() const noexcept
+{
+    if (missingVideoPath.isNotEmpty() && session.video == nullptr) return true;
+    for (auto& t : session.tracks)
+        for (auto& c : t.clips)
+            if (c.asset != nullptr && c.asset->offline) return true;
+    return false;
+}
+
+void Project::replaceAssets (const std::map<const Asset*, AssetPtr>& replacements)
+{
+    if (replacements.empty()) return;
+    beginEdit();
+    for (auto& t : session.tracks)
+        for (auto& c : t.clips)
+        {
+            if (c.asset == nullptr) continue;
+            auto it = replacements.find (c.asset.get());
+            if (it == replacements.end() || it->second == nullptr) continue;
+            c.asset = it->second;
+            c.offset = juce::jlimit<int64_t> (0, c.asset->length(), c.offset);
+            c.length = juce::jmin (c.length, c.asset->length() - c.offset);
+        }
+    changed();
+}
+
+void Project::relinkVideo (const juce::File& f, std::function<void (juce::String)> done)
+{
+    const double offset = missingVideoOffset;
+    runAsync ([=, this]() -> std::function<void()>
+    {
+        setTask ("Ricollego il video", 0.01f);
+        auto info = video::probe (f);
+        if (! info.ok) { setTask ({}, -1.0f); return [=] { if (done) done (info.error); }; }
+        auto va = std::make_shared<VideoAsset>();
+        va->file = f;
+        va->duration = info.duration;
+        va->fps = info.fps;
+        va->width = info.width;
+        va->height = info.height;
+        va->thumbInterval = juce::jmax (1.0, std::ceil (info.duration / 240.0));
+        va->thumbs = video::thumbnails (f, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56,
+                                        [this] (float p) { setTask ("Ricollego il video: miniature", 0.02f + 0.95f * p); });
+        va->offsetSec = offset;
+        setTask ({}, -1.0f);
+        return [=, this]
+        {
+            beginEdit();
+            session.video = va;
+            missingVideoPath.clear();
+            changed();
+            if (done) done ({});
+        };
+    });
+}
+
 void Project::newSession (bool withDefaultTrack)
 {
     session = Session();
+    missingVideoPath.clear();
+    missingVideoOffset = 0.0;
     nextMarkerId = 1;
     nextCueId = 1;
     undoStack.clear();
@@ -1416,7 +1491,9 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
 
     runAsync ([=, this]() -> std::function<void()>
     {
-        juce::String errors;
+        juce::String errors, lostVideoPath;
+        int missingCount = 0;
+        double lostVideoOffset = 0.0;
         auto parsed = juce::JSON::parse (f);
         auto result = std::make_shared<Session>();
         const int loudStd = (int) parsed.getProperty ("loudnessStandard", 1);
@@ -1559,7 +1636,16 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                             {
                                 juce::String err;
                                 auto a = loadAsset (*fm, juce::File (path), rate, err);
-                                if (a == nullptr) errors += (errors.isEmpty() ? "" : "\n") + err;
+                                if (a == nullptr)
+                                {
+                                    // file mancante: il clip resta, senza audio, e si potra' ricollegare
+                                    a = std::make_shared<Asset>();
+                                    a->file = juce::File (path);
+                                    a->name = a->file.getFileNameWithoutExtension();
+                                    a->offline = true;
+                                    ++missingCount;
+                                    errors += (errors.isEmpty() ? "" : "\n") + juce::String ("File non trovato: ") + path;
+                                }
                                 it = cache.emplace (path, a).first;
                             }
                             if (it->second == nullptr) continue;
@@ -1575,6 +1661,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                             c.cueId = (int) cv.getProperty ("cueId", 0);
                             c.takeNo = (int) cv.getProperty ("takeNo", 0);
                             c.muted = (bool) cv.getProperty ("muted", false);
+                            if (c.asset->offline) c.asset->offlineLength = juce::jmax (c.asset->offlineLength, c.offset + c.length);   // la lunghezza minima che i clip richiedono
                             c.offset = juce::jlimit<int64_t> (0, c.asset->length(), c.offset);
                             c.length = juce::jlimit<int64_t> (0, c.asset->length() - c.offset, c.length);
                             if (c.length > 0) t.clips.push_back (c);
@@ -1605,7 +1692,11 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     result->video = va;
                 }
                 else
+                {
                     errors += (errors.isEmpty() ? "" : "\n") + juce::String ("Video non trovato: ") + vf.getFullPathName();
+                    lostVideoPath = vpath;
+                    lostVideoOffset = (double) parsed.getProperty ("videoOffset", 0.0);
+                }
             }
         }
 
@@ -1637,6 +1728,8 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 tcStartSec = ptcStart;
                 rulerTimecode = prulerTc;
                 adrPreRoll = pPre; adrPostRoll = pPost; adrBeeps = pBeeps; adrStreamer = pStreamer; adrDialogueSize = pDialogueSize; adrNaming = pNaming; exportIn = pExportIn; exportOut = pExportOut;
+                missingVideoPath = lostVideoPath;
+                missingVideoOffset = lostVideoOffset;
                 publish();
                 dirty = false;
                 if (onSessionLoaded) onSessionLoaded();

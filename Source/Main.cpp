@@ -10,6 +10,10 @@
 #include "AudioAlign.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
+#include "Relink.h"
+#include "Versions.h"
+#include "SessionCheck.h"
+#include "WorkflowGuide.h"
 #include "ThemeManager.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
@@ -252,7 +256,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepRecording(); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepRecording(); }); }); });
         });
     }
 
@@ -1347,6 +1351,136 @@ private:
         expect (ok && peakAt == 1000 && std::abs (peakV - amp) < 0.01f, "export: impulso al campione " + juce::String (peakAt) + " (atteso 1000)");
     }
 
+    // sessioni affidabili: media mancanti non distruttivi, ricollegamento, versioni, controllo, flusso
+    void stepReliability (std::function<void()> next)
+    {
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("arotron_reliab");
+        dir.deleteRecursively();
+        dir.createDirectory();
+        const auto wav = dir.getChildFile ("voce.wav");
+        {
+            juce::WavAudioFormat wf;
+            std::unique_ptr<juce::FileOutputStream> os (wav.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 48000.0, 1, 24, {}, 0));
+            if (w != nullptr) os.release();
+            juce::AudioBuffer<float> b (1, 48000);
+            for (int i = 0; i < 48000; ++i) b.setSample (0, i, 0.5f * std::sin (0.06f * (float) i));
+            if (w != nullptr) w->writeFromAudioSampleBuffer (b, 0, 48000);
+        }
+        juce::String err;
+        auto asset = fc::loadAsset (formats, wav, 48000.0, err);
+        expect (asset != nullptr, "media mancanti: file di prova creato " + err);
+        if (asset == nullptr) { next(); return; }
+
+        fc::Project p (formats, 48000.0);
+        fc::dub::applyTemplate (p, fc::dub::templates()[0]);
+        {
+            fc::Clip c; c.id = 1; c.asset = asset; c.start = 24000; c.offset = 4800; c.length = 30000; c.gainDb = -3.0f;
+            p.edit().tracks[3].clips = { c };
+        }
+        const auto sess = dir.getChildFile ("sessione.arostudio");
+        expect (p.save (sess, err), "media mancanti: sessione salvata " + err);
+
+        // il file sparisce
+        const auto parked = dir.getChildFile ("altrove").getChildFile ("voce.wav");
+        parked.getParentDirectory().createDirectory();
+        wav.moveFileTo (parked);
+
+        project2 = std::make_unique<fc::Project> (formats, 48000.0);
+        project2->loadSession (sess, [this, next, dir, sess, parked, wav] (juce::String e)
+        {
+            auto& s2 = project2->getSession();
+            const fc::Clip* c = s2.tracks.size() == 4 && ! s2.tracks[3].clips.empty() ? &s2.tracks[3].clips[0] : nullptr;
+            expect (c != nullptr && c->asset->offline && c->start == 24000 && c->offset == 4800 && c->length == 30000 && std::abs (c->gainDb + 3.0f) < 1.0e-4f,
+                    "media mancanti: il clip resta nella sessione (offline) con posizione, offset, lunghezza e guadagno");
+            expect (e.contains ("File non trovato") && project2->hasOfflineMedia(), "media mancanti: segnalati all'apertura");
+
+            fc::Mixer m;
+            juce::AudioBuffer<float> buf (2, 512);
+            m.render (s2, 24000, buf, 0, 512);
+            expect (buf.getMagnitude (0, 512) == 0.0f, "media mancanti: il clip offline non suona (e non manda in crash il mixer)");
+
+            // risalvando il percorso non si perde
+            const auto again = dir.getChildFile ("risalvata.arostudio");
+            juce::String er;
+            project2->saveCopy (again, er);
+            expect (juce::JSON::parse (again).toString().isEmpty() == false || again.loadFileAsString().contains ("voce.wav"), "media mancanti: il percorso del file resta nella sessione risalvata");
+
+            // controllo sessione
+            auto issues = fc::check::checkSession (*project2);
+            bool hasMissing = false;
+            for (auto& i : issues) hasMissing = hasMissing || (i.level == fc::check::Issue::Error && i.text.contains ("File mancante"));
+            expect (hasMissing && issues.front().level == fc::check::Issue::Error, "controllo sessione: il file mancante e' un errore, in cima all'elenco");
+
+            // ricollegamento da una cartella
+            const auto found = fc::relink::search (formats, s2, dir, 48000.0, {}, [] (double) { return true; });
+            expect (found.found == 1 && found.notFound.isEmpty() && found.replacements.size() == 1, "ricollegamento: file trovato nelle sottocartelle (" + juce::String (found.found) + ")");
+            project2->replaceAssets (found.replacements);
+            auto& s3 = project2->getSession();
+            expect (! project2->hasOfflineMedia() && s3.tracks[3].clips[0].start == 24000 && ! s3.tracks[3].clips[0].asset->offline, "ricollegamento: il clip torna con audio, stessa posizione");
+            m.render (s3, 24000, buf, 0, 512);
+            expect (buf.getMagnitude (0, 512) > 0.1f, "ricollegamento: il clip suona di nuovo");
+            project2->undo();
+            expect (project2->hasOfflineMedia(), "ricollegamento: un solo undo torna offline");
+
+            // un file troppo corto viene rifiutato
+            {
+                const auto shortDir = dir.getChildFile ("corti");
+                shortDir.createDirectory();
+                juce::WavAudioFormat wf;
+                std::unique_ptr<juce::FileOutputStream> os (shortDir.getChildFile ("voce.wav").createOutputStream());
+                std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 48000.0, 1, 24, {}, 0));
+                if (w != nullptr) { os.release(); juce::AudioBuffer<float> b (1, 1000); b.clear(); w->writeFromAudioSampleBuffer (b, 0, 1000); }
+                w.reset();
+                const auto sh = fc::relink::search (formats, project2->getSession(), shortDir, 48000.0, {}, [] (double) { return true; });
+                expect (sh.found == 0 && sh.tooShort.size() == 1, "ricollegamento: un file piu' corto di quanto servono i clip e' rifiutato");
+            }
+
+            // versioni
+            fc::Project vp (formats, 48000.0);
+            vp.setFile (sess);
+            juce::String ve;
+            const auto v1 = fc::versions::save (vp, "prima del montaggio", ve);
+            const auto v2 = fc::versions::save (vp, "", ve);
+            const auto list = fc::versions::list (sess);
+            expect (v1.existsAsFile() && v2.existsAsFile() && list.size() == 2 && list[0].number == 2 && list[1].number == 1 && list[1].note == "prima del montaggio" && list[0].note.isEmpty(),
+                    "versioni: due copie numerate (" + v1.getFileName() + "), la piu' recente per prima, con la nota");
+            expect (fc::versions::remove (list[1]) && fc::versions::list (sess).size() == 1 && ! v1.withFileExtension ("txt").existsAsFile(), "versioni: eliminazione della versione e della sua nota");
+            fc::Project unsaved (formats, 48000.0);
+            juce::String ue;
+            expect (fc::versions::save (unsaved, "", ue) == juce::File() && ue.isNotEmpty(), "versioni: senza sessione salvata spiega cosa fare");
+
+            // controllo sessione su una sessione costruita ad hoc
+            fc::Project cp (formats, 48000.0);
+            fc::dub::applyTemplate (cp, fc::dub::templates()[0]);
+            cp.edit().tracks[3].clips = { fc::Clip() };
+            cp.edit().tracks[3].clips[0].asset = std::make_shared<fc::Asset>();
+            cp.edit().tracks[3].clips[0].asset->audio.setSize (1, 100);
+            cp.edit().tracks[3].clips[0].length = 100;
+            cp.edit().tracks[2].live->trackType = fc::TrackNone;
+            cp.edit().tracks[2].clips = cp.edit().tracks[3].clips;
+            std::vector<fc::AdrCue> cues (3);
+            cues[0].id = 1; cues[0].number = 1; cues[0].status = 0;
+            cues[1].id = 2; cues[1].number = 2; cues[1].status = 3;
+            cues[2].id = 3; cues[2].number = 3; cues[2].status = 2;
+            cp.addCues (cues, true);
+            const auto iss = fc::check::checkSession (cp);
+            int warn = 0; bool noRole = false, toRecord = false, redo = false;
+            for (auto& i : iss) { warn += i.level == fc::check::Issue::Warning; noRole = noRole || i.text.contains ("nessun ruolo"); toRecord = toRecord || i.text.contains ("da registrare"); redo = redo || i.text.contains ("da rifare"); }
+            expect (noRole && toRecord && redo && warn >= 3, "controllo sessione: traccia senza ruolo, cue da registrare e da rifare (" + juce::String (warn) + " avvisi)");
+            expect (fc::check::checkSession (fc::Project (formats, 48000.0)).front().text.contains ("vuota"), "controllo sessione: sessione vuota segnalata");
+
+            // flusso di lavoro
+            const auto steps = fc::workflow::steps (cp, false, false);
+            expect (steps.size() == 7 && ! steps[0].done && steps[1].done && ! steps[3].done && ! steps[4].done && ! steps[5].done && ! steps[6].done, "flusso: video mancante e copione presente, il resto da fare");
+            const auto stepsDone = fc::workflow::steps (cp, true, true);
+            expect (stepsDone[5].done && stepsDone[6].done, "flusso: controllo e consegna spuntati quando fatti");
+
+            dir.deleteRecursively();
+            next();
+        });
+    }
+
     // cuffie dell'attore: mix su una seconda coppia di uscite, bip con livello proprio, talkback del direttore
     void stepBooth()
     {
@@ -2255,7 +2389,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.3.0"; }
+    const juce::String getApplicationVersion() override { return "2.4.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

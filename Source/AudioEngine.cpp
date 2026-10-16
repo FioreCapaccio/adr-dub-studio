@@ -64,7 +64,7 @@ void Mixer::renderClip (const Clip& c, int64_t pos, int n)
 {
     const int64_t cs = juce::jmax (pos, c.start);
     int64_t ce = juce::jmin (pos + n, c.end());
-    if (c.asset == nullptr || cs >= ce) return;
+    if (c.asset == nullptr || c.asset->offline || cs >= ce) return;   // un clip offline (file mancante) non suona
 
     const int64_t srcOff = c.offset + (cs - c.start);
     ce = juce::jmin (ce, cs + (c.asset->length() - srcOff));

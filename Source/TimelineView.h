@@ -120,6 +120,7 @@ private:
     void drawVideoLane (juce::Graphics&);
     void drawHeader (juce::Graphics&, int trackIdx);
     void drawClip (juce::Graphics&, const Track&, int trackIdx, const Clip&, juce::Rectangle<int> lanes);
+    void drawOfflineClip (juce::Graphics&, const Clip&, juce::Rectangle<float>);
     void drawWaveform (juce::Graphics&, const Clip&, juce::Rectangle<float> wf, juce::Rectangle<int> lanes);
 
     // interazione
