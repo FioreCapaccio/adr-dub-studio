@@ -184,11 +184,9 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     auto step = [this] (int d)
     {
         const auto& cues = project.getSession().cues;
-        if (cues.empty()) return;
-        int idx = -1;
-        for (size_t i = 0; i < cues.size(); ++i) if (cues[i].id == project.selectedCueId) idx = (int) i;
-        idx = juce::jlimit (0, (int) cues.size() - 1, idx + d);
-        project.selectedCueId = cues[(size_t) idx].id;
+        if (shown.empty()) return;
+        const int idx = juce::jlimit (0, (int) shown.size() - 1, selectedRow() + d);
+        project.selectedCueId = cues[shown[(size_t) idx]].id;
         project.sendChangeMessage();
         if (actions.goToCue) actions.goToCue (project.selectedCueId);
     };
@@ -230,6 +228,29 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     };
     addAndMakeVisible (cbTrack);
 
+    lblFilter.setText (TRANS ("SOLO PERSONAGGIO"), juce::dontSendNotification);
+    lblFilter.setFont (font (10.5f, true));
+    lblFilter.setColour (juce::Label::textColourId, dim);
+    lblCount.setFont (font (11.5f));
+    lblCount.setColour (juce::Label::textColourId, dim);
+    cbFilter.setTooltip (TRANS ("Mostra solo i cue di un personaggio: elenco e pulsanti CUE precedente/successivo seguono il filtro"));
+    cbFilter.onChange = [this]
+    {
+        filterChar = cbFilter.getSelectedId() > 1 ? cbFilter.getText() : juce::String();
+        rebuildShown();
+        // se il cue selezionato non fa parte del filtro, passa al primo cue del personaggio
+        if (! shown.empty() && selectedRow() < 0)
+        {
+            project.selectedCueId = project.getSession().cues[shown.front()].id;
+            project.sendChangeMessage();
+            if (actions.goToCue) actions.goToCue (project.selectedCueId);
+        }
+        refresh();
+    };
+    addAndMakeVisible (lblFilter);
+    addAndMakeVisible (lblCount);
+    addAndMakeVisible (cbFilter);
+
     project.addChangeListener (this);
     refresh();
 }
@@ -238,20 +259,44 @@ AdrPanel::~AdrPanel() { project.removeChangeListener (this); }
 
 const AdrCue* AdrPanel::cueAtRow (int row) const
 {
-    const auto& c = project.getSession().cues;
-    return juce::isPositiveAndBelow (row, (int) c.size()) ? &c[(size_t) row] : nullptr;
+    return juce::isPositiveAndBelow (row, (int) shown.size()) ? &project.getSession().cues[shown[(size_t) row]] : nullptr;
 }
 
 int AdrPanel::selectedRow() const
 {
     const auto& c = project.getSession().cues;
-    for (size_t i = 0; i < c.size(); ++i) if (c[i].id == project.selectedCueId) return (int) i;
+    for (size_t i = 0; i < shown.size(); ++i) if (c[shown[i]].id == project.selectedCueId) return (int) i;
     return -1;
+}
+
+void AdrPanel::rebuildShown()
+{
+    const auto& cues = project.getSession().cues;
+    juce::StringArray names;
+    for (auto& c : cues) if (c.character.trim().isNotEmpty()) names.addIfNotAlreadyThere (c.character.trim());
+    names.sortNatural();
+    if (filterChar.isNotEmpty() && ! names.contains (filterChar, true)) filterChar = {};
+
+    cbFilter.clear (juce::dontSendNotification);
+    cbFilter.addItem (TRANS ("Tutti i personaggi"), 1);
+    int sel = 1;
+    for (int i = 0; i < names.size(); ++i)
+    {
+        cbFilter.addItem (names[i], i + 2);
+        if (names[i].equalsIgnoreCase (filterChar)) sel = i + 2;
+    }
+    cbFilter.setSelectedId (sel, juce::dontSendNotification);
+
+    shown.clear();
+    for (size_t i = 0; i < cues.size(); ++i)
+        if (filterChar.isEmpty() || cues[i].character.trim().equalsIgnoreCase (filterChar)) shown.push_back (i);
+    lblCount.setText (juce::String ((int) shown.size()) + " / " + juce::String ((int) cues.size()) + " cue", juce::dontSendNotification);
 }
 
 void AdrPanel::refresh()
 {
     loading = true;
+    rebuildShown();
     table.updateContent();
     const int row = selectedRow();
     if (row >= 0) table.selectRow (row, false, true); else table.deselectAllRows();

@@ -999,13 +999,17 @@ void TimelineView::paint (juce::Graphics& g)
             const float a = juce::jmax ((float) lanes.getX(), cx0), b = juce::jmin ((float) lanes.getRight(), cx1);
             g.setColour (cc.withAlpha (sel ? 0.16f : 0.08f));
             g.fillRect (a, (float) lanes.getY(), b - a, (float) lanes.getHeight());
+            g.setColour (cc.withAlpha (sel ? 0.30f : 0.16f));
+            g.fillRect (a, (float) lanes.getY(), b - a, (float) cueStripH);   // fascia da afferrare per spostare il cue
             g.setColour (cc.withAlpha (sel ? 0.9f : 0.5f));
             g.drawVerticalLine ((int) cx0, (float) lanes.getY(), (float) lanes.getBottom());
             g.drawVerticalLine ((int) cx1, (float) lanes.getY(), (float) lanes.getBottom());
+            for (float ex : { cx0, cx1 })   // maniglie dei bordi
+                if (ex >= (float) lanes.getX() && ex <= (float) lanes.getRight()) g.fillRect (ex - 1.5f, (float) lanes.getY(), 3.0f, (float) cueStripH);
             if (cx1 - cx0 > 30.0f)
             {
                 g.setFont (font (10.5f, true));
-                g.drawText ("#" + juce::String (cue.number) + " " + cue.character, juce::Rectangle<float> (a + 4.0f, (float) lanes.getY() + 1.0f, b - a - 6.0f, 13.0f).toNearestInt(),
+                g.drawText ("#" + juce::String (cue.number) + " " + cue.character, juce::Rectangle<float> (a + 6.0f, (float) lanes.getY() + 1.0f, b - a - 10.0f, (float) cueStripH - 1.0f).toNearestInt(),
                             juce::Justification::centredLeft, true);
             }
         }
@@ -1123,6 +1127,27 @@ void TimelineView::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+TimelineView::CueHit TimelineView::cueHitTest (juce::Point<int> p, bool onEmptyLane) const
+{
+    const auto lanes = laneArea();
+    if (! lanes.contains (p)) return {};
+    const bool strip = p.y < lanes.getY() + cueStripH;
+    if (! strip && ! onEmptyLane) return {};
+    const int grab = 5;
+    CueHit best;
+    float bestDist = 1.0e9f;
+    for (auto& cue : project.getSession().cues)
+    {
+        const float x0 = sampleToX (cue.inPos), x1 = sampleToX (cue.outPos);
+        const float px = (float) p.x;
+        auto offer = [&] (Drag k, float d) { if (d < bestDist) { bestDist = d; best = { cue.id, k }; } };
+        if (std::abs (px - x0) <= grab) offer (Drag::CueIn, std::abs (px - x0));
+        if (std::abs (px - x1) <= grab) offer (Drag::CueOut, std::abs (px - x1));
+        if (strip && px > x0 + grab && px < x1 - grab) offer (Drag::CueMove, 100.0f);   // i bordi hanno la precedenza sul corpo
+    }
+    return best;
+}
+
 TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
 {
     Hit h;
@@ -1452,6 +1477,13 @@ void TimelineView::mouseMove (const juce::MouseEvent& e)
         repaint (razorGuide.expanded (3, 1));
     }
 
+    if (tool == Tool::Select)
+        if (const auto ch = cueHitTest (e.getPosition(), hit.type == HitType::Lane); ch.id != 0)
+        {
+            setMouseCursor (ch.kind == Drag::CueMove ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::LeftRightResizeCursor);
+            return;
+        }
+
     if (hit.type == HitType::TrackResize) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
     if (hit.type == HitType::HeaderTrim) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
     if (hit.type == HitType::HeaderGrip) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); return; }
@@ -1520,6 +1552,19 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
         else showTrackMenu (-1);
         return;
     }
+
+    // cue ADR: bordo = sposta ingresso/uscita, fascia = sposta tutto il cue
+    if (tool == Tool::Select && ! e.mods.isCommandDown())
+        if (const auto ch = cueHitTest (e.getPosition(), hit.type == HitType::Lane); ch.id != 0)
+            if (auto* cue = project.findCue (ch.id))
+            {
+                drag = ch.kind;
+                cueDragId = ch.id;
+                cueOrigIn = cue->inPos;
+                cueOrigOut = cue->outPos;
+                if (project.selectedCueId != ch.id) { project.selectedCueId = ch.id; project.sendChangeMessage(); }
+                return;
+            }
 
     // Cmd (Ctrl su Windows) + trascina sulla timeline: seleziona la porzione che diventa la regione di loop
     if (e.mods.isCommandDown() && (hit.type == HitType::Lane || hit.clip != 0) && tool == Tool::Select)
@@ -1719,6 +1764,38 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
             int64_t pos = juce::jmax<int64_t> (0, xToSample (e.x)), snapped = 0;
             if (snapTo (pos, snapped)) pos = snapped;
             m->pos = pos;
+            project.changed();
+        }
+        return;
+    }
+    if (drag == Drag::CueIn || drag == Drag::CueOut || drag == Drag::CueMove)
+    {
+        if (e.getDistanceFromDragStart() < 3 && ! dragStarted) return;
+        beginDragEdit();
+        if (auto* cue = project.findCue (cueDragId))
+        {
+            buildSnapPoints (false);
+            snapPoints.erase (std::remove_if (snapPoints.begin(), snapPoints.end(), [this] (int64_t v) { return v == cueOrigIn || v == cueOrigOut; }), snapPoints.end());
+            const int64_t minLen = (int64_t) (project.getSampleRate() * 0.1);
+            int64_t snapped = 0;
+            if (drag == Drag::CueMove)
+            {
+                int64_t delta = juce::jmax ((int64_t) std::llround ((double) e.getDistanceFromDragStartX() * spp), -cueOrigIn);
+                int64_t sa = 0, sb = 0;
+                const bool snapA = snapTo (cueOrigIn + delta, sa), snapB = snapTo (cueOrigOut + delta, sb);
+                if (snapA && (! snapB || std::abs (sa - (cueOrigIn + delta)) <= std::abs (sb - (cueOrigOut + delta)))) delta = sa - cueOrigIn;
+                else if (snapB) delta = sb - cueOrigOut;
+                delta = juce::jmax (delta, -cueOrigIn);
+                cue->inPos = cueOrigIn + delta;
+                cue->outPos = cueOrigOut + delta;
+            }
+            else
+            {
+                int64_t pos = juce::jmax<int64_t> (0, xToSample (e.x));
+                if (snapTo (pos, snapped)) pos = snapped;
+                if (drag == Drag::CueIn) cue->inPos = juce::jlimit<int64_t> (0, cue->outPos - minLen, pos);
+                else cue->outPos = juce::jmax (cue->inPos + minLen, pos);
+            }
             project.changed();
         }
         return;
@@ -1995,6 +2072,16 @@ void TimelineView::mouseUp (const juce::MouseEvent& e)
             project.changed();
         }
         markerDragId = 0;
+    }
+    else if (drag == Drag::CueIn || drag == Drag::CueOut || drag == Drag::CueMove)
+    {
+        if (dragStarted)
+        {
+            auto& cues = project.edit().cues;
+            std::sort (cues.begin(), cues.end(), [] (const AdrCue& a, const AdrCue& b) { return a.inPos < b.inPos; });
+            project.changed();
+        }
+        cueDragId = 0;
     }
     else if (drag == Drag::TrackReorder)
     {

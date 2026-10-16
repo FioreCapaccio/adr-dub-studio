@@ -16,7 +16,7 @@ class TimelineView : public juce::Component,
 {
 public:
     static inline int headerW = 264;   // larghezza dell'intestazione delle tracce: cambia con il layout (Vista > Layout)
-    static constexpr int knobW = 50, exportH = 12, rulerH = 44, sbSize = 12, videoH = 66, minTrackH = 48, maxTrackH = 400;
+    static constexpr int knobW = 50, cueStripH = 14, exportH = 12, rulerH = 44, sbSize = 12, videoH = 66, minTrackH = 48, maxTrackH = 400;
 
     TimelineView (Project&, AudioEngine&);
     ~TimelineView() override;
@@ -73,7 +73,7 @@ public:
 
 private:
     enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, Trim, AutoSegment, TrackResize, VideoMove,
-                      Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint };
+                      Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove };
     enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderInput, TrackResize,
                          Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane };
     struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; };
@@ -109,6 +109,9 @@ private:
     int trackIndexAtY (int y) const noexcept;
 
     Hit hitTest (juce::Point<int>) const;
+    /** Maniglie dei cue ADR: nella fascia in alto delle corsie (bordo = ingresso/uscita, corpo = sposta) e sul bordo nelle corsie vuote. */
+    struct CueHit { int id = 0; Drag kind = Drag::None; };
+    CueHit cueHitTest (juce::Point<int>, bool onEmptyLane) const;
     void updateScrollBars();
     void clampScroll();
     double totalSamples() const;
@@ -181,6 +184,8 @@ private:
     juce::Rectangle<int> razorGuide;
     double videoOrigOffset = 0.0;
     int markerDragId = 0, autoTrackId = 0, autoPointId = 0;
+    int cueDragId = 0;
+    int64_t cueOrigIn = 0, cueOrigOut = 0;
 
     int64_t lastPos = -1;
     float lastPlayheadX = -100.0f;

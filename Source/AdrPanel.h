@@ -54,7 +54,7 @@ public:
 
 private:
     // TableListBoxModel
-    int getNumRows() override { return (int) project.getSession().cues.size(); }
+    int getNumRows() override { return (int) shown.size(); }
     void paintRowBackground (juce::Graphics&, int row, int w, int h, bool selected) override;
     void paintCell (juce::Graphics&, int row, int columnId, int w, int h, bool selected) override;
     juce::Component* refreshComponentForCell (int row, int columnId, bool isRowSelected, juce::Component* existing) override;
@@ -67,6 +67,7 @@ private:
     void loadDetails();
     void commitDetails();
     void rebuildTakes();
+    void rebuildShown();   // cue visibili secondo il filtro per personaggio
 
     Project& project;
     Actions actions;
@@ -77,7 +78,10 @@ private:
                      auditionBtn { "ASCOLTA" }, originalBtn { "ORIGINALE" }, activateBtn { "ATTIVA" }, deleteTakeBtn { TRANS ("ELIMINA TAKE") };
     juce::Label lblChar, lblScene, lblReel, lblIn, lblOut, lblStatus, lblDialogue, lblNotes, lblTrack, lblTakes;
     juce::TextEditor edChar, edScene, edReel, edIn, edOut, edDialogue, edNotes;
-    juce::ComboBox cbStatus, cbTrack;
+    juce::ComboBox cbStatus, cbTrack, cbFilter;
+    juce::Label lblFilter, lblCount;
+    juce::String filterChar;           // vuoto = tutti i personaggi
+    std::vector<size_t> shown;         // indici in session.cues dei cue mostrati
     std::vector<std::unique_ptr<juce::TextButton>> takeButtons;
     bool loading = false;
     int shownCueId = 0;
