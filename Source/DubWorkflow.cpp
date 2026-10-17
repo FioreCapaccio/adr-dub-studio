@@ -63,7 +63,7 @@ int createCharacterTracks (Project& p, const std::vector<AdrCue>& cues)
         if (exists) continue;
         const int index = (int) p.getSession().tracks.size();
         const int id = p.addTrackAs (n, TrackDialogue, theme::trackPalette[index % theme::numPaletteColours], roleOutBus (TrackDialogue));
-        p.setTrackGroup (id, p.addGroup (juce::translate ("Dialoghi")));   // le tracce dei personaggi stanno nel gruppo Dialoghi
+        p.setTrackGroup (id, p.addGroup (juce::translate ("Dialoghi")));   // le tracce dei personaggi stanno nel gruppo Dialoghi (e lo riaprono se era compresso)
         ++created;
     }
     return created;

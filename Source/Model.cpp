@@ -1043,26 +1043,80 @@ int Project::addGroup (const juce::String& name)
     return id;
 }
 
-void Project::setTrackGroup (int trackId, int groupId)
+void Project::setTrackGroup (int trackId, int groupId) { setTracksGroup ({ trackId }, groupId); }
+
+void Project::setTracksGroup (const std::vector<int>& trackIds, int groupId)
 {
-    const int from = trackIndexForId (trackId);
-    if (from < 0 || (groupId != 0 && findGroup (groupId) == nullptr) || session.tracks[(size_t) from].groupId == groupId) return;
-    beginEdit();
+    if (groupId != 0 && findGroup (groupId) == nullptr) return;
     auto& tracks = session.tracks;
-    tracks[(size_t) from].groupId = groupId;
-    if (groupId != 0)   // accanto all'ultima traccia del gruppo, cosi' il gruppo resta compatto
+    std::vector<int> ids;   // nell'ordine della timeline, solo le tracce che cambiano
+    for (auto& t : tracks)
+        if (t.groupId != groupId && std::find (trackIds.begin(), trackIds.end(), t.id) != trackIds.end()) ids.push_back (t.id);
+    if (ids.empty()) return;
+    beginEdit();
+    for (int id : ids)
     {
-        int last = -1;
+        const int from = trackIndexForId (id);
+        tracks[(size_t) from].groupId = groupId;
+        if (groupId == 0) continue;
+        int last = -1;   // accanto all'ultima traccia del gruppo, cosi' il gruppo resta compatto
         for (int i = 0; i < (int) tracks.size(); ++i) if (i != from && tracks[(size_t) i].groupId == groupId) last = i;
-        if (last >= 0)
-        {
-            auto t = std::move (tracks[(size_t) from]);
-            tracks.erase (tracks.begin() + from);
-            if (from < last) --last;
-            tracks.insert (tracks.begin() + last + 1, std::move (t));
-        }
+        if (last < 0) continue;
+        auto t = std::move (tracks[(size_t) from]);
+        tracks.erase (tracks.begin() + from);
+        if (from < last) --last;
+        tracks.insert (tracks.begin() + last + 1, std::move (t));
     }
+    if (groupId != 0)   // le tracce appena aggiunte non devono restare nascoste in un gruppo compresso
+        for (auto& g : session.groups) if (g.id == groupId) g.collapsed = false;
     changed();
+}
+
+std::vector<int> Project::selectedTracks() const
+{
+    std::vector<int> out;
+    if (trackSelection.count (selectedTrackId) > 0)
+        for (auto& t : session.tracks) if (trackSelection.count (t.id) > 0) out.push_back (t.id);
+    if (out.empty() && trackIndexForId (selectedTrackId) >= 0) out.push_back (selectedTrackId);
+    return out;
+}
+
+bool Project::isTrackSelected (int trackId) const
+{
+    const auto s = selectedTracks();
+    return std::find (s.begin(), s.end(), trackId) != s.end();
+}
+
+void Project::selectOnlyTrack (int trackId)
+{
+    selectedTrackId = trackAnchorId = trackId;
+    trackSelection = { trackId };
+}
+
+void Project::toggleTrackSelection (int trackId)
+{
+    auto cur = selectedTracks();
+    trackSelection = std::set<int> (cur.begin(), cur.end());
+    if (trackSelection.count (trackId) > 0 && trackSelection.size() > 1)
+    {
+        trackSelection.erase (trackId);
+        if (selectedTrackId == trackId) selectedTrackId = *trackSelection.begin();
+    }
+    else
+    {
+        trackSelection.insert (trackId);
+        selectedTrackId = trackId;
+    }
+    trackAnchorId = trackId;
+}
+
+void Project::selectTrackRange (int trackId)
+{
+    const int a = trackIndexForId (trackAnchorId >= 0 ? trackAnchorId : selectedTrackId), b = trackIndexForId (trackId);
+    if (a < 0 || b < 0) { selectOnlyTrack (trackId); return; }
+    trackSelection.clear();
+    for (int i = juce::jmin (a, b); i <= juce::jmax (a, b); ++i) trackSelection.insert (session.tracks[(size_t) i].id);
+    selectedTrackId = trackId;
 }
 
 void Project::renameGroup (int groupId, const juce::String& name)

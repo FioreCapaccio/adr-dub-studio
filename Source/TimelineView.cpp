@@ -428,7 +428,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
     const auto& t = project.getSession().tracks[(size_t) ti];
     const int y = laneTop (ti), h = heightOf (ti);
     juce::Rectangle<int> r (0, y, headerW, h);
-    const bool sel = t.id == project.selectedTrackId;
+    const bool sel = project.isTrackSelected (t.id);
     const bool armed = t.live->armed.load();
 
     g.setGradientFill (juce::ColourGradient (sel ? panelHi : panelTop, 0.0f, (float) y, sel ? panelTop : panel, (float) headerW, (float) y, false));
@@ -863,7 +863,7 @@ void TimelineView::paint (juce::Graphics& g)
             if (h == 0 || y + h < lanes.getY() || y > lanes.getBottom()) continue;
             g.setColour (i % 2 == 0 ? lane : laneAlt);
             g.fillRect (lanes.getX(), y, lanes.getWidth(), h);
-            if (s.tracks[(size_t) i].id == project.selectedTrackId)
+            if (project.isTrackSelected (s.tracks[(size_t) i].id))
             {
                 g.setColour (juce::Colours::white.withAlpha (0.022f));
                 g.fillRect (lanes.getX(), y, lanes.getWidth(), h);
@@ -1617,7 +1617,9 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
             break;
 
         case HitType::HeaderGrip:
-            project.selectedTrackId = hit.track;
+            if (e.mods.isCommandDown()) { project.toggleTrackSelection (hit.track); project.sendChangeMessage(); break; }   // piu' tracce: niente riordino
+            if (e.mods.isShiftDown()) { project.selectTrackRange (hit.track); project.sendChangeMessage(); break; }
+            project.selectOnlyTrack (hit.track);
             drag = Drag::TrackReorder;
             reorderFrom = reorderTo = hit.trackIndex;
             project.sendChangeMessage();
@@ -2325,18 +2327,18 @@ void TimelineView::renameGroupDialog (int groupId)
     }), true);
 }
 
-void TimelineView::newGroupDialog (int trackId)
+void TimelineView::newGroupDialog (std::vector<int> trackIds)
 {
     auto* aw = new juce::AlertWindow (TRANS ("Nuovo gruppo"), TRANS ("Nome del gruppo (per esempio Dialoghi)"), juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor ("name", TRANS ("Dialoghi"));
     aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
     aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<TimelineView> safe (this);
-    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, trackId] (int r)
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, trackIds] (int r)
     {
         if (r != 1 || safe == nullptr) return;
         auto& p = safe->project;
-        p.setTrackGroup (trackId, p.addGroup (aw->getTextEditorContents ("name")));
+        p.setTracksGroup (trackIds, p.addGroup (aw->getTextEditorContents ("name")));
     }), true);
 }
 
@@ -2422,7 +2424,9 @@ void TimelineView::showTrackMenu (int trackId)
             const auto* tr = project.findTrack (trackId);
             for (auto& g : project.getSession().groups) groups.addItem (400 + g.id, g.name, true, tr != nullptr && tr->groupId == g.id);
             if (! project.getSession().groups.empty()) groups.addSeparator();
-            groups.addItem (398, TRANS ("Nuovo gruppo con questa traccia..."));
+            groups.addItem (398, project.isTrackSelected (trackId) && project.selectedTracks().size() > 1
+                                     ? TRANS ("Nuovo gruppo con le ") + juce::String ((int) project.selectedTracks().size()) + TRANS (" tracce selezionate...")
+                                     : TRANS ("Nuovo gruppo con questa traccia..."));
             groups.addItem (397, TRANS ("Gruppo Dialoghi con tutte le tracce Dialoghi"));
             groups.addItem (399, TRANS ("Fuori dai gruppi"), tr != nullptr && tr->groupId != 0);
             m.addSubMenu (TRANS ("Gruppo"), groups);
@@ -2443,7 +2447,8 @@ void TimelineView::showTrackMenu (int trackId)
     if (trackId >= 0) m.addItem (6, TRANS ("Cancella l'automazione: ") + juce::String (project.findTrack (trackId) != nullptr ? autoParamName (project.findTrack (trackId)->live->autoParam.load()) : "VOL"));
 
     juce::Component::SafePointer<TimelineView> safe (this);
-    m.showMenuAsync (juce::PopupMenu::Options(), [safe, trackId] (int r)
+    const auto targets = project.isTrackSelected (trackId) ? project.selectedTracks() : std::vector<int> { trackId };   // il menu agisce su tutte le tracce selezionate
+    m.showMenuAsync (juce::PopupMenu::Options(), [safe, trackId, targets] (int r)
     {
         if (safe == nullptr || r == 0) return;
         auto& p = safe->project;
@@ -2453,16 +2458,21 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 4 && safe->onImportRequested) safe->onImportRequested();
         else if (r == 5) safe->fitTrackHeights();
         else if (r == 6) p.clearAutomation (trackId);
-        else if (r == 399) p.setTrackGroup (trackId, 0);
-        else if (r == 398) safe->newGroupDialog (trackId);
+        else if (r == 399) p.setTracksGroup (targets, 0);
+        else if (r == 398) safe->newGroupDialog (targets);
         else if (r == 397)
         {
-            const int g = p.addGroup (TRANS ("Dialoghi"));
+            // tracce Dialoghi e tracce che portano il nome di un personaggio dei cue
             std::vector<int> ids;
-            for (auto& t : p.getSession().tracks) if (t.live->trackType.load() == TrackDialogue) ids.push_back (t.id);
-            for (int id : ids) p.setTrackGroup (id, g);
+            for (auto& t : p.getSession().tracks)
+            {
+                bool isCharacter = t.live->trackType.load() == TrackDialogue;
+                for (auto& c : p.getSession().cues) isCharacter = isCharacter || (c.character.trim().isNotEmpty() && t.name.trim().equalsIgnoreCase (c.character));
+                if (isCharacter) ids.push_back (t.id);
+            }
+            p.setTracksGroup (ids, p.addGroup (TRANS ("Dialoghi")));
         }
-        else if (r >= 400) p.setTrackGroup (trackId, r - 400);
+        else if (r >= 400) p.setTracksGroup (targets, r - 400);
         else if (r >= 200 && r < 200 + kNumTrackTypes) p.setTrackType (trackId, r - 200);
         else if (r >= 100) p.setTrackColour (trackId, trackPalette[r - 100]);
     });

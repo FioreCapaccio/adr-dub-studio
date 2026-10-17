@@ -379,6 +379,14 @@ public:
     // selezione
     std::set<int64_t> selection;
     int selectedTrackId = -1;
+    // selezione di piu' tracce (Cmd/Maiusc + clic sull'intestazione): vale finche' la traccia principale ne fa parte
+    std::set<int> trackSelection;
+    int trackAnchorId = -1;
+    std::vector<int> selectedTracks() const;            // nell'ordine delle tracce
+    bool isTrackSelected (int trackId) const;
+    void selectOnlyTrack (int trackId);
+    void toggleTrackSelection (int trackId);
+    void selectTrackRange (int trackId);                // dall'ultima traccia scelta senza Maiusc a questa
 
     // stato
     bool isDirty() const noexcept { return dirty; }
@@ -416,7 +424,8 @@ public:
     void moveTrackTo (int fromIndex, int toIndex);
     // gruppi di tracce
     int addGroup (const juce::String& name);                  // ritorna l'id (esiste gia' un gruppo con quel nome: lo riusa)
-    void setTrackGroup (int trackId, int groupId);            // 0 = fuori dai gruppi; la traccia si sposta accanto alle altre del gruppo
+    void setTrackGroup (int trackId, int groupId);
+    void setTracksGroup (const std::vector<int>& trackIds, int groupId);   // un solo passo di undo            // 0 = fuori dai gruppi; la traccia si sposta accanto alle altre del gruppo
     void renameGroup (int groupId, const juce::String& name);
     void removeGroup (int groupId);                           // le tracce restano, senza gruppo
     void setGroupCollapsed (int groupId, bool collapsed);     // solo vista: nessun passo di undo

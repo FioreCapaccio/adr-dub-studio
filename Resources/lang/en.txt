@@ -786,3 +786,5 @@ language: English
 "Rinomina il gruppo" = "Rename the group"
 "Nuovo gruppo" = "New group"
 "Nome del gruppo (per esempio Dialoghi)" = "Group name (for example Dialogue)"
+"Nuovo gruppo con le " = "New group with the "
+" tracce selezionate..." = " selected tracks..."

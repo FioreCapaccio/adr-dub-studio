@@ -135,7 +135,7 @@ private:
     void showTrackMenu (int trackId);
     void showGroupMenu (int groupId);
     void renameGroupDialog (int groupId);
-    void newGroupDialog (int trackId);
+    void newGroupDialog (std::vector<int> trackIds);
     void drawGroupBars (juce::Graphics&);
     bool groupAll (int groupId, bool solo) const;   // tutte le tracce del gruppo mute / in solo
     void showClipMenu (int64_t clipId);

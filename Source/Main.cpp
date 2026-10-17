@@ -1612,6 +1612,37 @@ private:
         for (auto& t : p.getSession().tracks) muted += t.live->mute.load() ? 1 : 0;
         expect (muted == 2, "Gruppi: muto del gruppo = solo le sue tracce (" + juce::String (muted) + ")");
 
+        // selezione di piu' tracce e gruppo con un solo passo di undo
+        {
+            fc::Project m (formats, 48000.0);
+            for (int i = 0; i < 5; ++i) m.addTrack();
+            const auto ids = [&m] { std::vector<int> v; for (auto& t : m.getSession().tracks) v.push_back (t.id); return v; }();
+            m.selectOnlyTrack (ids[0]);
+            m.toggleTrackSelection (ids[2]);
+            m.toggleTrackSelection (ids[4]);
+            expect (m.selectedTracks() == std::vector<int> { ids[0], ids[2], ids[4] }, "Selezione tracce: Cmd+clic ne aggiunge");
+            m.toggleTrackSelection (ids[2]);
+            expect (m.selectedTracks() == std::vector<int> { ids[0], ids[4] } && ! m.isTrackSelected (ids[2]), "Selezione tracce: Cmd+clic su una selezionata la toglie");
+            m.selectOnlyTrack (ids[1]);
+            m.selectTrackRange (ids[3]);
+            expect (m.selectedTracks() == std::vector<int> { ids[1], ids[2], ids[3] }, "Selezione tracce: Maiusc+clic seleziona l'intervallo");
+            m.selectedTrackId = ids[0];   // un'altra traccia scelta da fuori: la selezione multipla decade
+            expect (m.selectedTracks() == std::vector<int> { ids[0] }, "Selezione tracce: cambiando traccia principale resta quella sola");
+
+            const int gm = m.addGroup ("Dialoghi");
+            m.setGroupCollapsed (gm, true);
+            m.setTracksGroup ({ ids[4], ids[1], ids[3] }, gm);
+            int members = 0;
+            for (auto& t : m.getSession().tracks) members += t.groupId == gm ? 1 : 0;
+            const auto& tr = m.getSession().tracks;
+            expect (members == 3 && tr[0].id == ids[0] && tr[1].id == ids[1] && tr[2].id == ids[3] && tr[3].id == ids[4] && tr[4].id == ids[2] && ! m.findGroup (gm)->collapsed,
+                    "Gruppo con tracce selezionate: tutte dentro, accanto tra loro, gruppo aperto");
+            m.undo();
+            int after = 0;
+            for (auto& t : m.getSession().tracks) after += t.groupId != 0 ? 1 : 0;
+            expect (after == 0 && m.getSession().tracks[1].id == ids[1], "Gruppo con tracce selezionate: un solo passo di undo le riporta com'erano");
+        }
+
         // salvataggio e ricaricamento
         const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_gruppi.adb");
         juce::String err;
@@ -2086,6 +2117,21 @@ private:
         {
             const auto* t = p.findTrack (dub::trackForCue (p, cues[1]));
             expect (t != nullptr && t->live->trackType.load() == fc::TrackDialogue && t->live->outBus.load() == 1, "traccia personaggio: ruolo Dialoghi sul bus Dialoghi");
+        }
+
+        // tracce per personaggio con un gruppo Dialoghi gia' compresso: le nuove entrano nel gruppo e restano visibili
+        {
+            fc::Project q (formats, 48000.0);
+            q.addTrack();
+            const int gq = q.addGroup (juce::translate ("Dialoghi"));
+            q.setTrackGroup (q.getSession().tracks[0].id, gq);
+            q.setGroupCollapsed (gq, true);
+            const int tracksBeforeQ = (int) q.getSession().tracks.size();
+            const int made = dub::createCharacterTracks (q, cues);
+            int inG = 0;
+            for (auto& t : q.getSession().tracks) inG += t.groupId == gq ? 1 : 0;
+            expect (made == 2 && inG == 3 && (int) q.getSession().tracks.size() == tracksBeforeQ + 2 && ! q.findGroup (gq)->collapsed,
+                    "tracce per personaggio: " + juce::String (made) + " create, " + juce::String (inG) + " nel gruppo Dialoghi, gruppo aperto");
         }
 
         // schema dei nomi
@@ -2654,7 +2700,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.9.0"; }
+    const juce::String getApplicationVersion() override { return "2.10.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
