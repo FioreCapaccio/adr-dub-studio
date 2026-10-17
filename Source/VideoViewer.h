@@ -31,7 +31,7 @@ public:
     void refreshOffset();   // rilegge l'offset dal VideoAsset
 
     /** Striscia ADR sotto l'immagine: cue, dialogo e streamer (il video nativo non si puo' coprire con disegni). */
-    struct AdrInfo { bool active = false, recording = false, streamer = true; juce::String title, dialogue; double inSec = 0.0, outSec = 0.0; int dialogueSize = 30; };
+    struct AdrInfo { bool active = false, recording = false, streamer = true; int countdown = 3; juce::String title, dialogue; double inSec = 0.0, outSec = 0.0; int dialogueSize = 30; };
     void setAdr (const AdrInfo& a) { adr = a; resized(); repaint(); }
 
     /** Da chiamare a ~30 Hz con la posizione dell'audio (timeline) in secondi. */

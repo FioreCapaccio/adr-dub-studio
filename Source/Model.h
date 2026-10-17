@@ -17,6 +17,23 @@
 
 namespace fc
 {
+/** Posizioni dei bip del conto alla rovescia prima di un cue ADR: 'count' bip a un secondo l'uno dall'altro che finiscono un secondo prima dell'ingresso.
+    Se il cue e' cosi' vicino all'inizio che non c'e' spazio (la registrazione parte da 0), i bip si stringono invece di sparire. */
+inline std::vector<int64_t> adrBeepPositions (int64_t in, int64_t start, int count, double rate)
+{
+    std::vector<int64_t> out;
+    if (count <= 0 || in <= start) return out;
+    double spacing = 1.0;
+    const double room = (double) (in - start) / rate - (start <= 0 ? 0.12 : 0.0);   // dall'inizio della timeline il primo bip non cade sul primo campione
+    if (room < (double) count * spacing) spacing = juce::jmax (0.25, room / (double) count);
+    for (int k = count; k >= 1; --k)
+    {
+        const int64_t p = in - (int64_t) std::llround ((double) k * spacing * rate);
+        if (p >= start) out.push_back (p);
+    }
+    return out;
+}
+
 /** File di sessione: .adb (le sessioni salvate con le versioni precedenti, .arostudio, si aprono ancora). */
 inline bool isSessionFile (const juce::File& f) { return f.hasFileExtension ("adb;arostudio"); }
 

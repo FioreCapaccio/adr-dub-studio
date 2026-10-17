@@ -818,6 +818,15 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
         cueReady = true;
     }
 
+    // controllo d'ascolto (solo uscita, non misure ne' export)
+    if (current->master->monoMon.load())
+    {
+        float* l = master.getWritePointer (0);
+        float* r = master.getWritePointer (1);
+        for (int i = 0; i < n; ++i) l[i] = r[i] = 0.5f * (l[i] + r[i]);
+    }
+    if (current->master->dimMon.load()) master.applyGain (0, n, 0.1f);
+
     // bip di conteggio (ADR): solo in uscita, non entrano nelle misure ne' nelle registrazioni
     if (const int nb = beepCount.load(); nb > 0)
     {
@@ -844,15 +853,6 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
             }
         }
     }
-
-    // controllo d'ascolto (solo uscita, non misure ne' export)
-    if (current->master->monoMon.load())
-    {
-        float* l = master.getWritePointer (0);
-        float* r = master.getWritePointer (1);
-        for (int i = 0; i < n; ++i) l[i] = r[i] = 0.5f * (l[i] + r[i]);
-    }
-    if (current->master->dimMon.load()) master.applyGain (0, n, 0.1f);
 
     // arresto automatico a fine contenuto
     if (wantPlay && ! looping && ! recording.load() && pos > current->playEnd() + (int64_t) sampleRate.load())

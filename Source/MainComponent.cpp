@@ -2333,6 +2333,7 @@ void MainComponent::updateAdrViewer()
         info.active = true;
         info.recording = adrRecCue == c->id;
         info.streamer = project->adrStreamer;
+        info.countdown = project->adrBeeps > 0 ? project->adrBeeps : 3;
         info.inSec = (double) c->inPos / rate;
         info.outSec = (double) c->outPos / rate;
         const int ov = project->adrOverlay;   // cosa mostrare sopra il video (Impostazioni sessione)
@@ -2563,9 +2564,13 @@ void MainComponent::recordAdrCue (int cueId)
     const int64_t punchIn = in - (int64_t) (0.5 * rate);
     const int64_t punchOut = out + (int64_t) (0.5 * rate) + latency;   // la voce arriva al disco con 'latency' campioni di ritardo
 
-    std::vector<int64_t> beeps;
-    for (int k = project->adrBeeps; k >= 1; --k)
-        if (in - (int64_t) (k * rate) >= start) beeps.push_back (in - (int64_t) (k * rate));
+    const auto beeps = adrBeepPositions (in, start, project->adrBeeps, rate);
+    if (project->getSession().video != nullptr && ! viewerVisible)   // il conto alla rovescia e la barra del cue stanno sotto il video
+    {
+        viewerVisible = true;
+        videoBtn.setToggleState (true, juce::dontSendNotification);
+        layoutAll();
+    }
 
     const auto* track = project->findTrack (trackId);
     const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");

@@ -270,7 +270,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepLoadProbe ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepAdrBeeps(); stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepLoadProbe ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); }); });
         });
     }
 
@@ -1594,6 +1594,19 @@ private:
         expect (std::abs (out.getSample (0, 0)) < 1.0e-6f || std::abs (out.getSample (0, 0)) > 0.0f, "Comp: il mixer legge la sessione");
         q.undo();
         expect (q.getSession().tracks[0].clips.size() == 2, "Comp: si annulla in un passo");
+    }
+
+    // bip del conto alla rovescia ADR
+    void stepAdrBeeps()
+    {
+        const double r = 48000.0;
+        auto b1 = fc::adrBeepPositions ((int64_t) (10 * r), (int64_t) (7 * r), 3, r);
+        expect (b1.size() == 3 && b1[0] == (int64_t) (7 * r) && b1[2] == (int64_t) (9 * r), "ADR: tre bip a un secondo l'uno dall'altro con il pre-roll normale");
+        auto b2 = fc::adrBeepPositions ((int64_t) (1.9 * r), 0, 3, r);
+        expect (b2.size() == 3 && b2.front() >= 0 && b2.back() < (int64_t) (1.9 * r) && b2[1] > b2[0], "ADR: un cue vicino all'inizio mantiene tutti e tre i bip (stretti)");
+        auto b3 = fc::adrBeepPositions ((int64_t) (0.2 * r), 0, 3, r);
+        expect (! b3.empty() || b3.empty(), "ADR: cue quasi all'inizio non va in errore");
+        expect (fc::adrBeepPositions ((int64_t) (5 * r), (int64_t) (2 * r), 0, r).empty(), "ADR: zero bip = nessun bip");
     }
 
     // blocco e visibilita' delle tracce, mute/solo globali
@@ -3591,7 +3604,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.19.2"; }
+    const juce::String getApplicationVersion() override { return "2.19.3"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

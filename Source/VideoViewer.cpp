@@ -156,6 +156,11 @@ void VideoViewer::sync (double t, bool playing)
 {
     curT = t;
     if (adr.active) repaint (adrStrip());
+    if (adr.active && adr.recording)   // la cornice rossa lampeggia
+    {
+        const auto pic = getLocalBounds().withTrimmedBottom (bottomH);
+        repaint (pic.withHeight (6)); repaint (pic.withTrimmedLeft (pic.getWidth() - 6)); repaint (pic.withWidth (6));
+    }
     if (asset == nullptr) return;
 
     const double dur = asset->duration;
@@ -284,21 +289,36 @@ void VideoViewer::paint (juce::Graphics& g)
         g.setFont (font (12.0f, true));
         g.drawText (adr.title, inner.removeFromTop (16), juce::Justification::centredLeft, true);
         // streamer: nei 3 secondi prima dell'ingresso una linea attraversa la striscia, poi la barra si riempie fino all'uscita
-        auto bar = inner.removeFromBottom (8).toFloat();
-        g.setColour (well);
-        g.fillRoundedRectangle (bar, 3.0f);
+        auto bar = inner.removeFromBottom (16).toFloat();
+        g.setColour (well.brighter (0.08f));
+        g.fillRoundedRectangle (bar, 4.0f);
         if (adr.streamer)
         {
-            if (curT >= adr.inSec - 3.0 && curT < adr.inSec)
+            const double lead = (double) juce::jmax (1, adr.countdown);
+            if (curT >= adr.inSec - lead && curT < adr.inSec)
             {
-                const float x = bar.getX() + bar.getWidth() * (float) ((curT - (adr.inSec - 3.0)) / 3.0);
+                // conto alla rovescia: la linea bianca avanza verso l'ingresso e un grande numero dice quanti secondi mancano
+                const float x = bar.getX() + bar.getWidth() * (float) ((curT - (adr.inSec - lead)) / lead);
+                g.setColour (juce::Colour (0xffffc94d).withAlpha (0.55f));
+                g.fillRoundedRectangle (bar.withRight (x), 4.0f);
                 g.setColour (juce::Colours::white);
-                g.fillRect (x - 1.5f, bar.getY() - 2.0f, 3.0f, bar.getHeight() + 4.0f);
+                g.fillRect (x - 2.0f, bar.getY() - 3.0f, 4.0f, bar.getHeight() + 6.0f);
+                const int secs = (int) std::ceil (adr.inSec - curT);
+                g.setColour (juce::Colour (0xffffc94d));
+                g.setFont (font (juce::jmax (30.0f, (float) st.getHeight() * 0.55f), true));
+                g.drawText (juce::String (secs), st.reduced (12, 4).removeFromRight (90), juce::Justification::centredRight);
             }
             else if (curT >= adr.inSec && curT <= adr.outSec && adr.outSec > adr.inSec)
             {
-                g.setColour ((adr.recording ? accent : green).withAlpha (0.85f));
-                g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * (float) ((curT - adr.inSec) / (adr.outSec - adr.inSec))), 3.0f);
+                // il cue e' in corso: la barra rossa (verde in prova) si riempie fino all'uscita
+                g.setColour ((adr.recording ? accent : green).withAlpha (0.95f));
+                g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * (float) ((curT - adr.inSec) / (adr.outSec - adr.inSec))), 4.0f);
+                if (adr.recording)
+                {
+                    g.setColour (juce::Colours::white);
+                    g.setFont (font (juce::jmax (22.0f, (float) st.getHeight() * 0.36f), true));
+                    g.drawText (juce::String (adr.outSec - curT, 1) + " s", st.reduced (12, 4).removeFromRight (110), juce::Justification::centredRight);
+                }
             }
         }
         g.setColour (text);
@@ -320,6 +340,12 @@ void VideoViewer::paint (juce::Graphics& g)
             }
         }
         dialogueLayout.draw (g, area.toFloat().withTrimmedTop (juce::jmax (0.0f, ((float) area.getHeight() - dialogueLayout.getHeight()) * 0.5f)));
+    }
+
+    if (adr.active && adr.recording)   // registrazione in corso: cornice rossa che lampeggia piano
+    {
+        g.setColour (accent.withAlpha (((int) (curT * 2.0) % 2 == 0) ? 0.95f : 0.45f));
+        g.drawRect (getLocalBounds().withTrimmedBottom (bottomH), 3);
     }
 
     // barra inferiore
