@@ -1,5 +1,6 @@
 #include "TimelineView.h"
 #include "TrackPresets.h"
+#include "AdrImport.h"
 #include "VideoSupport.h"
 
 namespace fc
@@ -2498,6 +2499,7 @@ void TimelineView::showClipMenu (int64_t clipId)
         m.addItem (11, TRANS ("ADR: adatta alla durata del cue (time-stretch)"));
     }
     m.addSeparator();
+    m.addItem (12, TRANS ("Unisci i clip selezionati (JOIN)"), project.joinableGroups (project.selection) > 0);
     m.addItem (10, TRANS ("Time-stretch..."));
 
     juce::Component::SafePointer<TimelineView> safe (this);
@@ -2517,6 +2519,7 @@ void TimelineView::showClipMenu (int64_t clipId)
             case 7: p.setClipGain (clipId, 0.0f); break;
             case 8: if (c != nullptr) p.setActiveTake (c->cueId, c->takeNo); break;
             case 9: if (c != nullptr) p.deleteTake (c->cueId, c->takeNo); break;
+            case 12: if (safe->onJoinRequest) safe->onJoinRequest(); break;
             case 10: case 11:
                 if (p.selection.count (clipId) == 0) p.selection = { clipId };
                 if (safe->onStretchRequest) safe->onStretchRequest (r == 11);
@@ -2533,6 +2536,8 @@ bool TimelineView::isInterestedInFileDrag (const juce::StringArray& files)
         if (video::isVideoFile (juce::File (f))) return true;
     for (auto& f : files)
         if (project.getFormats().findFormatForFileExtension (juce::File (f).getFileExtension()) != nullptr) return true;
+    for (auto& f : files)
+        if (onAdrFileDropped && adr::isCueFile (juce::File (f))) return true;
     return false;
 }
 
@@ -2552,6 +2557,8 @@ void TimelineView::filesDropped (const juce::StringArray& files, int x, int y)
         juce::File file (f);
         if (project.getFormats().findFormatForFileExtension (file.getFileExtension()) != nullptr) list.add (file);
     }
+    for (auto& f : files)   // elenco dei cue ADR: va all'importazione (dialogo del formato e delle tracce)
+        if (onAdrFileDropped && list.isEmpty() && adr::isCueFile (juce::File (f))) { onAdrFileDropped (juce::File (f)); return; }
     if (list.isEmpty()) return;
 
     const int ti = trackIndexAtY (y);

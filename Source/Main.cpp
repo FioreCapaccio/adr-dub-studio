@@ -106,7 +106,7 @@ private:
     }
 
     std::function<void (int)> finishCb;
-    std::unique_ptr<fc::Project> takesProject, realProject;
+    std::unique_ptr<fc::Project> takesProject, realProject, joinProject;
     int dupsDummy = 0;
 
     void check (const juce::StringArray& errs)
@@ -266,7 +266,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepRecording(); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepRecording(); }); }); }); }); });
         });
     }
 
@@ -1423,6 +1423,65 @@ private:
     }
 
     // sessioni affidabili: media mancanti non distruttivi, ricollegamento, versioni, controllo, flusso
+    // JOIN dei clip di una traccia, fine della riproduzione, file di cue trascinabili
+    void stepJoin (std::function<void()> next)
+    {
+        expect (fc::adr::isCueFile (juce::File ("/x/a.csv")) && fc::adr::isCueFile (juce::File ("/x/b.EDL")) && fc::adr::isCueFile (juce::File ("/x/c.srt")) && ! fc::adr::isCueFile (juce::File ("/x/d.wav")),
+                "trascinamento: CSV, EDL, SRT e simili sono file di cue, un WAV no");
+
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_join");
+        dir.deleteRecursively();
+        dir.createDirectory();
+        const auto src = dir.getChildFile ("tono.wav");
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::FileOutputStream> os (src.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), 48000.0, 1, 16, {}, 0));
+            if (w != nullptr)
+            {
+                os.release();
+                juce::AudioBuffer<float> b (1, 48000);
+                for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, 0.5f);
+                w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+            }
+        }
+        juce::String e;
+        auto asset = fc::loadAsset (formats, src, 48000.0, e);
+        joinProject = std::make_unique<fc::Project> (formats, 48000.0);
+        joinProject->newSession (false);
+        joinProject->addTrack();
+        const int tid = joinProject->getSession().tracks[0].id;
+        fc::Clip a, b;
+        a.id = 1; a.asset = asset; a.start = 0; a.length = 48000;
+        b.id = 2; b.asset = asset; b.start = 3 * 48000; b.length = 48000; b.gainDb = -6.0f;
+        joinProject->edit().tracks[0].clips = { a, b };
+        joinProject->selection = { 1, 2 };
+        expect (joinProject->joinableGroups (joinProject->selection) == 1 && joinProject->joinableGroups ({ 1 }) == 0, "JOIN: servono almeno due clip della stessa traccia");
+        joinProject->joinClips ({ 1, 2 }, dir, [this, next, dir, tid] (juce::String err)
+        {
+            auto& s = joinProject->getSession();
+            const auto& cl = s.tracks[0].clips;
+            expect (err.isEmpty() && cl.size() == 1 && cl[0].start == 0 && cl[0].length == 4 * 48000 && cl[0].offset == 0, "JOIN: due clip diventano uno, dal primo inizio all'ultima fine (" + juce::String ((int) cl.size()) + " clip) " + err);
+            if (cl.size() == 1)
+            {
+                const auto& au = cl[0].asset->audio;
+                expect (std::abs (au.getSample (0, 24000) - 0.5f) < 1.0e-3f && au.getSample (0, 2 * 48000) == 0.0f && std::abs (au.getSample (0, 3 * 48000 + 24000) - 0.25f) < 1.0e-3f,
+                        "JOIN: il suono resta com'era (guadagno del secondo clip incluso) e lo spazio fra i clip e' silenzio");
+            }
+            joinProject->undo();
+            expect (joinProject->getSession().tracks[0].clips.size() == 2, "JOIN: un solo passo di undo");
+            (void) tid;
+
+            // fine della riproduzione: conta anche l'ultimo cue (e il video), non solo l'audio
+            fc::AdrCue c; c.number = 1; c.inPos = 100 * 48000; c.outPos = 105 * 48000;
+            joinProject->addCues ({ c }, true);
+            expect (joinProject->getSession().playEnd() == 105 * 48000 && joinProject->getSession().endSample() == 4 * 48000,
+                    "riproduzione: non si ferma 1 s dopo l'ultimo clip se piu' avanti ci sono cue o video");
+            dir.deleteRecursively();
+            next();
+        });
+    }
+
     // take registrate importate da una cartella (nomi tipo Cue001_Marco_Take2_BEST.wav, posizione dal BWF)
     void stepTakeImport (std::function<void()> next)
     {
@@ -2749,6 +2808,7 @@ private:
             expect ((int) project->getSession().tracks.size() == tracksBefore + 1 && project->getSession().tracks.front().name == "Audio video",
                     "audio del video estratto in una nuova traccia, in cima (vicino alla corsia video)");
             auto& t = project->getSession().tracks.front();
+            expect (t.live->trackType.load() == fc::TrackGuide && t.live->outBus.load() == fc::roleOutBus (fc::TrackGuide), "audio del video: la traccia e' sempre la Guida");
             expect (! t.clips.empty() && std::abs (t.clips[0].length - 20 * 48000) < 4096, "durata audio estratto: "
                         + juce::String (t.clips.empty() ? 0 : (juce::int64) t.clips[0].length));
 
@@ -2862,7 +2922,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.12.0"; }
+    const juce::String getApplicationVersion() override { return "2.13.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

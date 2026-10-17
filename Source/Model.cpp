@@ -636,6 +636,9 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
                 selectedTrackId = id;
                 auto* t = findTrack (id);
                 t->name = TRANS ("Audio video");
+                applyTrackPreset (*t->live, TrackGuide);          // l'audio del video e' sempre la Guida: dialogo originale, piu' basso, sul suo bus, fuori dal mix consegnato
+                t->live->outBus = roleOutBus (TrackGuide);
+                t->colour = trackTypeColour (TrackGuide);
                 Clip c;
                 c.id = nextClipId++;
                 c.asset = audio;
@@ -1357,6 +1360,122 @@ void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce:
             cl->fadeOut = (int64_t) std::llround ((double) cl->fadeOut * ratio);
             changed();
             if (done) done ({});
+        };
+    });
+}
+
+int Project::joinableGroups (const std::set<int64_t>& ids) const
+{
+    int groups = 0;
+    for (auto& t : session.tracks)
+    {
+        int n = 0;
+        for (auto& c : t.clips) if (ids.count (c.id) > 0 && ! c.muted && c.asset != nullptr && ! c.asset->offline) ++n;
+        if (n >= 2) ++groups;
+    }
+    return groups;
+}
+
+void Project::joinClips (const std::vector<int64_t>& ids, const juce::File& folder, std::function<void (juce::String)> done)
+{
+    struct Job { int trackId; std::vector<Clip> clips; int64_t start = 0, length = 0; int channels = 1; juce::String base; };
+    auto jobs = std::make_shared<std::vector<Job>>();
+    session.computeCrossfades();
+    for (auto& t : session.tracks)
+    {
+        Job j;
+        j.trackId = t.id;
+        for (auto& c : t.clips)
+            if (std::find (ids.begin(), ids.end(), c.id) != ids.end() && ! c.muted && c.asset != nullptr && ! c.asset->offline && c.length > 0) j.clips.push_back (c);
+        if (j.clips.size() < 2) continue;
+        std::sort (j.clips.begin(), j.clips.end(), [] (const Clip& a, const Clip& b) { return a.start < b.start; });
+        int64_t end = 0;
+        j.start = j.clips.front().start;
+        for (auto& c : j.clips) { end = juce::jmax (end, c.end()); j.channels = juce::jmax (j.channels, c.asset->numChannels()); }
+        j.length = end - j.start;
+        j.base = juce::File::createLegalFileName (j.clips.front().asset->name + "_join");
+        jobs->push_back (std::move (j));
+    }
+    if (jobs->empty()) { if (done) done (TRANS ("Seleziona almeno due clip sulla stessa traccia (i clip silenziati non si uniscono).")); return; }
+
+    const double rate = sampleRate;
+    auto* fm = &formats;
+    runAsync ([=, this]() -> std::function<void()>
+    {
+        auto assets = std::make_shared<std::vector<AssetPtr>>();
+        juce::String err;
+        for (auto& j : *jobs)
+        {
+            if (j.length <= 0 || j.length > (int64_t) 2000000000 / juce::jmax (1, j.channels)) { err = TRANS ("L'unione e' troppo lunga."); assets->push_back (nullptr); continue; }
+            juce::AudioBuffer<float> out (j.channels, (int) j.length);
+            out.clear();
+            for (auto& c : j.clips)   // stesso calcolo di fade e crossfade del mixer
+            {
+                const int nch = c.asset->numChannels();
+                const float gain = juce::Decibels::decibelsToGain (c.gainDb);
+                const int64_t dst0 = c.start - j.start;
+                const int64_t cnt = juce::jmin (c.length, c.asset->length() - c.offset);
+                for (int ch = 0; ch < j.channels; ++ch)
+                {
+                    const float* src = c.asset->audio.getReadPointer (juce::jmin (ch, nch - 1)) + c.offset;
+                    float* dst = out.getWritePointer (ch) + dst0;
+                    for (int64_t i = 0; i < cnt; ++i)
+                    {
+                        float g = gain;
+                        if (c.fadeIn > 0 && i < c.fadeIn) g *= (float) i / (float) c.fadeIn;
+                        const int64_t toEnd = c.length - i;
+                        if (c.fadeOut > 0 && toEnd < c.fadeOut) g *= (float) toEnd / (float) c.fadeOut;
+                        if (c.xfadeIn > 0 && i < c.xfadeIn) { const float x = (float) i / (float) c.xfadeIn; g *= c.xLinear ? x : std::sin (x * juce::MathConstants<float>::halfPi); }
+                        if (c.xfadeOut > 0 && toEnd < c.xfadeOut) { const float x = (float) toEnd / (float) c.xfadeOut; g *= c.xLinear ? x : std::sin (x * juce::MathConstants<float>::halfPi); }
+                        dst[i] += src[i] * g;
+                    }
+                }
+            }
+            folder.createDirectory();
+            const auto file = folder.getNonexistentChildFile (j.base, ".wav", false);
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w;
+            if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) j.channels, 32, {}, 0));
+            if (w == nullptr) { err = "Impossibile scrivere " + file.getFullPathName(); assets->push_back (nullptr); continue; }
+            os.release();
+            w->writeFromAudioSampleBuffer (out, 0, out.getNumSamples());
+            w.reset();
+            juce::String e2;
+            assets->push_back (loadAsset (*fm, file, rate, e2));
+            if (assets->back() == nullptr) err = e2;
+        }
+
+        return [=, this]
+        {
+            bool any = false;
+            selection.clear();
+            for (size_t k = 0; k < jobs->size(); ++k)
+            {
+                auto& j = (*jobs)[k];
+                auto* t = findTrack (j.trackId);
+                if ((*assets)[k] == nullptr || t == nullptr) continue;
+                if (! any) { beginEdit(); any = true; t = findTrack (j.trackId); }
+                Clip nc;
+                nc.id = nextClipId++;
+                nc.asset = (*assets)[k];
+                nc.start = j.start;
+                nc.length = nc.asset->length();
+                nc.fadeIn = j.clips.front().fadeIn;
+                nc.fadeOut = j.clips.back().fadeOut;
+                bool sameTake = true;   // se erano tutti lo stesso take ADR, il risultato lo resta
+                for (auto& c : j.clips) sameTake = sameTake && c.cueId == j.clips.front().cueId && c.takeNo == j.clips.front().takeNo;
+                if (sameTake) { nc.cueId = j.clips.front().cueId; nc.takeNo = j.clips.front().takeNo; }
+                t->clips.erase (std::remove_if (t->clips.begin(), t->clips.end(), [&j] (const Clip& c)
+                {
+                    for (auto& o : j.clips) if (o.id == c.id) return true;
+                    return false;
+                }), t->clips.end());
+                t->clips.push_back (nc);
+                selection.insert (nc.id);
+            }
+            if (any) changed();
+            if (done) done (any ? juce::String() : (err.isNotEmpty() ? err : juce::String ("Unione non riuscita.")));
         };
     });
 }

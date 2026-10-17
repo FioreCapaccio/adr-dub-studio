@@ -1,7 +1,7 @@
 ; Installer di ADR Dub Studio per Windows (Inno Setup 6). Si compila da CI: iscc /DMyAppVersion=1.0.0 installer\adr-dub-studio.iss
 ; La cartella "pkg" (accanto a "installer") contiene ADR Dub Studio.exe, ffmpeg.exe, ffprobe.exe, LICENSE, FFMPEG.txt.
 #ifndef MyAppVersion
-  #define MyAppVersion "2.12.0"
+  #define MyAppVersion "2.13.0"
 #endif
 #define MyAppName "ADR Dub Studio"
 #define MyAppExe "ADR Dub Studio.exe"

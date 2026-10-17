@@ -816,7 +816,7 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
     if (current->master->dimMon.load()) master.applyGain (0, n, 0.1f);
 
     // arresto automatico a fine contenuto
-    if (wantPlay && ! looping && ! recording.load() && pos > current->endSample() + (int64_t) sampleRate.load())
+    if (wantPlay && ! looping && ! recording.load() && pos > current->playEnd() + (int64_t) sampleRate.load())
         playing = false;
 }
 

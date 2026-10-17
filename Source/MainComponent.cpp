@@ -208,7 +208,9 @@ MainComponent::MainComponent()
     timeline->onImportRequested = [this] { importDialog(); };
     timeline->onLoopChanged = [this] { syncToggles(); commandManager.commandStatusChanged(); };
     timeline->onVideoDropped = [this] (const juce::File& f) { loadVideo (f); };
+    timeline->onAdrFileDropped = [this] (const juce::File& f) { importAdrFile (f); };
     timeline->onStretchRequest = [this] (bool toCue) { timeStretchSelected (toCue); };
+    timeline->onJoinRequest = [this] { joinSelected(); };
     timeline->onStretchCommit = [this] (int64_t id, double ratio, int64_t newStart)
     {
         const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
@@ -1070,6 +1072,7 @@ void MainComponent::importFromCommandLine (const juce::StringArray& paths)
         {
             if (isSessionFile (f)) { project->loadSession (f, [] (juce::String) {}); return; }
             if (video::isVideoFile (f)) { loadVideo (f); continue; }
+            if (adr::isCueFile (f)) { importAdrFile (f); continue; }
             files.add (f);
         }
     }
@@ -1349,7 +1352,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1377,6 +1380,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                                i.addDefaultKeypress (KeyPress::deleteKey, 0); i.addDefaultKeypress (KeyPress::backspaceKey, 0);
                                i.setActive (hasSel); break;
         case cmdSplit:         i.setInfo (TRANS ("Dividi alla testina"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('s', 0); break;
+        case cmdJoin:          i.setInfo (TRANS ("Unisci i clip selezionati (JOIN)"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('j', cmd); i.setActive (project->joinableGroups (project->selection) > 0); break;
 
         case cmdAddTrack:      i.setInfo (TRANS ("Nuova traccia"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('t', cmd | shift); break;
         case cmdRemoveTrack:   i.setInfo (TRANS ("Elimina traccia selezionata"), "", TRANS ("Traccia"), 0); break;
@@ -1500,6 +1504,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDuplicate:     project->duplicateSelected(); break;
         case cmdDelete:        project->deleteSelected(); break;
         case cmdSplit:         project->splitAt (engine.getPosition()); break;
+        case cmdJoin:          joinSelected(); break;
 
         case cmdAddTrack:      project->addTrack(); break;
         case cmdRemoveTrack:   project->removeTrack (project->selectedTrackId); break;
@@ -1790,7 +1795,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck }); break;
         case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
         case 4:
@@ -1831,6 +1836,15 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 }
 
 //==============================================================================
+void MainComponent::joinSelected()
+{
+    std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
+    if (project->joinableGroups (project->selection) == 0) { showError (TRANS ("Seleziona almeno due clip sulla stessa traccia (i clip silenziati non si uniscono).")); return; }
+    const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    project->joinClips (ids, folder, [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); });
+}
+
 void MainComponent::timeStretchSelected (bool toCue)
 {
     std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
@@ -2015,43 +2029,52 @@ void MainComponent::importAdrDialog()
     {
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
-        const auto result = adr::parse (f.loadFileAsString());
-        if (result.cues.empty())
-        {
-            safe->showError (TRANS ("Non ho trovato cue in questo file.\n\nFormati letti: testo Session Info di Pro Tools (elenco marker), EDL CMX3600 con locatori o commenti (anche Nuendo), "
-                             "tabelle CSV/TSV con una colonna di timecode (Nuendo, Fairlight, Resolve, report ADR) e sottotitoli SRT / WebVTT."));
-            return;
-        }
-        auto* dlg = new AdrImportDialog (*safe->project, result, [safe, result, folder = f.getParentDirectory()] (const AdrImportDialog::Values& v)
-        {
-            if (safe == nullptr) return;
-            auto& p = *safe->project;
-            p.tcFormat = v.tcFormat;
-            p.tcStartSec = v.tcStart;
-            juce::StringArray warnings;
-            auto cues = adr::toCues (result, p, p.getSampleRate(), v.defaultDuration, warnings);
-            const auto firstPos = cues.empty() ? int64_t (0) : cues.front().inPos;
-            if (v.makeMarkers) for (auto& c : cues) p.addMarker (c.inPos, c.character + " " + juce::String (c.scene));
-            if (v.makeTracks) { const int n = dub::createCharacterTracks (p, cues); if (n > 0) warnings.add (juce::String (n) + TRANS (" tracce Dialoghi create (una per personaggio).")); }
-            p.addCues (cues, v.replace);
-            if (! p.getSession().cues.empty()) { p.selectedCueId = p.getSession().cues.front().id; p.sendChangeMessage(); }
-            (void) firstPos;
-            safe->showAdrWindow();
-            juce::String msg = "Importati " + juce::String ((int) cues.size()) + " cue.";
-            if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
-            safe->importTakesFrom (folder, true, msg);   // se vicino al file ci sono take registrate, si propone di importarle
-        });
-        dlg->setSize (560, 500);
-        juce::DialogWindow::LaunchOptions lo;
-        lo.content.setOwned (dlg);
-        lo.dialogTitle = TRANS ("Importa cue ADR");
-        lo.dialogBackgroundColour = theme::panel;
-        lo.componentToCentreAround = safe.getComponent();
-        lo.escapeKeyTriggersCloseButton = true;
-        lo.useNativeTitleBar = true;
-        lo.resizable = false;
-        lo.launchAsync();
+        safe->importAdrFile (f);
     });
+}
+
+/** Legge un file di cue (scelto dal dialogo o trascinato sulle tracce) e mostra il dialogo di importazione. */
+void MainComponent::importAdrFile (const juce::File& f)
+{
+    juce::Component::SafePointer<MainComponent> safe (this);
+    {
+    const auto result = adr::parse (f.loadFileAsString());
+    if (result.cues.empty())
+    {
+        safe->showError (TRANS ("Non ho trovato cue in questo file.\n\nFormati letti: testo Session Info di Pro Tools (elenco marker), EDL CMX3600 con locatori o commenti (anche Nuendo), "
+                         "tabelle CSV/TSV con una colonna di timecode (Nuendo, Fairlight, Resolve, report ADR) e sottotitoli SRT / WebVTT."));
+        return;
+    }
+    auto* dlg = new AdrImportDialog (*safe->project, result, [safe, result, folder = f.getParentDirectory()] (const AdrImportDialog::Values& v)
+    {
+        if (safe == nullptr) return;
+        auto& p = *safe->project;
+        p.tcFormat = v.tcFormat;
+        p.tcStartSec = v.tcStart;
+        juce::StringArray warnings;
+        auto cues = adr::toCues (result, p, p.getSampleRate(), v.defaultDuration, warnings);
+        const auto firstPos = cues.empty() ? int64_t (0) : cues.front().inPos;
+        if (v.makeMarkers) for (auto& c : cues) p.addMarker (c.inPos, c.character + " " + juce::String (c.scene));
+        if (v.makeTracks) { const int n = dub::createCharacterTracks (p, cues); if (n > 0) warnings.add (juce::String (n) + TRANS (" tracce Dialoghi create (una per personaggio).")); }
+        p.addCues (cues, v.replace);
+        if (! p.getSession().cues.empty()) { p.selectedCueId = p.getSession().cues.front().id; p.sendChangeMessage(); }
+        (void) firstPos;
+        safe->showAdrWindow();
+        juce::String msg = "Importati " + juce::String ((int) cues.size()) + " cue.";
+        if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
+        safe->importTakesFrom (folder, true, msg);   // se vicino al file ci sono take registrate, si propone di importarle
+    });
+    dlg->setSize (560, 500);
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (dlg);
+    lo.dialogTitle = TRANS ("Importa cue ADR");
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = safe.getComponent();
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = false;
+    lo.launchAsync();
+    }
 }
 
 void MainComponent::importTakesDialog()

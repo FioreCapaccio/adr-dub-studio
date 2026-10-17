@@ -298,6 +298,15 @@ struct Session
         return e;
     }
 
+    /** Fine della riproduzione: oltre l'audio contano la fine del video e l'uscita dell'ultimo cue (un video senza audio non deve fermarsi dopo un secondo). */
+    int64_t playEnd() const noexcept
+    {
+        int64_t e = endSample();
+        if (video != nullptr) e = juce::jmax (e, (int64_t) std::llround ((video->duration + juce::jmax (0.0, video->offsetSec)) * sampleRate));
+        for (auto& c : cues) e = juce::jmax (e, c.outPos);
+        return e;
+    }
+
     /** Calcola i crossfade impliciti dove due clip della stessa traccia si sovrappongono parzialmente. */
     void computeCrossfades()
     {
@@ -500,6 +509,10 @@ public:
     void selectAll();
     void normalizeClip (int64_t id);
     void setClipGain (int64_t id, float db);
+    /** JOIN: i clip selezionati della stessa traccia (almeno due, non silenziati) diventano un solo clip, con gli spazi vuoti a silenzio; il nuovo file va in 'folder'. Un solo passo di undo. */
+    void joinClips (const std::vector<int64_t>& ids, const juce::File& folder, std::function<void (juce::String)> done);
+    /** Quanti gruppi di clip (per traccia) il JOIN unirebbe con questa selezione. */
+    int joinableGroups (const std::set<int64_t>& ids) const;
     /** Cambia la durata del clip (ratio = durata finale / originale): ricalcola l'audio in un nuovo file in 'folder' e lo sostituisce (un passo di undo). */
     void stretchClip (int64_t id, double ratio, bool keepPitch, const juce::File& folder, std::function<void (juce::String)> done, int64_t newStart = -1);
 

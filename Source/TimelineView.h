@@ -39,9 +39,11 @@ public:
     std::function<void (Tool)> onToolChanged;
 
     std::function<void()> onImportRequested;
+    std::function<void (const juce::File&)> onAdrFileDropped;   // file di cue ADR (CSV, EDL, SRT...) trascinato sulle tracce
     std::function<void()> onLoopChanged;
     std::function<void()> onVideoOffsetChanged;
     std::function<void (const juce::File&)> onVideoDropped;
+    std::function<void()> onJoinRequest;   // JOIN dei clip selezionati
     std::function<void (bool toCue)> onStretchRequest;
     std::function<void (int64_t clipId, double ratio, int64_t newStart)> onStretchCommit;   // al rilascio dello strumento Stretch
     std::function<void()> onExportRequested;   // dal menu della barra di esportazione   // time-stretch dei clip selezionati (toCue: durata del cue ADR)

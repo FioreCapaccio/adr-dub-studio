@@ -29,6 +29,9 @@ struct ImportResult
     scritti (un file con fotogrammi fino a 29 non puo' essere a 24 fps). Ritorna l'indice in tcFormats(); 'current' se quello attuale va bene. */
 int suggestedTcFormat (const ImportResult&, int current);
 
+/** File che l'importazione dei cue sa leggere (per il trascinamento sulla timeline e l'apertura da Finder). */
+inline bool isCueFile (const juce::File& f) { return f.hasFileExtension ("csv;tsv;tab;edl;srt;vtt;txt"); }
+
 /** Riconosce il formato e legge i cue. result.cues e' vuoto se il file non e' riconosciuto. */
 ImportResult parse (const juce::String& text);
 
