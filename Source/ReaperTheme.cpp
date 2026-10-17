@@ -143,7 +143,7 @@ bool loadThemeFile (const juce::File& file, theme::Palette& out, juce::String& e
         }
         if (found < 0) { error = TRANS ("Lo zip non contiene un file .ReaperTheme."); return false; }
         std::unique_ptr<juce::InputStream> in (zip.createStreamForEntry (found));
-        if (in == nullptr) { error = "Impossibile leggere il tema."; return false; }
+        if (in == nullptr) { error = TRANS ("Impossibile leggere il tema."); return false; }
         ini = in->readEntireStreamAsString();
         name = juce::File (zip.getEntry (found)->filename).getFileNameWithoutExtension().replace ("_unpacked", "").replace (" unpacked", "");
     }

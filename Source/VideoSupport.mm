@@ -38,11 +38,11 @@ Info probe (const juce::File& f)
     {
         AVURLAsset* asset = [AVURLAsset URLAssetWithURL: urlFor (f) options: nil];
         NSArray<AVAssetTrack*>* vt = [asset tracksWithMediaType: AVMediaTypeVideo];
-        if (vt.count == 0) { info.error = "Nessuna traccia video in " + f.getFileName(); return info; }
+        if (vt.count == 0) { info.error = TRANS ("Nessuna traccia video in ") + f.getFileName(); return info; }
 
         AVAssetTrack* t = vt.firstObject;
         const double dur = CMTimeGetSeconds (asset.duration);
-        if (! (dur > 0.0)) { info.error = "Durata del video non valida."; return info; }
+        if (! (dur > 0.0)) { info.error = TRANS ("Durata del video non valida."); return info; }
 
         info.duration = dur;
         const float fps = t.nominalFrameRate;
@@ -100,8 +100,8 @@ AVMutableComposition* makeComposition (const juce::File& video, const juce::File
     AVURLAsset* a = [AVURLAsset URLAssetWithURL: urlFor (audio) options: nil];
     AVAssetTrack* vt = [[v tracksWithMediaType: AVMediaTypeVideo] firstObject];
     AVAssetTrack* at = [[a tracksWithMediaType: AVMediaTypeAudio] firstObject];
-    if (vt == nil) { error = "Il file video non contiene video."; return nil; }
-    if (at == nil) { error = "Il file audio del mix non e' leggibile."; return nil; }
+    if (vt == nil) { error = TRANS ("Il file video non contiene video."); return nil; }
+    if (at == nil) { error = TRANS ("Il file audio del mix non e' leggibile."); return nil; }
 
     AVMutableComposition* comp = [AVMutableComposition composition];
     NSError* err = nil;
@@ -116,7 +116,7 @@ AVMutableComposition* makeComposition (const juce::File& video, const juce::File
     if (srcStartSec > 0.0) vSrcStart = CMTimeMakeWithSeconds (srcStartSec, 600);
     double lenSec = CMTimeGetSeconds (v.duration) - srcStartSec;
     if (ranged) lenSec = juce::jmin (lenSec, (rangeEndSec - rangeStartSec) - atSec);
-    if (lenSec <= 0.0) { error = ranged ? "L'intervallo scelto non contiene video." : "L'offset del video supera la sua durata."; return nil; }
+    if (lenSec <= 0.0) { error = ranged ? TRANS ("L'intervallo scelto non contiene video.") : TRANS ("L'offset del video supera la sua durata."); return nil; }
     if (ranged || srcStartSec > 0.0) vLen = CMTimeMakeWithSeconds (lenSec, 600);
     const CMTime endOfVideo = CMTimeAdd (vAt, vLen);
 
@@ -148,7 +148,7 @@ bool muxAudio (const juce::File& video, const juce::File& audio, const juce::Fil
         if (comp == nil) return false;
 
         AVAssetExportSession* s = [[AVAssetExportSession alloc] initWithAsset: comp presetName: AVAssetExportPresetPassthrough];
-        if (s == nil) { error = "Impossibile creare la sessione di esportazione."; return false; }
+        if (s == nil) { error = TRANS ("Impossibile creare la sessione di esportazione."); return false; }
         out.deleteFile();
         s.outputURL = urlFor (out);
         s.outputFileType = AVFileTypeQuickTimeMovie;
@@ -170,7 +170,7 @@ bool muxAudio (const juce::File& video, const juce::File& audio, const juce::Fil
         if (cancelled) { out.deleteFile(); error = "Esportazione annullata."; return false; }
         if (s.status != AVAssetExportSessionStatusCompleted)
         {
-            error = s.error != nil ? juce::String::fromUTF8 (s.error.localizedDescription.UTF8String) : juce::String ("Esportazione video non riuscita.");
+            error = s.error != nil ? juce::String::fromUTF8 (s.error.localizedDescription.UTF8String) : juce::String (TRANS ("Esportazione video non riuscita."));
             out.deleteFile();
             return false;
         }
@@ -281,16 +281,16 @@ bool detectCuts (const juce::File& video, double sensitivity, const std::functio
     {
         AVURLAsset* a = [AVURLAsset URLAssetWithURL: urlFor (video) options: nil];
         AVAssetTrack* vt = [[a tracksWithMediaType: AVMediaTypeVideo] firstObject];
-        if (vt == nil) { error = "Il file non contiene video."; return false; }
+        if (vt == nil) { error = TRANS ("Il file non contiene video."); return false; }
         NSError* err = nil;
         AVAssetReader* reader = [[AVAssetReader alloc] initWithAsset: a error: &err];
-        if (reader == nil) { error = "Impossibile leggere il video: " + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
+        if (reader == nil) { error = TRANS ("Impossibile leggere il video: ") + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
         constexpr int W = 64, H = 36;
         AVAssetReaderTrackOutput* out = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack: vt
                                                                                    outputSettings: @{ (id) kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
                                                                                                       (id) kCVPixelBufferWidthKey: @(W), (id) kCVPixelBufferHeightKey: @(H) }];
         [reader addOutput: out];
-        if (! [reader startReading]) { error = "Impossibile leggere il video."; return false; }
+        if (! [reader startReading]) { error = TRANS ("Impossibile leggere il video."); return false; }
 
         const double thr = 0.55 - 0.40 * juce::jlimit (0.0, 1.0, sensitivity);
         const double total = juce::jmax (0.001, CMTimeGetSeconds (a.duration));
@@ -353,7 +353,7 @@ bool detectCuts (const juce::File& video, double sensitivity, const std::functio
         }
         if (reader.status == AVAssetReaderStatusFailed)
         {
-            error = reader.error != nil ? juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String) : juce::String ("Lettura del video non riuscita.");
+            error = reader.error != nil ? juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String) : juce::String (TRANS ("Lettura del video non riuscita."));
             return false;
         }
     }
@@ -375,7 +375,7 @@ bool muxAudioBurnIn (const juce::File& video, const juce::File& audio, const juc
         AVAssetTrack* cat = [[comp tracksWithMediaType: AVMediaTypeAudio] firstObject];
         NSError* err = nil;
         AVAssetReader* reader = [[AVAssetReader alloc] initWithAsset: comp error: &err];
-        if (reader == nil) { error = "Impossibile leggere il video: " + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
+        if (reader == nil) { error = TRANS ("Impossibile leggere il video: ") + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
 
         AVAssetReaderTrackOutput* vOut = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack: cvt
                                                                                     outputSettings: @{ (id) kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA) }];
@@ -387,7 +387,7 @@ bool muxAudioBurnIn (const juce::File& video, const juce::File& audio, const juc
 
         out.deleteFile();
         AVAssetWriter* writer = [AVAssetWriter assetWriterWithURL: urlFor (out) fileType: AVFileTypeQuickTimeMovie error: &err];
-        if (writer == nil) { error = "Impossibile creare il file: " + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
+        if (writer == nil) { error = TRANS ("Impossibile creare il file: ") + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
 
         const int w = (int) cvt.naturalSize.width, h = (int) cvt.naturalSize.height;
         const double bitsPerSecond = juce::jlimit (4.0e6, 40.0e6, (double) w * h * 4.0);
@@ -406,8 +406,8 @@ bool muxAudioBurnIn (const juce::File& video, const juce::File& audio, const juc
         [writer addInput: vIn];
         [writer addInput: aIn];
 
-        if (! [reader startReading]) { error = "Impossibile leggere il video: " + juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String); return false; }
-        if (! [writer startWriting]) { error = "Impossibile scrivere il video: " + juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String); return false; }
+        if (! [reader startReading]) { error = TRANS ("Impossibile leggere il video: ") + juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String); return false; }
+        if (! [writer startWriting]) { error = TRANS ("Impossibile scrivere il video: ") + juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String); return false; }
         [writer startSessionAtSourceTime: kCMTimeZero];
 
         const double totalSec = juce::jmax (0.001, CMTimeGetSeconds (comp.duration));
@@ -452,7 +452,7 @@ bool muxAudioBurnIn (const juce::File& video, const juce::File& audio, const juc
         }
         if (failed || writer.status == AVAssetWriterStatusFailed)
         {
-            error = writer.error != nil ? juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String) : juce::String ("Esportazione video non riuscita.");
+            error = writer.error != nil ? juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String) : juce::String (TRANS ("Esportazione video non riuscita."));
             [reader cancelReading];
             [writer cancelWriting];
             out.deleteFile();
@@ -464,7 +464,7 @@ bool muxAudioBurnIn (const juce::File& video, const juce::File& audio, const juc
         dispatch_semaphore_wait (sem, DISPATCH_TIME_FOREVER);
         if (writer.status != AVAssetWriterStatusCompleted)
         {
-            error = writer.error != nil ? juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String) : juce::String ("Esportazione video non riuscita.");
+            error = writer.error != nil ? juce::String::fromUTF8 (writer.error.localizedDescription.UTF8String) : juce::String (TRANS ("Esportazione video non riuscita."));
             out.deleteFile();
             return false;
         }
@@ -478,7 +478,7 @@ bool decodeAudioNative (const juce::File& f, double targetRate, juce::AudioBuffe
     {
         AVURLAsset* a = [AVURLAsset URLAssetWithURL: urlFor (f) options: nil];
         NSArray<AVAssetTrack*>* tracks = [a tracksWithMediaType: AVMediaTypeAudio];
-        if (tracks.count == 0) { error = "Il file non contiene audio."; return false; }
+        if (tracks.count == 0) { error = TRANS ("Il file non contiene audio."); return false; }
 
         int channels = 2;
         for (id desc in tracks.firstObject.formatDescriptions)
@@ -487,7 +487,7 @@ bool decodeAudioNative (const juce::File& f, double targetRate, juce::AudioBuffe
 
         NSError* err = nil;
         AVAssetReader* reader = [[AVAssetReader alloc] initWithAsset: a error: &err];
-        if (reader == nil) { error = "Impossibile aprire l'audio: " + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
+        if (reader == nil) { error = TRANS ("Impossibile aprire l'audio: ") + juce::String::fromUTF8 (err.localizedDescription.UTF8String); return false; }
         NSDictionary* settings = @{ AVFormatIDKey: @(kAudioFormatLinearPCM), AVLinearPCMBitDepthKey: @32, AVLinearPCMIsFloatKey: @YES,
                                     AVLinearPCMIsBigEndianKey: @NO, AVLinearPCMIsNonInterleaved: @NO,
                                     AVNumberOfChannelsKey: @(channels), AVSampleRateKey: @(targetRate) };
@@ -495,7 +495,7 @@ bool decodeAudioNative (const juce::File& f, double targetRate, juce::AudioBuffe
         [reader addOutput: o];
         if (! [reader startReading])
         {
-            error = "Impossibile leggere l'audio: " + (reader.error != nil ? juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String) : juce::String ("errore sconosciuto"));
+            error = TRANS ("Impossibile leggere l'audio: ") + (reader.error != nil ? juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String) : juce::String (TRANS ("errore sconosciuto")));
             return false;
         }
 
@@ -521,10 +521,10 @@ bool decodeAudioNative (const juce::File& f, double targetRate, juce::AudioBuffe
         }
         if (reader.status == AVAssetReaderStatusFailed)
         {
-            error = "Lettura dell'audio non riuscita: " + juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String);
+            error = TRANS ("Lettura dell'audio non riuscita: ") + juce::String::fromUTF8 (reader.error.localizedDescription.UTF8String);
             return false;
         }
-        if (chan[0].empty()) { error = "L'audio del file e' vuoto."; return false; }
+        if (chan[0].empty()) { error = TRANS ("L'audio del file e' vuoto."); return false; }
 
         out.setSize (channels, (int) chan[0].size());
         for (int c = 0; c < channels; ++c) out.copyFrom (c, 0, chan[c].data(), (int) chan[c].size());
@@ -547,7 +547,7 @@ void setNativePlayerRate (juce::Component& videoComponent, double rate)
         }
 }
 
-bool extractAudio (const juce::File&, const juce::File&, juce::String& error) { error = "Non usato su macOS."; return false; }
+bool extractAudio (const juce::File&, const juce::File&, juce::String& error) { error = TRANS ("Non usato su macOS."); return false; }
 bool usesExternalDecoder() { return false; }
 juce::String ffmpegStatus() { return {}; }
 } // namespace fc::video

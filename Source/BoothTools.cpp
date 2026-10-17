@@ -146,7 +146,7 @@ void ScriptComponent::paint (juce::Graphics& g)
     g.drawText (c.character.isEmpty() ? juce::String (TRANS ("(senza personaggio)")) : c.character.toUpperCase(), head.removeFromLeft (head.getWidth() * 2 / 3), juce::Justification::centredLeft, true);
     g.setColour (dim);
     g.setFont (font (juce::jmax (16.0f, (float) fontSize / 2.5f)));
-    g.drawText ((c.scene.isNotEmpty() ? "Scena " + c.scene : juce::String()) + (c.reel.isNotEmpty() ? "   Bobina " + c.reel : juce::String()) + "   #" + juce::String (c.number),
+    g.drawText ((c.scene.isNotEmpty() ? TRANS ("Scena ") + c.scene : juce::String()) + (c.reel.isNotEmpty() ? TRANS ("   Bobina ") + c.reel : juce::String()) + "   #" + juce::String (c.number),
                 head, juce::Justification::centredRight, true);
 
     // stato (conto alla rovescia / in corso)

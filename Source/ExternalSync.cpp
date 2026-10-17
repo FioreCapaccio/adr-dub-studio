@@ -120,7 +120,7 @@ juce::String Sync::open (const juce::String& id)
     if (input != nullptr) { input->stop(); input.reset(); }
     if (id.isEmpty()) return {};
     input = juce::MidiInput::openDevice (id, this);
-    if (input == nullptr) return "Impossibile aprire l'ingresso MIDI.";
+    if (input == nullptr) return TRANS ("Impossibile aprire l'ingresso MIDI.");
     input->start();
     return {};
 }
@@ -219,7 +219,7 @@ void Panel::timerCallback()
     juce::Colour c = dim;
     if (! sync.isEnabled()) t = st.valid ? TRANS ("Non agganciato (ultimo timecode ricevuto ") + st.text + ")" : TRANS ("Non agganciato");
     else if (! st.valid) t = TRANS ("In attesa del timecode...");
-    else if (st.running) { t = "AGGANCIATO  " + st.text + "  (" + juce::String (tcFormats()[st.fmtIndex].name) + ")"; c = green; }
+    else if (st.running) { t = TRANS ("AGGANCIATO") + "  " + st.text + "  (" + juce::String (tcFormats()[st.fmtIndex].name) + ")"; c = green; }
     else { t = TRANS ("Timecode fermo a ") + st.text; c = yellow; }
     status.setColour (juce::Label::textColourId, c);
     status.setText (t, juce::dontSendNotification);

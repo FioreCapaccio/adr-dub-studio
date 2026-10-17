@@ -22,7 +22,7 @@ private:
     std::function<void (const std::vector<int>&)> accept;
     juce::Label info;
     std::vector<std::unique_ptr<juce::ToggleButton>> boxes;
-    juce::TextButton okBtn { TRANS ("Esporta...") }, cancelBtn { "Annulla" };
+    juce::TextButton okBtn { TRANS ("Esporta...") }, cancelBtn { TRANS ("Annulla") };
 };
 
 /** Finestra di esportazione con preset e opzioni avanzate. */
@@ -56,7 +56,7 @@ private:
     juce::ToggleButton dither { TRANS ("Dither a 16 bit") }, stems { TRANS ("Un file per traccia (stem, senza bus master)") },
                        excludeGuide { TRANS ("Escludi la traccia Guida (dialogo originale)") },
                        delivery { TRANS ("Pacchetto di consegna: MIX + stem Dialoghi / M&E / Effetti + rapporto") };
-    juce::TextButton exportBtn { TRANS ("Esporta...") }, cancelBtn { "Annulla" };
+    juce::TextButton exportBtn { TRANS ("Esporta...") }, cancelBtn { TRANS ("Annulla") };
     juce::Label summary;
     bool applying = false;
 };

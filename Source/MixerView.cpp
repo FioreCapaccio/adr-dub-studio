@@ -296,7 +296,7 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
                 live->sendDb[k] = v <= -59.5f ? -80.0f : v;
                 if (live->autoMode.load() == 2 && sl->isMouseButtonDown() && project.isPlayingFn && project.isPlayingFn())
                     project.writeAuto (trackId, k == 0 ? AutoSendA : AutoSendB, project.positionFn(), live->sendDb[k].load());
-                sl->setTooltip (juce::String (k == 0 ? "Send A" : "Send B") + (v <= -59.5f ? ": spento" : ": " + juce::String (v, 1) + " dB")
+                sl->setTooltip (juce::String (k == 0 ? "Send A" : "Send B") + (v <= -59.5f ? TRANS (": spento") : ": " + juce::String (v, 1) + " dB")
                                 + TRANS ("  (post-fader, verso il ritorno FX). Doppio clic: spento"));
                 project.liveChanged();
             };
@@ -365,11 +365,11 @@ void ChannelStrip::refreshInserts()
     {
         std::shared_ptr<InsertSlot> slot = (chain != nullptr && i < chain->slots.size()) ? chain->slots[i] : nullptr;
         inserts[i].setSlot (slot);
-        juce::String tip = slot == nullptr ? juce::String ("Clic per aggiungere un effetto o un plug-in VST3")
+        juce::String tip = slot == nullptr ? juce::String (TRANS ("Clic per aggiungere un effetto o un plug-in VST3"))
                          : slot->error.isNotEmpty() ? slot->error
                          : slot->name + (slot->desc.manufacturerName.isNotEmpty() ? " (" + slot->desc.manufacturerName + ")" : juce::String())
                                + (slot->ready.load() && slot->plugin != nullptr && slot->plugin->getLatencySamples() > 0
-                                      ? "\nLatenza: " + juce::String (slot->plugin->getLatencySamples()) + TRANS (" campioni (")
+                                      ? TRANS ("\nLatenza: ") + juce::String (slot->plugin->getLatencySamples()) + TRANS (" campioni (")
                                             + juce::String (slot->plugin->getLatencySamples() * 1000.0 / juce::jmax (1.0, project.getSampleRate()), 1) + TRANS (" ms), compensata")
                                       : juce::String())
                                + TRANS ("\nClic: apre l'editor.  Clic destro: bypass, sposta, rimuovi");
@@ -394,7 +394,7 @@ void ChannelStrip::onInsert (int index, const juce::MouseEvent& e)
     m.addItem (1, TRANS ("Apri l'editor"), slot->ready.load());
     m.addItem (2, TRANS ("Bypass"), true, slot->bypass.load());
     m.addSeparator();
-    m.addItem (3, juce::translate (juce::String (juce::CharPointer_UTF8 ("Sposta su"))), index > 0);
+    m.addItem (3, TRANS ("Sposta su"), index > 0);
     m.addItem (4, juce::translate (juce::String (juce::CharPointer_UTF8 ("Sposta gi\xc3\xb9"))), index + 1 < (int) chain->slots.size());
     m.addSeparator();
     m.addItem (5, TRANS ("Rimuovi"));
@@ -823,7 +823,7 @@ void MixerView::openEq (int trackId)
     auto* t = project.findTrack (trackId);
     if (t == nullptr) return;
     for (auto& w : eqWindows)
-        if (w.first == t->live) { w.second->setName (t->name + " - EQ e compressore"); w.second->toFront (true); return; }
+        if (w.first == t->live) { w.second->setName (t->name + TRANS (" - EQ e compressore")); w.second->toFront (true); return; }
 
     auto live = t->live;
     juce::Component::SafePointer<MixerView> safe (this);

@@ -36,7 +36,7 @@ std::vector<Entry> list (const juce::File& sessionFile)
 juce::File save (const Project& p, const juce::String& note, juce::String& error)
 {
     const auto file = p.getFile();
-    if (file == juce::File()) { error = "Salva prima la sessione: le versioni stanno in una cartella accanto al file."; return {}; }
+    if (file == juce::File()) { error = TRANS ("Salva prima la sessione: le versioni stanno in una cartella accanto al file."); return {}; }
     const auto dir = folderFor (file);
     dir.createDirectory();
     int next = 1;

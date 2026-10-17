@@ -127,14 +127,14 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     table.setRowHeight (26);
     auto& h = table.getHeader();
     h.addColumn ("#", 1, 44, 36, 80, juce::TableHeaderComponent::notResizableOrSortable);
-    h.addColumn ("Stato", 2, 110, 80, 160, juce::TableHeaderComponent::notSortable);
-    h.addColumn ("Personaggio", 3, 140, 80, 300, juce::TableHeaderComponent::notSortable);
-    h.addColumn ("Scena", 4, 60, 40, 120, juce::TableHeaderComponent::notSortable);
+    h.addColumn (TRANS ("Stato"), 2, 110, 80, 160, juce::TableHeaderComponent::notSortable);
+    h.addColumn (TRANS ("Personaggio"), 3, 140, 80, 300, juce::TableHeaderComponent::notSortable);
+    h.addColumn (TRANS ("Scena"), 4, 60, 40, 120, juce::TableHeaderComponent::notSortable);
     h.addColumn ("In", 5, 100, 80, 160, juce::TableHeaderComponent::notSortable);
     h.addColumn ("Out", 6, 100, 80, 160, juce::TableHeaderComponent::notSortable);
-    h.addColumn ("Durata", 7, 64, 50, 100, juce::TableHeaderComponent::notSortable);
+    h.addColumn (TRANS ("Durata"), 7, 64, 50, 100, juce::TableHeaderComponent::notSortable);
     h.addColumn ("Take", 8, 56, 40, 100, juce::TableHeaderComponent::notSortable);
-    h.addColumn ("Dialogo", 9, 300, 120, 2000, juce::TableHeaderComponent::notSortable);
+    h.addColumn (TRANS ("Dialogo"), 9, 300, 120, 2000, juce::TableHeaderComponent::notSortable);
     addAndMakeVisible (table);
 
     for (auto* b : { &importBtn, &addBtn, &delBtn, &settingsBtn, &csvBtn, &ptBtn, &bwfBtn, &recBtn, &prevBtn, &nextBtn, &auditionBtn, &originalBtn, &activateBtn, &deleteTakeBtn, &keepBtn, &rejectBtn, &purgeBtn })
@@ -332,7 +332,7 @@ void AdrPanel::rebuildShown()
     shown.clear();
     for (size_t i = 0; i < cues.size(); ++i)
         if ((filterChar.isEmpty() || cues[i].character.trim().equalsIgnoreCase (filterChar)) && (statusFilter < 0 || cues[i].status == statusFilter)) shown.push_back (i);
-    lblCount.setText (juce::String ((int) shown.size()) + " / " + juce::String ((int) cues.size()) + " cue", juce::dontSendNotification);
+    lblCount.setText (juce::String ((int) shown.size()) + " / " + juce::String ((int) cues.size()) + TRANS (" cue"), juce::dontSendNotification);
 }
 
 void AdrPanel::refresh()

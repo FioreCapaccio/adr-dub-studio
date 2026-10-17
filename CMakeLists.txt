@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ArotronStudio VERSION 2.21.0 LANGUAGES C CXX)
+project(ArotronStudio VERSION 2.22.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,8 +23,8 @@ FetchContent_MakeAvailable(JUCE)
 
 juce_add_gui_app(ArotronStudio
     PRODUCT_NAME "ADR Dub Studio"
-    VERSION 2.21.0
-    BUNDLE_VERSION 2.21.0
+    VERSION 2.22.0
+    BUNDLE_VERSION 2.22.0
     COMPANY_NAME "Arotron"
     BUNDLE_ID "com.arotron.studio"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png"
@@ -38,6 +38,10 @@ juce_generate_juce_header(ArotronStudio)
 # cataloghi di traduzione dell'interfaccia (testo italiano = chiave)
 juce_add_binary_data(ArotronLang NAMESPACE LangData HEADER_NAME LangData.h SOURCES Resources/lang/en.txt)
 target_link_libraries(ArotronStudio PRIVATE ArotronLang)
+
+# manuale utente (HTML con immagini, in italiano e inglese): si estrae e si apre dal menu Aiuto
+juce_add_binary_data(ArotronManual NAMESPACE ManualData HEADER_NAME ManualData.h SOURCES Resources/manual/manual_it.zip Resources/manual/manual_en.zip)
+target_link_libraries(ArotronStudio PRIVATE ArotronManual)
 
 target_sources(ArotronStudio PRIVATE
     Source/Main.cpp
@@ -75,6 +79,7 @@ target_sources(ArotronStudio PRIVATE
     Source/SpectrumView.cpp
     Source/SampleEditor.cpp
     Source/Pool.cpp
+    Source/Manual.cpp
     Source/LogicalEditor.cpp
     Source/EqEditor.cpp
     Source/MainComponent.cpp)
@@ -100,7 +105,7 @@ target_compile_definitions(ArotronStudio PRIVATE
     JUCE_PLUGINHOST_AU=0
     JUCE_MODAL_LOOPS_PERMITTED=0
     JUCE_APPLICATION_NAME_STRING="ADR Dub Studio"
-    JUCE_APPLICATION_VERSION_STRING="2.21.0")
+    JUCE_APPLICATION_VERSION_STRING="2.22.0")
 
 if(ADR_FFMPEG_VIDEO)
     target_compile_definitions(ArotronStudio PRIVATE ADR_FFMPEG_VIDEO=1)

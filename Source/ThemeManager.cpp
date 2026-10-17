@@ -16,9 +16,14 @@ juce::File ThemeManager::themesDir() { return juce::File::getSpecialLocation (ju
 std::vector<ThemeEntry> ThemeManager::builtins()
 {
     std::vector<ThemeEntry> v;
-    v.push_back ({ "dark", "Scuro", theme::Palette::dark(), true });
-    v.push_back ({ "light", "Chiaro", theme::Palette::light(), true });
+    v.push_back ({ "dark", TRANS ("Scuro"), theme::Palette::dark(), true });
+    v.push_back ({ "light", TRANS ("Chiaro"), theme::Palette::light(), true });
     v.push_back ({ "contrast", TRANS ("Alto contrasto"), theme::Palette::highContrast(), true });
+    // il tema predefinito di Reaper 5.0 (grigio neutro con accenti turchesi)
+    static const char* default5 = R"({ "name": "Default 5", "bg": "FF1C1C1C", "panel": "FF333333", "panelHi": "FF3B3B3B", "panelTop": "FF373737", "lane": "FF232323", "laneAlt": "FF2F2F2F",
+        "grid": "FF2F2F2F", "border": "FF414141", "text": "FFAAAAAA", "dim": "FF747474", "accent": "FFFF5A47", "blue": "FF466168", "playhead": "FFFF4136",
+        "green": "FF4CD27A", "yellow": "FFFFC94D", "muteCol": "FF466168", "soloCol": "FFFFC94D" })";
+    v.push_back ({ "default5", "Default 5", theme::Palette::fromVar (juce::JSON::parse (default5)), true });
     return v;
 }
 
@@ -40,12 +45,7 @@ std::vector<ThemeEntry> ThemeManager::imported()
     return v;
 }
 
-std::vector<ThemeEntry> ThemeManager::all()
-{
-    auto v = builtins();
-    for (auto& t : imported()) v.push_back (t);
-    return v;
-}
+std::vector<ThemeEntry> ThemeManager::all() { return builtins(); }   // i temi importati da Reaper non si usano piu': restano solo i quattro predefiniti
 
 bool ThemeManager::importReaperTheme (const juce::File& file, ThemeEntry& out, juce::String& error)
 {
@@ -69,7 +69,11 @@ void ThemeManager::remove (const ThemeEntry& t)
     if (! t.builtin) themesDir().getChildFile (t.id + ".json").deleteFile();
 }
 
-juce::String ThemeManager::currentId() { return settings().getValue ("theme", "dark"); }
+juce::String ThemeManager::currentId()
+{
+    const auto id = settings().getValue ("theme", "dark");
+    return id == "reaper-default-50" ? juce::String ("default5") : id;   // il vecchio tema importato
+}
 
 bool ThemeManager::select (const juce::String& id)
 {

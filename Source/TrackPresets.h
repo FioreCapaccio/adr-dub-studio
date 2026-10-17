@@ -18,13 +18,13 @@ inline juce::String trackPresetDescription (int t)
 {
     switch (t)
     {
-        case TrackDialogue: return "Passa-alto 80 Hz, -2,5 dB a 250 Hz (corpo e rimbombo), +2,5 dB a 3,5 kHz (intelligibilita'), +1,5 dB di aria sopra i 10 kHz. "
-                                   "Compressore 3:1, soglia -20 dB, attacco 10 ms, rilascio 120 ms. Limiter a -3 dB.";
-        case TrackME:       return "Musica ed effetti (M&E) senza dialoghi. Passa-alto 30 Hz, -1,5 dB a 300 Hz, -2 dB a 2,8 kHz (fa spazio ai dialoghi), +1 dB di aria. "
-                                   "Compressore delicato 2:1, soglia -18 dB, attacco 30 ms, rilascio 200 ms. Limiter a -1 dB. Livello -6 dB.";
-        case TrackEffects:  return "Passa-alto 40 Hz, -1,5 dB a 350 Hz, +1,5 dB a 5 kHz (presenza), +1 dB di aria. "
-                                   "Compressore 4:1, soglia -14 dB, attacco 5 ms, rilascio 80 ms. Limiter a -2 dB. Livello -3 dB.";
-        case TrackGuide:    return "Dialogo originale di riferimento: nessuna elaborazione, livello -6 dB, bus Guida (escluso dalle consegne).";
+        case TrackDialogue: return TRANS ("Passa-alto 80 Hz, -2,5 dB a 250 Hz (corpo e rimbombo), +2,5 dB a 3,5 kHz (intelligibilita'), +1,5 dB di aria sopra i 10 kHz. "
+                                   "Compressore 3:1, soglia -20 dB, attacco 10 ms, rilascio 120 ms. Limiter a -3 dB.");
+        case TrackME:       return TRANS ("Musica ed effetti (M&E) senza dialoghi. Passa-alto 30 Hz, -1,5 dB a 300 Hz, -2 dB a 2,8 kHz (fa spazio ai dialoghi), +1 dB di aria. "
+                                   "Compressore delicato 2:1, soglia -18 dB, attacco 30 ms, rilascio 200 ms. Limiter a -1 dB. Livello -6 dB.");
+        case TrackEffects:  return TRANS ("Passa-alto 40 Hz, -1,5 dB a 350 Hz, +1,5 dB a 5 kHz (presenza), +1 dB di aria. "
+                                   "Compressore 4:1, soglia -14 dB, attacco 5 ms, rilascio 80 ms. Limiter a -2 dB. Livello -3 dB.");
+        case TrackGuide:    return TRANS ("Dialogo originale di riferimento: nessuna elaborazione, livello -6 dB, bus Guida (escluso dalle consegne).");
         default:            return TRANS ("Nessuna elaborazione: EQ, compressore e limiter spenti, livello a 0 dB.");
     }
 }

@@ -44,12 +44,12 @@ juce::String buildHtml (const Project& p, const juce::String& title)
          ".char{page-break-before:always}.char:first-of-type{page-break-before:auto}"
          "@media print{body{margin:10mm}a{color:inherit}}"
          "</style></head><body>");
-    h << "<h1>" << esc (title) << "</h1><div class=\"meta\">" << esc (p.getFile() == juce::File() ? juce::String ("Sessione senza nome") : p.getFile().getFileName())
-      << TRANS (" &middot; timecode ") << esc (p.tcFmt().name) << " &middot; " << (int) s.cues.size() << " cue: "
-      << counts[0] << TRANS (" da registrare, ") << counts[1] << " registrati, " << counts[2] << " approvati, " << counts[3] << TRANS (" da rifare")
+    h << "<h1>" << esc (title) << "</h1><div class=\"meta\">" << esc (p.getFile() == juce::File() ? juce::String (TRANS ("Sessione senza nome")) : p.getFile().getFileName())
+      << TRANS (" &middot; timecode ") << esc (p.tcFmt().name) << " &middot; " << (int) s.cues.size() << TRANS (" cue: ")
+      << counts[0] << TRANS (" da registrare, ") << counts[1] << TRANS (" registrati, ") << counts[2] << TRANS (" approvati, ") << counts[3] << TRANS (" da rifare")
       << " &middot; " << esc (juce::Time::getCurrentTime().formatted ("%d/%m/%Y %H:%M")) << "</div>";
 
-    h << "<h2>Riepilogo</h2><table><tr><th>N</th><th>Entrata</th><th>Uscita</th><th>Durata</th><th>Personaggio</th><th>Scena</th><th>Bobina</th><th>Stato</th><th>Take</th></tr>";
+    h << TRANS ("<h2>Riepilogo</h2><table><tr><th>N</th><th>Entrata</th><th>Uscita</th><th>Durata</th><th>Personaggio</th><th>Scena</th><th>Bobina</th><th>Stato</th><th>Take</th></tr>");
     for (auto& c : s.cues)
         h << TRANS ("<tr><td class=\"n\">") << c.number << TRANS ("</td><td class=\"tc\">") << esc (tc (c.inPos)) << TRANS ("</td><td class=\"tc\">") << esc (tc (c.outPos)) << "</td><td>"
           << durationText ((double) (c.outPos - c.inPos) / rate) << "</td><td>" << esc (c.character) << "</td><td>" << esc (c.scene) << "</td><td>" << esc (c.reel)
@@ -67,7 +67,7 @@ juce::String buildHtml (const Project& p, const juce::String& title)
     }
     for (auto& name : names)
     {
-        h << TRANS ("<div class=\"char\"><h2>") << esc (name) << "</h2><table><tr><th>N</th><th>Entrata</th><th>Uscita</th><th>Battuta</th><th>Note</th><th>Stato</th></tr>";
+        h << TRANS ("<div class=\"char\"><h2>") << esc (name) << TRANS ("</h2><table><tr><th>N</th><th>Entrata</th><th>Uscita</th><th>Battuta</th><th>Note</th><th>Stato</th></tr>");
         for (auto& c : s.cues)
         {
             const auto n = c.character.trim().isEmpty() ? juce::String (TRANS ("(senza personaggio)")) : c.character.trim();

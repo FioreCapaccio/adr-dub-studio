@@ -16,10 +16,10 @@ public:
     static constexpr int kBands = 4;
     enum Type { Bell = 0, LowShelf, HighShelf, HighPass, LowPass, kNumTypes };
 
-    static const char* typeName (int t)
+    static juce::String typeName (int t)
     {
-        static const char* n[] = { "Campana", "Shelf basso", "Shelf alto", "Passa-alto", "Passa-basso" };
-        return n[juce::jlimit (0, kNumTypes - 1, t)];
+        static const char* n[] = { TRX ("Campana"), TRX ("Shelf basso"), TRX ("Shelf alto"), TRX ("Passa-alto"), TRX ("Passa-basso") };
+        return juce::translate (n[juce::jlimit (0, kNumTypes - 1, t)]);
     }
 
     struct Band

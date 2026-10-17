@@ -648,7 +648,7 @@ void Project::setVideo (const juce::File& f, std::function<void (juce::String)> 
             juce::String err;
             setTask (TRANS ("Carico il video: audio"), 0.4f);
             audio = loadAsset (*fm, f, rate, err, [this] (float p) { setTask (TRANS ("Carico il video: audio"), 0.4f + 0.6f * p); });
-            if (audio == nullptr) audioNote = "Il video e' stato caricato, ma non riesco a estrarne l'audio: " + err;
+            if (audio == nullptr) audioNote = TRANS ("Il video e' stato caricato, ma non riesco a estrarne l'audio: ") + err;
         }
 
         setTask ({}, -1.0f);
@@ -1508,7 +1508,7 @@ void Project::processClips (const std::vector<int64_t>& clipIds, int opInt, doub
                 std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
                 std::unique_ptr<juce::AudioFormatWriter> w;
                 if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) nch, 32, {}, 0));
-                if (w == nullptr) { err = "Impossibile scrivere " + file.getFullPathName(); results->push_back (r); continue; }
+                if (w == nullptr) { err = TRANS ("Impossibile scrivere ") + file.getFullPathName(); results->push_back (r); continue; }
                 os.release();
                 w->writeFromAudioSampleBuffer (buf, 0, buf.getNumSamples());
                 w.reset();
@@ -1538,7 +1538,7 @@ void Project::processClips (const std::vector<int64_t>& clipIds, int opInt, doub
                 else c->gainDb = (float) (*results)[i].gainDb;
             }
             if (any) changed();
-            if (done) done (any ? juce::String() : (err.isNotEmpty() ? err : juce::String ("Elaborazione non riuscita.")));
+            if (done) done (any ? juce::String() : (err.isNotEmpty() ? err : juce::String (TRANS ("Elaborazione non riuscita."))));
         };
     });
 }
@@ -2075,7 +2075,7 @@ const TrackGroup* Project::findGroup (int groupId) const noexcept
 
 int Project::addGroup (const juce::String& name)
 {
-    const auto n = name.trim().isEmpty() ? juce::String ("Gruppo") : name.trim();
+    const auto n = name.trim().isEmpty() ? juce::String (TRANS ("Gruppo")) : name.trim();
     for (auto& g : session.groups) if (g.name.equalsIgnoreCase (n)) return g.id;
     beginEdit();
     int id = 1;
@@ -2214,7 +2214,7 @@ void Project::duplicateTrack (int id)
     beginEdit();
     Track copy = session.tracks[(size_t) idx];
     copy.id = nextTrackId++;
-    copy.name += " copia";
+    copy.name += TRANS (" copia");
     copy.live = std::make_shared<TrackLive>();
     copy.live->copyFrom (*session.tracks[(size_t) idx].live);   // i plug-in non si duplicano: un'istanza non si puo' condividere
     copy.live->armed = false;
@@ -2330,7 +2330,7 @@ void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce:
 {
     int sti = -1;
     auto* c = findClip (id, &sti);
-    if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done ("Clip non valido."); return; }
+    if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done (TRANS ("Clip non valido.")); return; }
     if (session.tracks[(size_t) sti].editLocked()) { if (done) done (TRANS ("La traccia e' bloccata: sbloccala per modificare i suoi clip.")); return; }
     if (c->asset->offline) { if (done) done (TRANS ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media.")); return; }
     ratio = juce::jlimit (0.25, 4.0, ratio);
@@ -2351,7 +2351,7 @@ void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce:
             std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
             std::unique_ptr<juce::AudioFormatWriter> w;
             if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) stretched.getNumChannels(), 32, {}, 0));
-            if (w == nullptr) err = "Impossibile scrivere " + file.getFullPathName();
+            if (w == nullptr) err = TRANS ("Impossibile scrivere ") + file.getFullPathName();
             else { os.release(); w->writeFromAudioSampleBuffer (stretched, 0, stretched.getNumSamples()); }
         }
         AssetPtr a = err.isEmpty() ? loadAsset (*fm, file, rate, err) : nullptr;
@@ -2359,7 +2359,7 @@ void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce:
         return [=, this]
         {
             auto* cl = findClip (id);
-            if (a == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String ("Il clip non c'e' piu'.")); return; }
+            if (a == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String (TRANS ("Il clip non c'e' piu'."))); return; }
             beginEdit();
             if (! cl->env.empty())   // l'inviluppo segue il materiale allungato
             {
@@ -2503,7 +2503,7 @@ void Project::processRange (int64_t id, int64_t from, int64_t to, RangeOp op, do
 {
     int sti = -1;
     auto* c = findClip (id, &sti);
-    if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done ("Clip non valido."); return; }
+    if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done (TRANS ("Clip non valido.")); return; }
     if (session.tracks[(size_t) sti].editLocked()) { if (done) done (TRANS ("La traccia e' bloccata: sbloccala per modificare i suoi clip.")); return; }
     if (c->asset->offline) { if (done) done (TRANS ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media.")); return; }
     from = juce::jlimit<int64_t> (0, c->length, from);
@@ -2560,14 +2560,14 @@ void Project::processRange (int64_t id, int64_t from, int64_t to, RangeOp op, do
             std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
             std::unique_ptr<juce::AudioFormatWriter> w;
             if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) nch, 32, {}, 0));
-            if (w == nullptr) err = "Impossibile scrivere " + file.getFullPathName();
+            if (w == nullptr) err = TRANS ("Impossibile scrivere ") + file.getFullPathName();
             else { os.release(); w->writeFromAudioSampleBuffer (buf, 0, buf.getNumSamples()); w.reset(); asset = loadAsset (*fm, file, rate, err); }
         }
 
         return [=, this]
         {
             auto* cl = findClip (id);
-            if (asset == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String ("Il clip non c'e' piu'.")); return; }
+            if (asset == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String (TRANS ("Il clip non c'e' piu'."))); return; }
             beginEdit();
             for (auto& gp : cl->env) gp.pos -= cl->offset;      // il nuovo file comincia dove comincia il clip
             if (cl->syncPoint >= 0) cl->syncPoint -= cl->offset;
@@ -2583,7 +2583,7 @@ void Project::warpClip (int64_t id, std::vector<warp::Anchor> anchors, const juc
 {
     int sti = -1;
     auto* c = findClip (id, &sti);
-    if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done ("Clip non valido."); return; }
+    if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done (TRANS ("Clip non valido.")); return; }
     if (session.tracks[(size_t) sti].editLocked()) { if (done) done (TRANS ("La traccia e' bloccata: sbloccala per modificare i suoi clip.")); return; }
     if (c->asset->offline) { if (done) done (TRANS ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media.")); return; }
     const auto src = c->asset;
@@ -2605,7 +2605,7 @@ void Project::warpClip (int64_t id, std::vector<warp::Anchor> anchors, const juc
             std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
             std::unique_ptr<juce::AudioFormatWriter> w;
             if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) warped.getNumChannels(), 32, {}, 0));
-            if (w == nullptr) err = "Impossibile scrivere " + file.getFullPathName();
+            if (w == nullptr) err = TRANS ("Impossibile scrivere ") + file.getFullPathName();
             else { os.release(); w->writeFromAudioSampleBuffer (warped, 0, warped.getNumSamples()); }
         }
         AssetPtr a = err.isEmpty() ? loadAsset (*fm, file, rate, err) : nullptr;
@@ -2613,7 +2613,7 @@ void Project::warpClip (int64_t id, std::vector<warp::Anchor> anchors, const juc
         return [=, this]
         {
             auto* cl = findClip (id);
-            if (a == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String ("Il clip non c'e' piu'.")); return; }
+            if (a == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String (TRANS ("Il clip non c'e' piu'."))); return; }
             beginEdit();
             cl->syncPoint = cl->hasSync() ? warp::mapPosition (anchors, len, cl->syncPoint - cl->offset) : -1;
             if (! cl->env.empty())
@@ -2713,7 +2713,7 @@ void Project::joinClips (const std::vector<int64_t>& ids, const juce::File& fold
             std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
             std::unique_ptr<juce::AudioFormatWriter> w;
             if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) j.channels, 32, {}, 0));
-            if (w == nullptr) { err = "Impossibile scrivere " + file.getFullPathName(); assets->push_back (nullptr); continue; }
+            if (w == nullptr) { err = TRANS ("Impossibile scrivere ") + file.getFullPathName(); assets->push_back (nullptr); continue; }
             os.release();
             w->writeFromAudioSampleBuffer (out, 0, out.getNumSamples());
             w.reset();
@@ -2751,7 +2751,7 @@ void Project::joinClips (const std::vector<int64_t>& ids, const juce::File& fold
                 selection.insert (nc.id);
             }
             if (any) changed();
-            if (done) done (any ? juce::String() : (err.isNotEmpty() ? err : juce::String ("Unione non riuscita.")));
+            if (done) done (any ? juce::String() : (err.isNotEmpty() ? err : juce::String (TRANS ("Unione non riuscita."))));
         };
     });
 }
@@ -2847,7 +2847,7 @@ MixValues mixFromVar (const juce::var& o)
 int Project::storeVisConfig (const juce::String& name)
 {
     VisConfig c;
-    c.name = name.trim().isEmpty() ? "Configurazione " + juce::String ((int) visConfigs.size() + 1) : name.trim();
+    c.name = name.trim().isEmpty() ? TRANS ("Configurazione ") + juce::String ((int) visConfigs.size() + 1) : name.trim();
     for (auto& t : session.tracks) c.hidden.push_back (t.hidden);
     visConfigs.push_back (c);
     markDirty();
@@ -3363,7 +3363,7 @@ ConformStats Project::conform (const ConformPlan& plan, bool apply)
         {
             ++st.cuesOut;
             cue.status = 3;
-            if (! cue.notes.contains ("Fuori dal nuovo montaggio")) cue.notes = (cue.notes.isEmpty() ? juce::String() : cue.notes + " ") + "[Fuori dal nuovo montaggio]";
+            if (! cue.notes.contains ("Fuori dal nuovo montaggio")) cue.notes = (cue.notes.isEmpty() ? juce::String() : cue.notes + " ") + TRANS ("[Fuori dal nuovo montaggio]");
             continue;
         }
         const int64_t delta = ni - cue.inPos;
@@ -3387,7 +3387,7 @@ ConformStats Project::conform (const ConformPlan& plan, bool apply)
             Marker m;
             m.id = nextMarkerId + n;
             m.pos = r.first;
-            m.name = "Inserito " + juce::String (++n) + " (" + juce::String ((double) (r.second - r.first) / sampleRate, 1) + " s)";
+            m.name = TRANS ("Inserito ") + juce::String (++n) + " (" + juce::String ((double) (r.second - r.first) / sampleRate, 1) + " s)";
             m.colour = juce::Colour (0xff4cd27a);
             work.markers.push_back (m);
             ++st.insertedMarkers;

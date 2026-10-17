@@ -225,7 +225,7 @@ void SpectrumView::paint (juce::Graphics& g)
         g.drawVerticalLine (hoverX, p.getY(), p.getBottom());
     }
     else if (peakDb > kMinDb + 1.0f)
-        info = "picco " + fmtHz (peakHz) + "  " + juce::String (peakDb, 1) + " dB";
+        info = TRANS ("picco ") + fmtHz (peakHz) + "  " + juce::String (peakDb, 1) + " dB";
     g.setColour (text);
     g.drawText (info, getLocalBounds().withTrimmedTop (34).removeFromTop (16).reduced (12, 0).withTrimmedLeft (20), juce::Justification::centredRight);
 }

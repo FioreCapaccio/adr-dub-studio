@@ -14,11 +14,11 @@ std::vector<Issue> checkSession (const Project& p)
 
     int clips = 0;
     for (auto& t : s.tracks) clips += (int) t.clips.size();
-    if (clips == 0 && s.cues.empty()) add (Issue::Warning, "La sessione e' vuota: nessun clip e nessun cue.");
+    if (clips == 0 && s.cues.empty()) add (Issue::Warning, TRANS ("La sessione e' vuota: nessun clip e nessun cue."));
 
     // media mancanti
     for (auto& a : relink::offlineAssets (s)) add (Issue::Error, TRANS ("File mancante: ") + a->file.getFullPathName() + TRANS ("  (File > Ricollega i media)"));
-    if (s.video == nullptr && p.missingVideoPath.isNotEmpty()) add (Issue::Error, "Video mancante: " + p.missingVideoPath + "  (File > Ricollega i media)");
+    if (s.video == nullptr && p.missingVideoPath.isNotEmpty()) add (Issue::Error, TRANS ("Video mancante: ") + p.missingVideoPath + TRANS ("  (File > Ricollega i media)"));
 
     // ruoli delle tracce
     for (auto& t : s.tracks)
@@ -37,8 +37,8 @@ std::vector<Issue> checkSession (const Project& p)
     for (auto& c : s.cues)
     {
         if (c.status == 0) { ++toRecord; if (firstToRecord == nullptr) firstToRecord = &c; }
-        else if (c.status == 3) { ++redo; add (Issue::Warning, "Cue " + juce::String (c.number) + " (" + c.character + ") da rifare.", c.id); }
-        else if (p.takeCount (c.id) == 0) { ++noTake; add (Issue::Warning, "Cue " + juce::String (c.number) + " segnato come registrato ma senza take.", c.id); }
+        else if (c.status == 3) { ++redo; add (Issue::Warning, "Cue " + juce::String (c.number) + " (" + c.character + TRANS (") da rifare."), c.id); }
+        else if (p.takeCount (c.id) == 0) { ++noTake; add (Issue::Warning, "Cue " + juce::String (c.number) + TRANS (" segnato come registrato ma senza take."), c.id); }
         if (c.status == 1) ++recorded;
     }
     if (const int undecided = p.undecidedCues(); undecided > 0)
@@ -71,7 +71,7 @@ Panel::Panel (std::vector<Issue> list_, std::function<void (const Issue&)> go, s
 {
     int errors = 0, warnings = 0;
     for (auto& i : issues) { errors += i.level == Issue::Error; warnings += i.level == Issue::Warning; }
-    summary.setText (errors == 0 && warnings == 0 ? TRANS ("Tutto a posto.") : juce::String (errors) + (errors == 1 ? " errore, " : " errori, ") + juce::String (warnings) + (warnings == 1 ? " avviso" : " avvisi"),
+    summary.setText (errors == 0 && warnings == 0 ? TRANS ("Tutto a posto.") : juce::String (errors) + (errors == 1 ? TRANS (" errore, ") : TRANS (" errori, ")) + juce::String (warnings) + (warnings == 1 ? TRANS (" avviso") : TRANS (" avvisi")),
                      juce::dontSendNotification);
     summary.setFont (font (14.0f, true));
     summary.setColour (juce::Label::textColourId, errors > 0 ? accent : (warnings > 0 ? yellow : green));

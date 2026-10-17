@@ -75,7 +75,7 @@ Info probe (const juce::File& f)
     if (rc < 0) { info.error = TRANS ("Non trovo ffprobe: serve ffmpeg accanto all'app o nel PATH."); return info; }
     const auto json = juce::JSON::parse (out);
     auto* streams = json.getProperty ("streams", {}).getArray();
-    if (rc != 0 || streams == nullptr) { info.error = "Impossibile leggere " + f.getFileName() + "."; return info; }
+    if (rc != 0 || streams == nullptr) { info.error = TRANS ("Impossibile leggere ") + f.getFileName() + "."; return info; }
 
     for (auto& s : *streams)
     {
@@ -144,7 +144,7 @@ bool extractAudio (const juce::File& video, const juce::File& wavOut, juce::Stri
     juce::String log;
     wavOut.deleteFile();
     const int rc = runTool ("ffmpeg", { "-v", "error", "-y", "-i", video.getFullPathName(), "-vn", "-map", "0:a:0", "-c:a", "pcm_f32le", wavOut.getFullPathName() }, log, true, 600000);
-    if (rc != 0 || ! wavOut.existsAsFile()) { error = "Non riesco a estrarre l'audio dal video: " + log.trim().upToFirstOccurrenceOf ("\n", false, false); return false; }
+    if (rc != 0 || ! wavOut.existsAsFile()) { error = TRANS ("Non riesco a estrarre l'audio dal video: ") + log.trim().upToFirstOccurrenceOf ("\n", false, false); return false; }
     return true;
 }
 

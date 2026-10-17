@@ -8,6 +8,7 @@
 #include "LogicalEditor.h"
 #include "BatchRename.h"
 #include "DirectorMix.h"
+#include "Manual.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
 #include "Relink.h"
@@ -32,7 +33,7 @@ using namespace theme;
 namespace
 {
 struct LayoutPreset { const char* id; const char* name; int headerW, stripW, trackH; };
-const LayoutPreset kLayouts[] = { { "compact", "Compatto", 244, 100, 72 }, { "standard", "Standard", 264, 108, 96 }, { "large", "Ampio", 300, 124, 128 } };
+const LayoutPreset kLayouts[] = { { "compact", TRX ("Compatto"), 244, 100, 72 }, { "standard", TRX ("Standard"), 264, 108, 96 }, { "large", TRX ("Ampio"), 300, 124, 128 } };
 
 
 juce::File settingsFile()
@@ -333,7 +334,7 @@ MainComponent::MainComponent()
     loopBtn.setTooltip (TRANS ("Loop (L). Maiusc + trascina sul righello per definire la regione"));
     snapBtn.setTooltip (TRANS ("Aggancio ai bordi dei clip, alla testina e ai fotogrammi (N)"));
     followBtn.setTooltip (TRANS ("La vista segue la testina durante la riproduzione (F)"));
-    monBtn.setTooltip (TRANS ("Ascolta l'ingresso durante la registrazione (M). Usa le cuffie per evitare il feedback"));
+    monBtn.setTooltip (TRANS ("Ascolta l'ingresso durante la registrazione (I). Usa le cuffie per evitare il feedback"));
     zoomOutBtn.setTooltip (TRANS ("Zoom indietro (-)"));
     zoomInBtn.setTooltip (TRANS ("Zoom avanti (+)"));
     fitBtn.setTooltip (TRANS ("Adatta il progetto alla finestra (Maiusc + Z)"));
@@ -452,15 +453,15 @@ void MainComponent::paint (juce::Graphics& g)
     juce::String info;
     if (auto* dev = engine.deviceManager.getCurrentAudioDevice())
     {
-        info << "Uscita: " << dev->getName() << "   " << juce::String (dev->getCurrentSampleRate() / 1000.0, 1) << " kHz   "
+        info << TRANS ("Uscita: ") << dev->getName() << "   " << juce::String (dev->getCurrentSampleRate() / 1000.0, 1) << " kHz   "
              << dev->getCurrentBufferSizeSamples() << " spl";
-        if (engine.getNumInputChannels() > 0) info << "   Ingressi: " << engine.getNumInputChannels();
+        if (engine.getNumInputChannels() > 0) info << TRANS ("   Ingressi: ") << engine.getNumInputChannels();
     }
     else
         info << TRANS ("Nessun dispositivo audio");
     if (engine.getPdcLatency() > 0)
         info << TRANS ("   Latenza plug-in ") << juce::String (engine.getPdcLatency() * 1000.0 / project->getSampleRate(), 1) << " ms"
-             << (engine.pdcOn.load() ? " (compensata)" : TRANS (" (NON compensata)"));
+             << (engine.pdcOn.load() ? TRANS (" (compensata)") : TRANS (" (NON compensata)"));
     info << "   CPU " << juce::String ((int) std::round (engine.deviceManager.getCpuUsage() * 100.0)) << "%";
     g.setColour (dim);
     g.drawText (info, statusBox.reduced (10, 0), juce::Justification::centredRight, true);
@@ -473,8 +474,8 @@ void MainComponent::paint (juce::Graphics& g)
         leftCol = accent;
         if (engine.getDroppedBlocks() > 0) left << TRANS ("  -  attenzione: blocchi persi");
     }
-    else if (project->getBusyCount() > 0) { left = "Caricamento..."; leftCol = yellow; }
-    else if (project->getSession().video != nullptr) left = "Video: " + project->getSession().video->file.getFileName();
+    else if (project->getBusyCount() > 0) { left = TRANS ("Caricamento..."); leftCol = yellow; }
+    else if (project->getSession().video != nullptr) left = TRANS ("Video: ") + project->getSession().video->file.getFileName();
     g.setColour (leftCol);
     g.drawText (left, statusBox.reduced (10, 0), juce::Justification::centredLeft, true);
 
@@ -700,7 +701,7 @@ void MainComponent::updateTitle()
 {
     if (onTitleChanged)
     {
-        auto name = project->getFile() == juce::File() ? juce::String ("Senza titolo") : project->getFile().getFileNameWithoutExtension();
+        auto name = project->getFile() == juce::File() ? juce::String (TRANS ("Senza titolo")) : project->getFile().getFileNameWithoutExtension();
         onTitleChanged (name + (project->isDirty() ? " *" : "") + TRANS (" - ADR Dub Studio"));
     }
 }
@@ -772,7 +773,7 @@ void MainComponent::startRecording()
     }
 
     const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
-    const auto session = project->getFile() == juce::File() ? juce::String ("Sessione") : project->getFile().getFileNameWithoutExtension();
+    const auto session = project->getFile() == juce::File() ? juce::String (TRANS ("Sessione")) : project->getFile().getFileNameWithoutExtension();
     std::vector<TakeSpec> specs;
     for (auto& t : project->getSession().tracks)
         if (t.live->armed.load())
@@ -801,7 +802,7 @@ void MainComponent::finishRecording()
 
     juce::String takeName;
     if (const auto* cue = project->findCue (cueId))
-        takeName = dub::expandNaming (project->adrNaming, *cue, project->getFile() == juce::File() ? juce::String ("Sessione") : project->getFile().getFileNameWithoutExtension());
+        takeName = dub::expandNaming (project->adrNaming, *cue, project->getFile() == juce::File() ? juce::String (TRANS ("Sessione")) : project->getFile().getFileNameWithoutExtension());
     std::vector<Project::RecItem> items;
     for (auto& r : results) items.push_back ({ r.trackId, r.file, r.startPos, r.latency, cueId, takeName });
 
@@ -860,7 +861,7 @@ void MainComponent::confirmDiscard (std::function<void()> proceed)
             }
             else
             {
-                safe->chooser = std::make_unique<juce::FileChooser> ("Salva sessione", juce::File(), "*.adb");
+                safe->chooser = std::make_unique<juce::FileChooser> (TRANS ("Salva sessione"), juce::File(), "*.adb");
                 safe->chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                                                 | juce::FileBrowserComponent::warnAboutOverwriting,
                                             [safe, proceed] (const juce::FileChooser& fc)
@@ -1143,7 +1144,7 @@ void MainComponent::requestQuit()
 
 void MainComponent::importDialog()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Importa audio", juce::File(), formats.getWildcardForAllFormats());
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Importa audio"), juce::File(), formats.getWildcardForAllFormats());
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::canSelectMultipleItems,
@@ -1227,7 +1228,7 @@ void MainComponent::loadVideo (const juce::File& f)
 
 void MainComponent::importVideoDialog()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Importa video", juce::File(), "*.mov;*.mp4;*.m4v");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Importa video"), juce::File(), "*.mov;*.mp4;*.m4v");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [safe] (const juce::FileChooser& fc)
@@ -1250,7 +1251,7 @@ void MainComponent::exportVideoDialog()
     {
         if (safe == nullptr) return;
         const auto def = video->file.getParentDirectory().getChildFile (video->file.getFileNameWithoutExtension() + (burnIn ? "_revisione" : (useRange ? "_intervallo" : "_mix"))).withFileExtension ("mov");
-        safe->chooser = std::make_unique<juce::FileChooser> ("Esporta video con mix", def, "*.mov");
+        safe->chooser = std::make_unique<juce::FileChooser> (TRANS ("Esporta video con mix"), def, "*.mov");
         safe->chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                                         | juce::FileBrowserComponent::warnAboutOverwriting,
                                     [safe, video, useRange, burnIn] (const juce::FileChooser& fc)
@@ -1344,7 +1345,7 @@ void MainComponent::batchExportDialog()
     auto* dlg = new BatchExportDialog ([safe] (const std::vector<int>& chosen)
     {
         if (safe == nullptr) return;
-        safe->chooser = std::make_unique<juce::FileChooser> ("Cartella per l'esportazione in batch", juce::File::getSpecialLocation (juce::File::userDesktopDirectory), "");
+        safe->chooser = std::make_unique<juce::FileChooser> (TRANS ("Cartella per l'esportazione in batch"), juce::File::getSpecialLocation (juce::File::userDesktopDirectory), "");
         safe->chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe, chosen] (const juce::FileChooser& fc)
         {
             const auto dir = fc.getResult();
@@ -1421,7 +1422,7 @@ void MainComponent::runExport (const ExportOptions& o)
 
     if (o.stems || o.delivery)
     {
-        chooser = std::make_unique<juce::FileChooser> (o.delivery ? "Cartella per la consegna" : "Cartella per gli stem", juce::File::getSpecialLocation (juce::File::userDesktopDirectory), "");
+        chooser = std::make_unique<juce::FileChooser> (o.delivery ? TRANS ("Cartella per la consegna") : TRANS ("Cartella per gli stem"), juce::File::getSpecialLocation (juce::File::userDesktopDirectory), "");
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
                               [start, base, o] (const juce::FileChooser& fc)
         {
@@ -1432,7 +1433,7 @@ void MainComponent::runExport (const ExportOptions& o)
     }
 
     auto def = juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension (o.format);
-    chooser = std::make_unique<juce::FileChooser> ("Esporta audio", def, "*." + o.format);
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Esporta audio"), def, "*." + o.format);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::warnAboutOverwriting,
                           [start, o] (const juce::FileChooser& fc)
@@ -1445,7 +1446,7 @@ void MainComponent::runExport (const ExportOptions& o)
 
 void MainComponent::saveAs()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Salva sessione", project->getFile(), "*.adb");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Salva sessione"), project->getFile(), "*.adb");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::warnAboutOverwriting,
@@ -1472,7 +1473,7 @@ void MainComponent::openDialog()
     confirmDiscard ([safe]
     {
         if (safe == nullptr) return;
-        safe->chooser = std::make_unique<juce::FileChooser> ("Apri sessione", juce::File(), "*.adb;*.arostudio");
+        safe->chooser = std::make_unique<juce::FileChooser> (TRANS ("Apri sessione"), juce::File(), "*.adb;*.arostudio");
         safe->chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                                     [safe] (const juce::FileChooser& fc)
         {
@@ -1523,7 +1524,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix });
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1543,7 +1544,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdExport:        i.setInfo (TRANS ("Esporta audio..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('e', cmd); break;
         case cmdAudioSettings: i.setInfo (TRANS ("Impostazioni audio..."), "", TRANS ("File"), 0); i.addDefaultKeypress (',', cmd); break;
 
-        case cmdUndo:          i.setInfo (TRANS ("Annulla"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('z', cmd); i.setActive (project->canUndo()); break;
+        case cmdUndo:          i.setInfo (TRANS ("Annulla (Undo)"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('z', cmd); i.setActive (project->canUndo()); break;
         case cmdRedo:          i.setInfo (TRANS ("Ripeti"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('z', cmd | shift); i.setActive (project->canRedo()); break;
         case cmdSelectAll:     i.setInfo (TRANS ("Seleziona tutto"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('a', cmd); break;
         case cmdDuplicate:     i.setInfo (TRANS ("Duplica"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('d', cmd); i.setActive (hasSel); break;
@@ -1630,6 +1631,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdSaveVersion:   i.setInfo (TRANS ("Salva una versione della sessione..."), "", TRANS ("File"), 0); i.setActive (project->getFile() != juce::File()); break;
         case cmdVersions:      i.setInfo (TRANS ("Versioni della sessione..."), "", TRANS ("File"), 0); i.setActive (project->getFile() != juce::File()); break;
         case cmdCheckSession:  i.setInfo (TRANS ("Controlla la sessione prima della consegna..."), "", TRANS ("File"), 0); break;
+        case cmdManual:        i.setInfo (TRANS ("Manuale utente"), "", TRANS ("Aiuto"), 0); i.addDefaultKeypress (juce::KeyPress::F1Key, 0); break;
+        case cmdManualOther:   i.setInfo (lang::savedCode() == "en" ? juce::String (juce::CharPointer_UTF8 ("Manuale utente (italiano)")) : juce::String ("User manual (English)"), "", TRANS ("Aiuto"), 0); break;
         case cmdWorkflow:      i.setInfo (TRANS ("Flusso di lavoro del doppiaggio"), "", TRANS ("Aiuto"), 0); break;
         case cmdScriptReader:  i.setInfo (TRANS ("Lettore copione per l'attore"), "", TRANS ("ADR"), 0); i.setTicked (scriptWindow != nullptr); break;
         case cmdCueMix:        i.setInfo (TRANS ("Cuffie dell'attore e talkback..."), "", TRANS ("ADR"), 0); i.setTicked (cueWindow != nullptr); break;
@@ -1670,7 +1673,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdTrimStart:     i.setInfo (TRANS ("Taglia l'inizio alla testina"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('q', 0); break;
         case cmdTrimEnd:       i.setInfo (TRANS ("Taglia la fine alla testina"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('w', 0); break;
         case cmdTrackUp:       i.setInfo (TRANS ("Sposta la traccia su"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress (juce::KeyPress::upKey, cmd | juce::ModifierKeys::altModifier); break;
-        case cmdTrackDown:     i.setInfo (juce::String (juce::CharPointer_UTF8 ("Sposta la traccia gi\xc3\xb9")), "", TRANS ("Traccia"), 0); i.addDefaultKeypress (juce::KeyPress::downKey, cmd | juce::ModifierKeys::altModifier); break;
+        case cmdTrackDown:     i.setInfo (juce::translate (juce::String (juce::CharPointer_UTF8 ("Sposta la traccia gi\xc3\xb9"))), "", TRANS ("Traccia"), 0); i.addDefaultKeypress (juce::KeyPress::downKey, cmd | juce::ModifierKeys::altModifier); break;
         case cmdDuplicateTrack: i.setInfo (TRANS ("Duplica la traccia"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('d', cmd | shift); break;
         case cmdAddPlugin:     i.setInfo (TRANS ("Aggiungi plug-in VST3 alla traccia selezionata..."), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('p', 0); break;
         case cmdAddMarker:     i.setInfo (TRANS ("Aggiungi marker alla testina"), "", TRANS ("Marker"), 0); i.addDefaultKeypress ('m', 0); break;
@@ -1903,6 +1906,13 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSaveVersion:   saveVersionDialog(); break;
         case cmdVersions:      versionsDialog(); break;
         case cmdCheckSession:  checkSessionDialog(); break;
+        case cmdManual: case cmdManualOther:
+        {
+            const bool en = (lang::savedCode() == "en") == (info.commandID == cmdManual);
+            juce::String err;
+            if (! manual::open (en ? "en" : "it", err)) showError (err);
+            break;
+        }
         case cmdWorkflow:      workflowDialog(); break;
         case cmdScriptReader:  toggleScriptWindow(); break;
         case cmdCueMix:        toggleCueWindow(); break;
@@ -1960,7 +1970,7 @@ void MainComponent::menuItemSelected (int id, int)
         {
             lang::saveCode (langActions[i]);
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "ADR Dub Studio",
-                                                    lang::translateTo (langActions[i], "Il cambio di lingua si applica al riavvio dell'app."));
+                                                    lang::translateTo (langActions[i], TRANS ("Il cambio di lingua si applica al riavvio dell'app.")));
         }
         return;
     }
@@ -1969,9 +1979,9 @@ void MainComponent::menuItemSelected (int id, int)
         newFromTemplate (id - 31000);
         return;
     }
-    if (id >= 30000)
+    if (id >= 100000)
     {
-        const size_t i = (size_t) (id - 30000);
+        const size_t i = (size_t) (id - 100000);
         if (i < menuActions.size())
             juce::MessageManager::callAsync ([action = menuActions[i]] { action(); });
         return;
@@ -1992,7 +2002,7 @@ void MainComponent::menuItemSelected (int id, int)
 void MainComponent::exportMarkersCsv()
 {
     const auto base = project->getFile() == juce::File() ? juce::String ("Marker") : project->getFile().getFileNameWithoutExtension() + "_marker";
-    chooser = std::make_unique<juce::FileChooser> ("Esporta elenco marker", juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("csv"), "*.csv");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Esporta elenco marker"), juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("csv"), "*.csv");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
                           [safe] (const juce::FileChooser& fc)
@@ -2016,36 +2026,13 @@ juce::PopupMenu MainComponent::buildThemeMenu()
     const auto current = ThemeManager::currentId();
     auto addAction = [this] (juce::PopupMenu& menu, const juce::String& label, bool ticked, std::function<void()> f)
     {
-        menu.addItem (30000 + (int) menuActions.size(), label, true, ticked);
+        menu.addItem (100000 + (int) menuActions.size(), label, true, ticked);
         menuActions.push_back (std::move (f));
     };
 
     for (auto& t : ThemeManager::builtins())
         addAction (sub, t.name, current == t.id, [id = t.id] { ThemeManager::select (id); });
 
-    const auto imported = ThemeManager::imported();
-    if (! imported.empty())
-    {
-        sub.addSeparator();
-        for (auto& t : imported)
-            addAction (sub, t.name, current == t.id, [id = t.id] { ThemeManager::select (id); });
-    }
-
-    sub.addSeparator();
-    juce::PopupMenu found;
-    for (auto& f : reaper::findInstalledThemes())
-        addAction (found, f.getFileNameWithoutExtension(), false, [this, f] { importThemeFile (f); });
-    if (found.getNumItems() == 0) found.addItem (29999, TRANS ("Nessun tema trovato nella cartella di Reaper"), false);
-    sub.addSubMenu (juce::translate (juce::String::fromUTF8 ("Temi di Reaper installati")), found);
-    addAction (sub, TRANS ("Importa un tema Reaper..."), false, [this] { chooseThemeFile(); });
-
-    // rimuovere un tema importato (solo se e' quello in uso)
-    for (auto& t : imported)
-        if (t.id == current)
-        {
-            sub.addSeparator();
-            addAction (sub, TRANS ("Rimuovi \"") + t.name + TRANS ("\" dall'elenco"), false, [t] { ThemeManager::remove (t); ThemeManager::select ("dark"); });
-        }
     return sub;
 }
 
@@ -2062,7 +2049,7 @@ void MainComponent::chooseThemeFile()
     auto start = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
     const auto installed = reaper::findInstalledThemes();
     if (installed.size() > 0) start = installed[0].getParentDirectory();
-    chooser = std::make_unique<juce::FileChooser> ("Scegli un tema di Reaper (.ReaperThemeZip o .ReaperTheme)", start, "*.ReaperThemeZip;*.ReaperTheme;*.zip");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Scegli un tema di Reaper (.ReaperThemeZip o .ReaperTheme)"), start, "*.ReaperThemeZip;*.ReaperTheme;*.zip");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe] (const juce::FileChooser& fc)
     {
@@ -2075,7 +2062,7 @@ juce::PopupMenu MainComponent::buildLayoutMenu()
     juce::PopupMenu sub;
     for (int i = 0; i < (int) std::size (kLayouts); ++i)
     {
-        sub.addItem (30000 + (int) menuActions.size(), kLayouts[i].name, true, i == layoutIndex);
+        sub.addItem (100000 + (int) menuActions.size(), juce::translate (kLayouts[i].name), true, i == layoutIndex);
         menuActions.push_back ([this, i] { applyLayout (i, true); });
     }
     return sub;
@@ -2112,7 +2099,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             if (id == 0) m.addSeparator(); else m.addCommandItem (&commandManager, id);
         }
     };
-    menuActions.clear();
+    if (menuActions.size() > 50000) menuActions.clear();   // le voci dinamiche restano valide finche' il menu puo' essere aperto: macOS costruisce tutti i menu in anticipo
     switch (index)
     {
         case 0:
@@ -2162,7 +2149,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc }); break;
         case 8:
         {
-            add ({ cmdWorkflow, cmdShortcuts, cmdKeyEditor });
+            add ({ cmdManual, cmdManualOther, 0, cmdWorkflow, cmdShortcuts, cmdKeyEditor });
             m.addSeparator();
             juce::PopupMenu langs;
             langActions.clear();
@@ -2238,8 +2225,8 @@ void MainComponent::exportPackageDialog (bool tracksOnly)
         ids = project->selectedTracks();
         if (ids.empty()) { showError (TRANS ("Seleziona almeno una traccia.")); return; }
     }
-    const auto base = (project->getFile() == juce::File() ? juce::String ("Sessione") : project->getFile().getFileNameWithoutExtension()) + (tracksOnly ? "_tracce" : "_pacchetto");
-    chooser = std::make_unique<juce::FileChooser> (tracksOnly ? "Salva l'archivio delle tracce" : "Salva il pacchetto della sessione",
+    const auto base = (project->getFile() == juce::File() ? juce::String (TRANS ("Sessione")) : project->getFile().getFileNameWithoutExtension()) + (tracksOnly ? "_tracce" : "_pacchetto");
+    chooser = std::make_unique<juce::FileChooser> (tracksOnly ? TRANS ("Salva l'archivio delle tracce") : TRANS ("Salva il pacchetto della sessione"),
                                                    juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("zip"), "*.zip");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
@@ -2260,7 +2247,7 @@ void MainComponent::exportPackageDialog (bool tracksOnly)
 
 void MainComponent::importTrackArchiveDialog()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Importa un archivio di tracce", juce::File(), "*.zip");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Importa un archivio di tracce"), juce::File(), "*.zip");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe] (const juce::FileChooser& fc)
     {
@@ -2354,7 +2341,7 @@ void MainComponent::timeStretchSelected (bool toCue)
             project->stretchClip (id, ratio, true, folder, report);
             ++n;
         }
-        if (n == 0) report ("Seleziona un clip collegato a un cue ADR.");
+        if (n == 0) report (TRANS ("Seleziona un clip collegato a un cue ADR."));
         return;
     }
 
@@ -2506,7 +2493,7 @@ void MainComponent::addAdrCue()
     const double rate = project->getSampleRate();
     if (engine.getLoopEnd() > engine.getLoopStart()) { c.inPos = engine.getLoopStart(); c.outPos = engine.getLoopEnd(); }
     else { c.inPos = engine.getPosition(); c.outPos = c.inPos + (int64_t) (4.0 * rate); }
-    c.character = "Personaggio";
+    c.character = TRANS ("Personaggio");
     const int id = project->addCue (c);
     project->selectedCueId = id;
     project->sendChangeMessage();
@@ -2515,7 +2502,7 @@ void MainComponent::addAdrCue()
 
 void MainComponent::importAdrDialog()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Importa cue ADR (Pro Tools, EDL, CSV/TSV, SRT)", juce::File(), "*.txt;*.csv;*.tsv;*.edl;*.tab;*.srt;*.vtt");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Importa cue ADR (Pro Tools, EDL, CSV/TSV, SRT)"), juce::File(), "*.txt;*.csv;*.tsv;*.edl;*.tab;*.srt;*.vtt");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe] (const juce::FileChooser& fc)
     {
@@ -2552,7 +2539,7 @@ void MainComponent::importAdrFile (const juce::File& f)
         if (! p.getSession().cues.empty()) { p.selectedCueId = p.getSession().cues.front().id; p.sendChangeMessage(); }
         (void) firstPos;
         safe->showAdrWindow();
-        juce::String msg = "Importati " + juce::String ((int) cues.size()) + " cue.";
+        juce::String msg = TRANS ("Importati ") + juce::String ((int) cues.size()) + TRANS (" cue.");
         if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
         safe->importTakesFrom (folder, true, msg);   // se vicino al file ci sono take registrate, si propone di importarle
     });
@@ -2571,7 +2558,7 @@ void MainComponent::importAdrFile (const juce::File& f)
 
 void MainComponent::importTakesDialog()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Cartella con le take registrate", juce::File(), "");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Cartella con le take registrate"), juce::File(), "");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe] (const juce::FileChooser& fc)
     {
@@ -2662,7 +2649,7 @@ void MainComponent::recordAdrCue (int cueId)
 
     const auto* track = project->findTrack (trackId);
     const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
-    const auto session = project->getFile() == juce::File() ? juce::String ("Sessione") : project->getFile().getFileNameWithoutExtension();
+    const auto session = project->getFile() == juce::File() ? juce::String (TRANS ("Sessione")) : project->getFile().getFileNameWithoutExtension();
     const std::vector<TakeSpec> specs { { trackId,
         recordingsFolder (*project).getChildFile (juce::File::createLegalFileName (session + "_ADR" + juce::String (cue->number) + "_" + track->name + "_" + stamp) + ".wav"),
         track->live->inputMode.load() } };
@@ -2704,7 +2691,7 @@ juce::String MainComponent::reconformRun (const juce::File& oldEdl, const juce::
     {
         juce::String err;
         const auto v = versions::save (*project, TRANS ("prima del ReConform"), err);
-        if (v == juce::File()) return out + "\nNon sono riuscito a salvare la versione di sicurezza (" + err + "): non applico nulla.";
+        if (v == juce::File()) return out + TRANS ("\nNon sono riuscito a salvare la versione di sicurezza (") + err + TRANS ("): non applico nulla.");
         out << TRANS ("Versione di sicurezza salvata: ") << v.getFileName() << "\n";
     }
     const auto plan = conform::makePlan (map, project->tcStartSec, project->getSampleRate(), markers);
@@ -2785,7 +2772,7 @@ public:
 private:
     void choose (juce::File& target, juce::TextEditor& label)
     {
-        chooser = std::make_shared<juce::FileChooser> ("Scegli l'EDL (CMX3600)", juce::File(), "*.edl;*.txt");
+        chooser = std::make_shared<juce::FileChooser> (TRANS ("Scegli l'EDL (CMX3600)"), juce::File(), "*.edl;*.txt");
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this, &target, &label] (const juce::FileChooser& fc)
         {
             if (fc.getResult() == juce::File()) return;
@@ -2800,7 +2787,7 @@ private:
     std::shared_ptr<juce::FileChooser> chooser;
     juce::Label oldLbl, newLbl;
     juce::TextEditor oldPath, newPath, report;
-    juce::TextButton oldBtn { TRANS ("Scegli...") }, newBtn { "Scegli..." }, previewBtn { "Anteprima" }, applyBtn { "Applica" }, closeBtn { "Chiudi" };
+    juce::TextButton oldBtn { TRANS ("Scegli...") }, newBtn { TRANS ("Scegli...") }, previewBtn { TRANS ("Anteprima") }, applyBtn { TRANS ("Applica") }, closeBtn { TRANS ("Chiudi") };
     juce::ToggleButton markers { TRANS ("Aggiungi un marker sul materiale nuovo (senza audio)") }, saveVersion { TRANS ("Salva prima una versione della sessione (consigliato)") };
 };
 } // namespace
@@ -2899,7 +2886,7 @@ void MainComponent::reconformDialog()
 void MainComponent::relinkMedia()
 {
     if (! project->hasOfflineMedia()) { showError (TRANS ("Tutti i media della sessione sono presenti.")); return; }
-    chooser = std::make_unique<juce::FileChooser> ("Scegli la cartella in cui cercare i file mancanti (si cerca anche nelle sottocartelle)", juce::File::getSpecialLocation (juce::File::userHomeDirectory));
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Scegli la cartella in cui cercare i file mancanti (si cerca anche nelle sottocartelle)"), juce::File::getSpecialLocation (juce::File::userHomeDirectory));
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe] (const juce::FileChooser& fc)
     {
@@ -2918,7 +2905,7 @@ void MainComponent::relinkMedia()
                 {
                     safe->project->relinkVideo (r.video, [safe] (juce::String err) { if (safe != nullptr) { safe->timeline->repaint(); if (err.isNotEmpty()) safe->showError (err); } });
                 }
-                juce::String msg = juce::String (r.found) + (r.found == 1 ? " file ricollegato" : " file ricollegati") + (r.video != juce::File() ? " e il video" : juce::String()) + ".";
+                juce::String msg = juce::String (r.found) + (r.found == 1 ? TRANS (" file ricollegato") : TRANS (" file ricollegati")) + (r.video != juce::File() ? TRANS (" e il video") : juce::String()) + ".";
                 if (! r.tooShort.isEmpty()) msg << TRANS ("\n\nTrovati ma troppo corti (non usati): ") << r.tooShort.joinIntoString (", ");
                 if (! r.notFound.isEmpty()) msg << TRANS ("\n\nNon trovati: ") << r.notFound.joinIntoString (", ");
                 safe->commandManager.commandStatusChanged();
@@ -3006,7 +2993,7 @@ private:
     std::function<void (juce::File)> openFn;
     std::vector<versions::Entry> items;
     juce::ListBox list { {}, this };
-    juce::TextButton openBtn { TRANS ("Apri") }, delBtn { "Elimina" };
+    juce::TextButton openBtn { TRANS ("Apri") }, delBtn { TRANS ("Elimina") };
 };
 } // namespace
 
@@ -3123,12 +3110,12 @@ juce::PopupMenu MainComponent::buildViewMenu()
     juce::PopupMenu sub;
     auto addAction = [this] (juce::PopupMenu& menu, const juce::String& label, bool enabled, std::function<void()> f)
     {
-        menu.addItem (30000 + (int) menuActions.size(), label, enabled, false);
+        menu.addItem (100000 + (int) menuActions.size(), label, enabled, false);
         menuActions.push_back (std::move (f));
     };
     addAction (sub, TRANS ("Salva zoom e altezza delle tracce come preset..."), true, [this]
     {
-        askName (TRANS ("Nuovo preset di vista"), "Vista " + juce::String ((int) project->viewPresets.size() + 1), [this] (juce::String n)
+        askName (TRANS ("Nuovo preset di vista"), TRANS ("Vista ") + juce::String ((int) project->viewPresets.size() + 1), [this] (juce::String n)
         {
             if (n.isEmpty()) return;
             project->viewPresets.push_back ({ n, timeline->getSpp(), timeline->getTrackHeight() });
@@ -3149,7 +3136,7 @@ juce::PopupMenu MainComponent::buildViewMenu()
     sub.addSeparator();
     addAction (sub, TRANS ("Salva le tracce visibili come configurazione..."), true, [this]
     {
-        askName (TRANS ("Nuova configurazione di visibilita'"), "Configurazione " + juce::String ((int) project->visConfigs.size() + 1), [this] (juce::String n) { if (n.isNotEmpty()) project->storeVisConfig (n); });
+        askName (TRANS ("Nuova configurazione di visibilita'"), TRANS ("Configurazione ") + juce::String ((int) project->visConfigs.size() + 1), [this] (juce::String n) { if (n.isNotEmpty()) project->storeVisConfig (n); });
     });
     for (size_t i = 0; i < project->visConfigs.size(); ++i)
         addAction (sub, project->visConfigs[i].name, true, [this, i] { project->recallVisConfig ((int) i); });
@@ -3177,7 +3164,7 @@ juce::PopupMenu MainComponent::buildSnapshotMenu()
     juce::PopupMenu sub;
     auto addAction = [this] (juce::PopupMenu& menu, const juce::String& label, bool enabled, std::function<void()> f)
     {
-        menu.addItem (30000 + (int) menuActions.size(), label, enabled, false);
+        menu.addItem (100000 + (int) menuActions.size(), label, enabled, false);
         menuActions.push_back (std::move (f));
     };
     addAction (sub, TRANS ("Salva lo stato attuale del mixer..."), true, [this]
@@ -3205,7 +3192,7 @@ juce::PopupMenu MainComponent::buildPresetMenu()
     juce::PopupMenu sub;
     auto addAction = [this] (juce::PopupMenu& menu, const juce::String& label, bool enabled, std::function<void()> f)
     {
-        menu.addItem (30000 + (int) menuActions.size(), label, enabled, false);
+        menu.addItem (100000 + (int) menuActions.size(), label, enabled, false);
         menuActions.push_back (std::move (f));
     };
     const int sel = project->selectedTrackId;
@@ -3236,6 +3223,63 @@ juce::PopupMenu MainComponent::buildPresetMenu()
     for (auto& f : files) addAction (del, f.getFileNameWithoutExtension(), true, [f] { f.moveToTrash(); });
     sub.addSubMenu (TRANS ("Elimina un preset"), del, ! files.isEmpty());
     return sub;
+}
+
+void MainComponent::dumpUiTexts (const juce::File& out)
+{
+    for (auto id : { cmdAdrWindow, cmdInfoLine, cmdNotes, cmdMtc, cmdScriptReader, cmdCueMix, cmdDirectorMix, cmdPool })
+        commandManager.invokeDirectly (id, false);
+    if (! project->getSession().tracks.empty() && ! project->getSession().tracks[0].clips.empty())
+        openSampleEditor (project->getSession().tracks[0].clips[0].id);
+
+    juce::StringArray texts;
+    auto add = [&texts] (const juce::String& kind, const juce::String& t)
+    {
+        const auto s = t.trim();
+        if (s.containsAnyOf ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")) texts.add (kind + "\t" + s.replace ("\n", "\\n"));
+    };
+    std::function<void (juce::Component*)> walk = [&] (juce::Component* c)
+    {
+        if (c == nullptr) return;
+        if (auto* b = dynamic_cast<juce::Button*> (c)) add ("button", b->getButtonText());
+        if (auto* l = dynamic_cast<juce::Label*> (c)) add ("label", l->getText());
+        if (auto* e = dynamic_cast<juce::TextEditor*> (c)) add ("hint", e->getTextToShowWhenEmpty());
+        if (auto* cb = dynamic_cast<juce::ComboBox*> (c))
+        {
+            for (int i = 0; i < cb->getNumItems(); ++i) add ("item", cb->getItemText (i));
+            add ("hint", cb->getTextWhenNothingSelected());
+        }
+        if (auto* t = dynamic_cast<juce::TableListBox*> (c))
+            for (int i = 0; i < t->getHeader().getNumColumns (false); ++i) add ("column", t->getHeader().getColumnName (t->getHeader().getColumnIdOfIndex (i, false)));
+        if (auto* tc = dynamic_cast<juce::SettableTooltipClient*> (c)) add ("tooltip", tc->getTooltip());
+        if (auto* tw = dynamic_cast<juce::TopLevelWindow*> (c)) add ("title", tw->getName());
+        for (auto* ch : c->getChildren()) walk (ch);
+    };
+    for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i) walk (juce::Desktop::getInstance().getComponent (i));
+    for (int m = 0; m <= 8; ++m)
+    {
+        std::function<void (const juce::PopupMenu&)> menuWalk = [&] (const juce::PopupMenu& pm)
+        {
+            juce::PopupMenu::MenuItemIterator it (pm);
+            while (it.next())
+            {
+                auto& item = it.getItem();
+                add ("menu", item.text);
+                if (item.commandManager != nullptr && item.itemID != 0)
+                {
+                    juce::ApplicationCommandInfo info (item.itemID);
+                    getCommandInfo (item.itemID, info);
+                    add ("menu", info.shortName);
+                    add ("category", info.categoryName);
+                }
+                if (item.subMenu != nullptr) menuWalk (*item.subMenu);
+            }
+        };
+        menuWalk (getMenuForIndex (m, {}));
+        add ("menubar", getMenuBarNames()[m]);
+    }
+    texts.removeDuplicates (false);
+    out.replaceWithText (texts.joinIntoString ("\n"));
 }
 
 void MainComponent::batchRenameDialog()
@@ -3577,7 +3621,7 @@ void MainComponent::autoDuckDialog()
         const int n = duck::apply (*safe->project, st, safe->project->selectedTrackId);
         safe->timeline->repaint();
         juce::AlertWindow::showMessageBoxAsync (n > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Ducking automatico"),
-            n > 0 ? TRANS ("Automazione del volume scritta su ") + juce::String (n) + (n == 1 ? " traccia" : " tracce") + TRANS (".\nLe tracce sono in modalita' lettura: la curva si vede e si modifica nella corsia VOL.\n\nPer togliere tutto: Modifica > Annulla.")
+            n > 0 ? TRANS ("Automazione del volume scritta su ") + juce::String (n) + (n == 1 ? TRANS (" traccia") : TRANS (" tracce")) + TRANS (".\nLe tracce sono in modalita' lettura: la curva si vede e si modifica nella corsia VOL.\n\nPer togliere tutto: Modifica > Annulla.")
                   : TRANS ("Non ho trovato parlato sopra la soglia, oppure non ci sono tracce M&E / Effetti (o una traccia selezionata) su cui scrivere."));
     }), true);
 }
@@ -3603,11 +3647,11 @@ void MainComponent::detectVideoCuts()
             {
                 if (safe == nullptr) return;
                 safe->cutJob.reset();
-                if (! ok) { if (err != "Analisi annullata.") safe->showError (err); return; }
+                if (! ok) { if (err != TRANS ("Analisi annullata.")) safe->showError (err); return; }
                 const double rate = safe->project->getSampleRate();
                 std::vector<std::pair<int64_t, juce::String>> marks;
                 int n = 0;
-                for (auto t : cuts) marks.emplace_back ((int64_t) std::llround ((t + video->offsetSec) * rate), "Taglio " + juce::String (++n));
+                for (auto t : cuts) marks.emplace_back ((int64_t) std::llround ((t + video->offsetSec) * rate), TRANS ("Taglio ") + juce::String (++n));
                 safe->project->addMarkers (marks, juce::Colour (0xff7aa7c7));
                 juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Tagli del video"),
                     cuts.empty() ? juce::String (TRANS ("Non ho trovato tagli. Prova ad aumentare la sensibilita'.")) : TRANS ("Ho aggiunto ") + juce::String ((int) cuts.size()) + TRANS (" marker sui cambi di inquadratura.\n\nSi vedono nel righello e nel menu Marker; se sono troppi o troppo pochi, annulla e cambia la sensibilita'."));
@@ -3620,7 +3664,7 @@ void MainComponent::detectVideoCuts()
 void MainComponent::exportCueSheet()
 {
     const auto base = (project->getFile() == juce::File() ? juce::String ("ADR") : project->getFile().getFileNameWithoutExtension()) + "_foglio_cue";
-    chooser = std::make_unique<juce::FileChooser> ("Salva il foglio cue (si apre nel browser: stampa o salva come PDF)",
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Salva il foglio cue (si apre nel browser: stampa o salva come PDF)"),
                                                    juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("html"), "*.html");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
@@ -3668,7 +3712,7 @@ int rejectedCount (const Project& p, int cueId)
 void MainComponent::exportAdrCsv()
 {
     const auto base = (project->getFile() == juce::File() ? juce::String ("ADR") : project->getFile().getFileNameWithoutExtension()) + "_cue_sheet";
-    chooser = std::make_unique<juce::FileChooser> ("Esporta cue sheet ADR", juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("csv"), "*.csv");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Esporta cue sheet ADR"), juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("csv"), "*.csv");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
                           [safe] (const juce::FileChooser& fc)
@@ -3713,14 +3757,14 @@ juce::String adrToProToolsText (const Project& p, const juce::String& sessionNam
 void MainComponent::exportAdrProTools()
 {
     const auto base = (project->getFile() == juce::File() ? juce::String ("ADR") : project->getFile().getFileNameWithoutExtension()) + "_ADR_markers";
-    chooser = std::make_unique<juce::FileChooser> ("Esporta cue come testo Pro Tools", juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("txt"), "*.txt");
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Esporta cue come testo Pro Tools"), juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("txt"), "*.txt");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
                           [safe] (const juce::FileChooser& fc)
     {
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
-        const auto name = safe->project->getFile() == juce::File() ? juce::String ("Sessione") : safe->project->getFile().getFileNameWithoutExtension();
+        const auto name = safe->project->getFile() == juce::File() ? juce::String (TRANS ("Sessione")) : safe->project->getFile().getFileNameWithoutExtension();
         if (! f.withFileExtension ("txt").replaceWithText (adrToProToolsText (*safe->project, name))) safe->showError (TRANS ("Impossibile scrivere il file."));
     });
 }
@@ -3755,7 +3799,7 @@ int exportAdrTakes (const Project& p, const juce::File& folder, juce::StringArra
                 std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
                 std::unique_ptr<juce::AudioFormatWriter> w;
                 if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) c.asset->numChannels(), 24, meta, 0));
-                if (w == nullptr) { errors.add ("Impossibile creare " + file.getFileName()); continue; }
+                if (w == nullptr) { errors.add (TRANS ("Impossibile creare ") + file.getFileName()); continue; }
                 os.release();
 
                 if (c.asset->offline) { errors.add (TRANS ("Il file di ") + c.asset->name + TRANS (" non e' stato trovato: il take non si puo' esportare.")); continue; }
@@ -3773,7 +3817,7 @@ int exportAdrTakes (const Project& p, const juce::File& folder, juce::StringArra
 
 void MainComponent::exportAdrBwf()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Cartella di destinazione dei take ADR", juce::File::getSpecialLocation (juce::File::userDesktopDirectory));
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Cartella di destinazione dei take ADR"), juce::File::getSpecialLocation (juce::File::userDesktopDirectory));
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe] (const juce::FileChooser& fc)
     {
@@ -3781,7 +3825,7 @@ void MainComponent::exportAdrBwf()
         if (safe == nullptr || dir == juce::File()) return;
         juce::StringArray errors;
         const int n = exportAdrTakes (*safe->project, dir, errors);
-        juce::String msg = n == 0 ? juce::String ("Nessun take attivo da esportare.") : "Esportati " + juce::String (n) + " file BWF (24 bit) in " + dir.getFullPathName()
+        juce::String msg = n == 0 ? juce::String (TRANS ("Nessun take attivo da esportare.")) : TRANS ("Esportati ") + juce::String (n) + TRANS (" file BWF (24 bit) in ") + dir.getFullPathName()
                                                                                        + TRANS (".\n\nOgni file porta il timecode della posizione sulla timeline: in Pro Tools si importano con Spot e \"Timecode\" oppure \"Original Time Stamp\".");
         if (errors.size() > 0) msg << "\n\n" << errors.joinIntoString ("\n");
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Esporta take ADR"), msg);

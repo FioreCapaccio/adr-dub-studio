@@ -19,7 +19,7 @@ SessionSettingsDialog::SessionSettingsDialog (const Project& p, std::function<vo
 
     for (int i = 0; i < numTcFormats; ++i) tcFormat.addItem (tcFormats()[i].name, i + 1);
     tcFormat.setSelectedId (project.tcFormat + 1, juce::dontSendNotification);
-    for (int i = 0; i <= 4; ++i) beeps.addItem (i == 0 ? juce::String ("Nessuno") : juce::String (i), i + 1);
+    for (int i = 0; i <= 4; ++i) beeps.addItem (i == 0 ? juce::String (TRANS ("Nessuno")) : juce::String (i), i + 1);
     beeps.setSelectedId (juce::jlimit (0, 4, project.adrBeeps) + 1, juce::dontSendNotification);
 
     start.setText (project.formatTc (0.0), false);

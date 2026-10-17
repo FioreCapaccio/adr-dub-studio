@@ -10,7 +10,11 @@ const std::vector<Language>& languages()
     return list;
 }
 
-juce::String savedCode() { return settings().getValue ("language", "it"); }
+juce::String savedCode()
+{
+    if (const auto env = juce::SystemStats::getEnvironmentVariable ("ADR_LANG", {}); env.isNotEmpty()) return env;   // per prove e schermate senza toccare le preferenze
+    return settings().getValue ("language", "it");
+}
 
 void saveCode (const juce::String& code)
 {

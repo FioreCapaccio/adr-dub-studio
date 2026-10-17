@@ -26,7 +26,7 @@ private:
     juce::TextEditor start, duration;
     juce::ToggleButton replace { TRANS ("Sostituisci i cue esistenti") }, markers { TRANS ("Crea anche un marker per ogni cue (come le Memory Location)") },
                        characterTracks { TRANS ("Crea una traccia Dialoghi per ogni personaggio") };
-    juce::TextButton okBtn { TRANS ("Importa") }, cancelBtn { "Annulla" };
+    juce::TextButton okBtn { TRANS ("Importa") }, cancelBtn { TRANS ("Annulla") };
     adr::ImportResult result;
 };
 
@@ -101,11 +101,11 @@ private:
     Project& project;
     Actions actions;
     juce::TableListBox table { {}, this };
-    juce::TextButton importBtn { TRANS ("IMPORTA...") }, addBtn { TRANS ("+ CUE") }, delBtn { "ELIMINA" }, settingsBtn { "IMPOSTAZIONI" },
+    juce::TextButton importBtn { TRANS ("IMPORTA...") }, addBtn { TRANS ("+ CUE") }, delBtn { TRANS ("ELIMINA") }, settingsBtn { TRANS ("IMPOSTAZIONI") },
                      csvBtn { TRANS ("ESPORTA CSV") }, ptBtn { TRANS ("ESPORTA PRO TOOLS") }, bwfBtn { TRANS ("ESPORTA TAKE (BWF)") },
                      recBtn { TRANS ("REGISTRA CUE") }, prevBtn { TRANS ("< CUE") }, nextBtn { TRANS ("CUE >") },
                      keepBtn { TRANS ("TIENI QUESTO") }, rejectBtn { TRANS ("SCARTA") }, purgeBtn { TRANS ("ELIMINA SCARTATE") },
-                     auditionBtn { "ASCOLTA" }, originalBtn { "ORIGINALE" }, activateBtn { "ATTIVA" }, deleteTakeBtn { TRANS ("ELIMINA TAKE") };
+                     auditionBtn { TRANS ("ASCOLTA") }, originalBtn { TRANS ("ORIGINALE") }, activateBtn { TRANS ("ATTIVA") }, deleteTakeBtn { TRANS ("ELIMINA TAKE") };
     StarRating stars;
     juce::Label lblRate;
     juce::Label lblChar, lblScene, lblReel, lblIn, lblOut, lblStatus, lblDialogue, lblNotes, lblTrack, lblTakes;

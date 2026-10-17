@@ -91,6 +91,6 @@ private:
     SearchBox search;
     juce::ListBox list { {}, this };
     juce::TextButton tabs[3] { juce::TextButton (TRANS ("Tutti")), juce::TextButton (TRANS ("Integrati")), juce::TextButton (TRANS ("VST3")) };
-    juce::TextButton addButton { TRANS ("Aggiungi") }, cancelButton { "Annulla" }, browseButton { "Sfoglia..." };
+    juce::TextButton addButton { TRANS ("Aggiungi") }, cancelButton { TRANS ("Annulla") }, browseButton { TRANS ("Sfoglia...") };
 };
 } // namespace fc

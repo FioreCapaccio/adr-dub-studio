@@ -122,7 +122,7 @@ void parseCommentFields (const juce::String& comment, ImportedCue& cue)
 static ImportResult parseProTools (const juce::StringArray& lines)
 {
     ImportResult r;
-    r.format = "Pro Tools (testo Session Info)";
+    r.format = TRANS ("Pro Tools (testo Session Info)");
 
     // intestazione della sessione
     for (auto& l : lines)
@@ -264,7 +264,7 @@ static ImportResult parseEdl (const juce::StringArray& lines)
 static ImportResult parseTable (const juce::StringArray& lines)
 {
     ImportResult r;
-    r.format = "Tabella (CSV / testo)";
+    r.format = TRANS ("Tabella (CSV / testo)");
 
     int h = 0;
     while (h < lines.size() && lines[h].trim().isEmpty()) ++h;
@@ -344,7 +344,7 @@ static double subtitleTime (const juce::String& t)
 static ImportResult parseSubtitles (const juce::StringArray& lines)
 {
     ImportResult r;
-    r.format = "Sottotitoli (SRT / WebVTT)";
+    r.format = TRANS ("Sottotitoli (SRT / WebVTT)");
     r.sampleRate = 1000.0;
     for (int i = 0; i < lines.size(); ++i)
     {
@@ -387,7 +387,7 @@ static ImportResult parseSubtitles (const juce::StringArray& lines)
         i = j;
     }
     if (! r.cues.empty() && std::none_of (r.cues.begin(), r.cues.end(), [] (const ImportedCue& c) { return c.character.isNotEmpty(); }))
-        r.warnings.add ("I sottotitoli non indicano il personaggio: i cue restano senza personaggio.");
+        r.warnings.add (TRANS ("I sottotitoli non indicano il personaggio: i cue restano senza personaggio."));
     return r;
 }
 
@@ -446,20 +446,20 @@ std::vector<AdrCue> toCues (const ImportResult& r, const Project& project, doubl
     for (auto& ic : r.cues)
     {
         ++index;
-        const auto label = "cue " + (ic.number.isNotEmpty() ? ic.number : juce::String (index));
+        const auto label = TRANS ("cue ") + (ic.number.isNotEmpty() ? ic.number : juce::String (index));
         double tlIn = 0.0, tlOut = 0.0;
         if (ic.tcIn.isNotEmpty())
         {
-            if (! project.parseTc (ic.tcIn, tlIn)) { warnings.add (label + ": timecode di ingresso non valido (" + ic.tcIn + ")"); continue; }
+            if (! project.parseTc (ic.tcIn, tlIn)) { warnings.add (label + TRANS (": timecode di ingresso non valido (") + ic.tcIn + ")"); continue; }
         }
         else if (ic.samplesIn >= 0.0)
             tlIn = ic.samplesIn / (r.sampleRate > 0.0 ? r.sampleRate : rate);
         else
         {
-            warnings.add (label + ": nessuna posizione");
+            warnings.add (label + TRANS (": nessuna posizione"));
             continue;
         }
-        if (tlIn < 0.0) { warnings.add (label + ": cade prima dell'inizio della sessione (controlla l'inizio timecode)"); continue; }
+        if (tlIn < 0.0) { warnings.add (label + TRANS (": cade prima dell'inizio della sessione (controlla l'inizio timecode)")); continue; }
 
         bool haveOut = false;
         if (ic.tcOut.isNotEmpty())
@@ -482,8 +482,8 @@ std::vector<AdrCue> toCues (const ImportResult& r, const Project& project, doubl
         out.push_back (c);
     }
     if (badOut > 0)
-        warnings.add (juce::String (badOut) + " cue hanno un timecode di uscita non valido nel formato scelto (primo: " + firstBadOut
-                      + "): per quelli e' stata usata la durata predefinita. Controlla il formato timecode: i fotogrammi del file potrebbero superare quelli del formato.");
+        warnings.add (juce::String (badOut) + TRANS (" cue hanno un timecode di uscita non valido nel formato scelto (primo: ") + firstBadOut
+                      + TRANS ("): per quelli e' stata usata la durata predefinita. Controlla il formato timecode: i fotogrammi del file potrebbero superare quelli del formato."));
     return out;
 }
 

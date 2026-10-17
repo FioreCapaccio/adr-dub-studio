@@ -33,6 +33,6 @@ private:
     std::function<void (const Issue&)> goTo;
     juce::Label summary;
     juce::ListBox list { {}, this };
-    juce::TextButton goBtn { TRANS ("Vai a") }, relinkBtn { "Ricollega i media..." };
+    juce::TextButton goBtn { TRANS ("Vai a") }, relinkBtn { TRANS ("Ricollega i media...") };
 };
 } // namespace fc::check

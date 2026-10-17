@@ -4068,7 +4068,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.21.0"; }
+    const juce::String getApplicationVersion() override { return "2.22.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -4090,6 +4090,8 @@ public:
         fc::ThemeManager::applySaved();   // tema scelto l'ultima volta (prima di creare la finestra)
         window = std::make_unique<MainWindow> (getApplicationName());
         window->main().importFromCommandLine (juce::StringArray::fromTokens (commandLine, true));
+        if (const auto dumpPath = juce::SystemStats::getEnvironmentVariable ("ADR_UIDUMP", {}); dumpPath.isNotEmpty())   // elenco dei testi visibili (controllo traduzioni)
+            juce::Timer::callAfterDelay (7000, [this, dumpPath] { if (window != nullptr) window->main().dumpUiTexts (juce::File (dumpPath)); quit(); });
     }
 
     void shutdown() override

@@ -611,7 +611,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
             g.drawRoundedRectangle (ar.reduced (0.5f), 9.0f, 1.0f);
             g.setColour (mode == 0 ? dim : text);
             g.setFont (font (10.0f, true));
-            g.drawText (mode == 2 ? TRANS ("SCRIVI") : (mode == 1 ? "LEGGI" : "AUTO"), ar.toNearestInt(), juce::Justification::centred);
+            g.drawText (mode == 2 ? TRANS ("SCRIVI") : (mode == 1 ? TRANS ("LEGGI") : "AUTO"), ar.toNearestInt(), juce::Justification::centred);
         }
 
         static const char* inputNames[] = { "IN 1", "IN 2", "IN 1+2" };
@@ -2904,7 +2904,7 @@ void TimelineView::showMarkerMenu (int markerId)
         m.addItem (7, TRANS ("Trasforma in marker semplice"), mk != nullptr && mk->end > mk->pos);
         m.addItem (2, TRANS ("Rinomina..."));
         juce::PopupMenu colours;
-        for (int i = 0; i < numPaletteColours; ++i) colours.addColouredItem (100 + i, "Colore " + juce::String (i + 1), trackPalette[i]);
+        for (int i = 0; i < numPaletteColours; ++i) colours.addColouredItem (100 + i, TRANS ("Colore ") + juce::String (i + 1), trackPalette[i]);
         m.addSubMenu (TRANS ("Colore"), colours);
         m.addItem (3, TRANS ("Elimina marker"));
     }

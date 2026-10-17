@@ -178,7 +178,7 @@ void ExportDialog::updateEnabled()
     value.setEnabled (n > 0 && ! isStem);
     ceiling.setEnabled (n == 2 && ! isStem);
     range.setEnabled (true);
-    valueLbl.setText (n == 1 ? TRANS ("PICCO (dBFS)") : (n == 2 ? "OBIETTIVO (LUFS)" : "VALORE"), juce::dontSendNotification);
+    valueLbl.setText (n == 1 ? TRANS ("PICCO (dBFS)") : (n == 2 ? TRANS ("OBIETTIVO (LUFS)") : TRANS ("VALORE")), juce::dontSendNotification);
     // FLAC non supporta 32 bit
     depth.setItemEnabled (3, format.getSelectedId() != 3);
     if (format.getSelectedId() == 3 && depth.getSelectedId() == 3) depth.setSelectedId (2, juce::dontSendNotification);
@@ -187,10 +187,10 @@ void ExportDialog::updateEnabled()
     if (isDelivery) s = TRANS ("In una sola esportazione: il MIX (con il bus master) e uno stem per ogni bus di ruolo (Dialoghi, M&E, Effetti), tutti con lo stesso guadagno, piu' un rapporto HTML con picco, true-peak e loudness di ogni file. Scegli la cartella di destinazione.");
     else if (isStem) s = TRANS ("Ogni traccia con clip viene esportata in un file separato, dopo fader e inserti ma senza limiter e plug-in del master. "
                     "I file sono allineati tra loro.");
-    else if (n == 2) s = "Il programma viene misurato e riportato all'obiettivo. Se questo fa superare il tetto di true-peak interviene un limiter trasparente.";
-    else if (n == 1) s = "Il guadagno viene regolato in modo che il picco massimo arrivi al valore indicato.";
+    else if (n == 2) s = TRANS ("Il programma viene misurato e riportato all'obiettivo. Se questo fa superare il tetto di true-peak interviene un limiter trasparente.");
+    else if (n == 1) s = TRANS ("Il guadagno viene regolato in modo che il picco massimo arrivi al valore indicato.");
     else s = TRANS ("Nessuna modifica di livello: il file e' il mix cosi' come lo senti.");
-    if (depth.getSelectedId() == 1) s << " A 16 bit viene aggiunto un leggero dither per evitare la distorsione di quantizzazione.";
+    if (depth.getSelectedId() == 1) s << TRANS (" A 16 bit viene aggiunto un leggero dither per evitare la distorsione di quantizzazione.");
     summary.setText (s, juce::dontSendNotification);
     exportBtn.setButtonText (isStem || isDelivery ? TRANS ("Scegli cartella...") : TRANS ("Esporta..."));
 }

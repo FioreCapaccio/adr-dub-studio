@@ -139,7 +139,7 @@ private:
     PluginHost& host;
     LoudnessPanel loudnessPanel;
     SpectrumView spectrum;
-    juce::TextButton tabLoud { TRANS ("LOUDNESS") }, tabSpec { "SPETTRO" };   // schede del pannello di analisi
+    juce::TextButton tabLoud { TRANS ("LOUDNESS") }, tabSpec { TRANS ("SPETTRO") };   // schede del pannello di analisi
     void showAnalysis (bool spec);
     juce::Viewport viewport;
     juce::Component content;

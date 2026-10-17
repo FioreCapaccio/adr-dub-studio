@@ -43,7 +43,7 @@ AssetPtr convertToWav24 (juce::AudioFormatManager& fm, const Asset& a, double ra
         std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
         std::unique_ptr<juce::AudioFormatWriter> w;
         if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) a.audio.getNumChannels(), 24, {}, 0));
-        if (w == nullptr) { error = "Impossibile scrivere " + file.getFullPathName(); return nullptr; }
+        if (w == nullptr) { error = TRANS ("Impossibile scrivere ") + file.getFullPathName(); return nullptr; }
         os.release();
         w->writeFromAudioSampleBuffer (a.audio, 0, a.audio.getNumSamples());
     }

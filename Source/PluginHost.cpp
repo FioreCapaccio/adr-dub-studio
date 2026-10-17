@@ -97,7 +97,7 @@ void PluginHost::instantiate (std::shared_ptr<InsertSlot> slot, std::function<vo
     auto finish = [this, slot, done] (std::unique_ptr<juce::AudioProcessor> inst, const juce::String& err)
     {
         juce::String problem;
-        if (inst == nullptr) problem = err.isNotEmpty() ? err : juce::String ("Impossibile caricare il plug-in.");
+        if (inst == nullptr) problem = err.isNotEmpty() ? err : juce::String (TRANS ("Impossibile caricare il plug-in."));
         else problem = prepareInstance (*inst);
 
         if (problem.isEmpty())
@@ -223,7 +223,7 @@ void PluginHost::pickAndAdd (std::shared_ptr<TrackLive> live, juce::Component* c
     };
     cbs.browse = [this, live, alive_]
     {
-        auto chooser = std::make_shared<juce::FileChooser> ("Scegli un plug-in VST3", juce::File(), "*.vst3");
+        auto chooser = std::make_shared<juce::FileChooser> (TRANS ("Scegli un plug-in VST3"), juce::File(), "*.vst3");
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories,
                               [this, live, alive_, chooser] (const juce::FileChooser& fc)
         {

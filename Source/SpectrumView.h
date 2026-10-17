@@ -38,7 +38,7 @@ private:
     std::vector<float> hold;                     // picco mantenuto per colonna (dB)
     std::vector<int> holdAge;
     juce::Path line, fill;
-    juce::TextButton tiltBtn { TRANS ("TILT") }, peakBtn { "PICCHI" };
+    juce::TextButton tiltBtn { TRANS ("TILT") }, peakBtn { TRANS ("PICCHI") };
     float peakHz = 0.0f, peakDb = -120.0f;
     int hoverX = -1;
     bool tilt = false, showPeaks = true;

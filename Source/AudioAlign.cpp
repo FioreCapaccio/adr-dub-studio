@@ -158,8 +158,8 @@ std::vector<Item> alignToGuide (Project& p, const std::vector<int64_t>& clipIds,
         it.clipId = id;
         int ti = -1;
         const Clip* c = p.findClip (id, &ti);
-        if (c == nullptr || c->asset == nullptr) { it.note = "clip non valido"; items.push_back (it); continue; }
-        if (s.tracks[(size_t) ti].live->trackType.load() == TrackGuide) { it.note = "e' sulla traccia Guida"; items.push_back (it); continue; }
+        if (c == nullptr || c->asset == nullptr) { it.note = TRANS ("clip non valido"); items.push_back (it); continue; }
+        if (s.tracks[(size_t) ti].live->trackType.load() == TrackGuide) { it.note = TRANS ("e' sulla traccia Guida"); items.push_back (it); continue; }
 
         const int64_t margin = (int64_t) std::llround (maxShiftSec * rate);
         const int64_t t0 = juce::jmax<int64_t> (0, c->start - margin), t1 = c->end() + margin, n = t1 - t0;
@@ -192,7 +192,7 @@ std::vector<Item> alignToGuide (Project& p, const std::vector<int64_t>& clipIds,
             }
         }
         it.applied = true;
-        it.note = it.stretchRatio != 1.0 ? "spostato e adattato" : "spostato";
+        it.note = it.stretchRatio != 1.0 ? TRANS ("spostato e adattato") : TRANS ("spostato");
         moves.emplace_back (id, newStart);
         items.push_back (it);
     }
@@ -229,8 +229,8 @@ std::vector<PhraseItem> alignPhrases (Project& p, const std::vector<int64_t>& cl
         it.clipId = id;
         int ti = -1;
         const Clip* c = p.findClip (id, &ti);
-        if (c == nullptr || c->asset == nullptr || c->asset->offline) { it.note = "clip non valido"; items.push_back (it); continue; }
-        if (s.tracks[(size_t) ti].live->trackType.load() == TrackGuide) { it.note = "e' sulla traccia Guida"; items.push_back (it); continue; }
+        if (c == nullptr || c->asset == nullptr || c->asset->offline) { it.note = TRANS ("clip non valido"); items.push_back (it); continue; }
+        if (s.tracks[(size_t) ti].live->trackType.load() == TrackGuide) { it.note = TRANS ("e' sulla traccia Guida"); items.push_back (it); continue; }
 
         const int64_t margin = (int64_t) std::llround (maxShiftSec * rate);
         const int64_t t0 = juce::jmax<int64_t> (0, c->start - margin), t1 = c->end() + margin, n = t1 - t0;

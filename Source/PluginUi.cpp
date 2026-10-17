@@ -288,7 +288,7 @@ PluginBrowser::PluginBrowser (juce::Array<juce::File> vst3Files, Callbacks callb
         all.push_back (e);
     }
 
-    search.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Cerca per nome o categoria (es. riverbero, dinamica, EQ)"), dim);
+    search.setTextToShowWhenEmpty (TRANS ("Cerca per nome o categoria (es. riverbero, dinamica, EQ)"), dim);
     search.setFont (font (14.0f));
     search.onTextChange = [this] { applyFilter(); };
     search.onReturnKey = [this] { choose (list.getSelectedRow()); };
@@ -357,7 +357,7 @@ void PluginBrowser::applyFilter()
         if (part.empty()) continue;
         Entry h;
         h.header = true;
-        h.title = (pass == 0 ? juce::String ("Effetti integrati") : juce::String ("Plug-in VST3 installati")) + "  (" + juce::String ((int) part.size()) + ")";
+        h.title = (pass == 0 ? juce::String (TRANS ("Effetti integrati")) : juce::String (TRANS ("Plug-in VST3 installati"))) + "  (" + juce::String ((int) part.size()) + ")";
         shown.push_back (h);
         for (auto& e : part) shown.push_back (e);
     }

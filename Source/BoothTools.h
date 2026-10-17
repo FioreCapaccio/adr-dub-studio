@@ -62,7 +62,7 @@ private:
     void save() const;
 
     AudioEngine& engine;
-    juce::ToggleButton enable { TRANS ("Cuffie dell'attore attive") }, duckMix { "Abbassa il mix mentre il direttore parla" };
+    juce::ToggleButton enable { TRANS ("Cuffie dell'attore attive") }, duckMix { TRANS ("Abbassa il mix mentre il direttore parla") };
     juce::ComboBox outputs, talkInput;
     juce::Slider mix { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
                  beep { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },

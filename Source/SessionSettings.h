@@ -28,7 +28,7 @@ private:
     juce::ToggleButton ovNumber { TRANS ("Numero") }, ovChar { TRANS ("Personaggio") }, ovScene { TRANS ("Scena") }, ovTc { TRANS ("Timecode") }, ovLine { TRANS ("Battuta") };
     juce::Label ovLbl;
     juce::ToggleButton rulerTc { TRANS ("Il righello mostra il timecode") }, streamer { TRANS ("Streamer visivo sul video (ADR)") };
-    juce::TextButton okBtn { TRANS ("OK") }, cancelBtn { "Annulla" };
+    juce::TextButton okBtn { TRANS ("OK") }, cancelBtn { TRANS ("Annulla") };
 };
 
 } // namespace fc

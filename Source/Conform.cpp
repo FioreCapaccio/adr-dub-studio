@@ -187,7 +187,7 @@ juce::String describe (const Map& m, const ConformStats& st, double rate)
     t << m.segments.size() << TRANS (" pezzi in comune (") << juce::String (moved, 1) << TRANS (" s spostati)\n")
       << TRANS ("Materiale tolto: ") << m.removed.size() << " zone, " << juce::String (removed, 1) << " s\n"
       << TRANS ("Materiale nuovo (senza audio): ") << m.inserted.size() << " zone, " << juce::String (inserted, 1) << " s\n\n"
-      << TRANS ("Clip toccati: ") << st.clipsTouched << " (" << st.clipPieces << " pezzi, " << st.clipsDropped << TRANS (" eliminati del tutto, ") << juce::String (st.droppedSeconds, 1) << TRANS (" s di audio tolto)\n")
+      << TRANS ("Clip toccati: ") << st.clipsTouched << " (" << st.clipPieces << TRANS (" pezzi, ") << st.clipsDropped << TRANS (" eliminati del tutto, ") << juce::String (st.droppedSeconds, 1) << TRANS (" s di audio tolto)\n")
       << TRANS ("Cue spostati: ") << st.cuesMoved << TRANS (", cue fuori dal nuovo montaggio (segnati Da rifare): ") << st.cuesOut << "\n"
       << TRANS ("Marker spostati: ") << st.markersMoved << TRANS (", marker sul materiale nuovo: ") << st.insertedMarkers;
     return t;

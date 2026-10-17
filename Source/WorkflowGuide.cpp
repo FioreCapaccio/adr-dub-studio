@@ -16,13 +16,13 @@ std::vector<Step> steps (const Project& p, bool checkedClean, bool delivered)
     int roleTracks = 0;
     for (auto& t : s.tracks) if (t.live->trackType.load() == TrackDialogue && ! t.name.startsWithIgnoreCase ("Audio")) ++roleTracks;
 
-    v.push_back ({ "1. Video", s.video != nullptr ? s.video->file.getFileName() : juce::String ("nessun video importato"), s.video != nullptr, ActImportVideo, "Importa video..." });
+    v.push_back ({ TRANS ("1. Video"), s.video != nullptr ? s.video->file.getFileName() : juce::String (TRANS ("nessun video importato")), s.video != nullptr, ActImportVideo, TRANS ("Importa video...") });
     v.push_back ({ TRANS ("2. Copione"), cues > 0 ? juce::String (cues) + TRANS (" cue importati") : juce::String (TRANS ("nessun cue")), cues > 0, ActImportScript, TRANS ("Importa cue...") });
     v.push_back ({ TRANS ("3. Tracce"), roleTracks > 0 ? juce::String (roleTracks) + TRANS (" tracce Dialoghi") : juce::String (TRANS ("ancora nessuna traccia per i personaggi")), roleTracks > 0, ActTracks, TRANS ("Tracce per personaggio") });
-    v.push_back ({ "4. Registrazione", cues > 0 ? juce::String (recorded) + " di " + juce::String (cues) + " cue registrati" : juce::String ("serve il copione"), cues > 0 && recorded == cues, ActRecord, "Finestra ADR" });
-    v.push_back ({ "5. Approvazione", cues > 0 ? juce::String (approved) + " di " + juce::String (cues) + " cue approvati" : juce::String ("serve il copione"), cues > 0 && approved == cues, ActApprove, "Finestra ADR" });
-    v.push_back ({ TRANS ("6. Controllo"), checkedClean ? juce::String (TRANS ("la sessione e' a posto")) : juce::String (TRANS ("controlla la sessione prima di consegnare")), checkedClean, ActCheck, "Controlla..." });
-    v.push_back ({ TRANS ("7. Consegna"), delivered ? juce::String (TRANS ("consegna esportata in questa sessione")) : juce::String (TRANS ("MIX, stem e rapporto")), delivered, ActDeliver, "Esporta..." });
+    v.push_back ({ TRANS ("4. Registrazione"), cues > 0 ? juce::String (recorded) + TRANS (" di ") + juce::String (cues) + TRANS (" cue registrati") : juce::String (TRANS ("serve il copione")), cues > 0 && recorded == cues, ActRecord, TRANS ("Finestra ADR") });
+    v.push_back ({ TRANS ("5. Approvazione"), cues > 0 ? juce::String (approved) + TRANS (" di ") + juce::String (cues) + TRANS (" cue approvati") : juce::String (TRANS ("serve il copione")), cues > 0 && approved == cues, ActApprove, TRANS ("Finestra ADR") });
+    v.push_back ({ TRANS ("6. Controllo"), checkedClean ? juce::String (TRANS ("la sessione e' a posto")) : juce::String (TRANS ("controlla la sessione prima di consegnare")), checkedClean, ActCheck, TRANS ("Controlla...") });
+    v.push_back ({ TRANS ("7. Consegna"), delivered ? juce::String (TRANS ("consegna esportata in questa sessione")) : juce::String (TRANS ("MIX, stem e rapporto")), delivered, ActDeliver, TRANS ("Esporta...") });
     return v;
 }
 

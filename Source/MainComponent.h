@@ -160,10 +160,10 @@ private:
     int64_t playStartPos = 0;          // dove e' partita l'ultima riproduzione
     bool returnToStart = true, startedFromPlay = false;   // allo stop la testina torna al punto di partenza
     void stopPlayback();
-    juce::TextButton loopBtn   { TRANS ("LOOP") }, snapBtn { "SNAP" }, followBtn { "SEGUI" },
+    juce::TextButton loopBtn   { TRANS ("LOOP") }, snapBtn { "SNAP" }, followBtn { TRANS ("SEGUI") },
                      monBtn    { "MON" },
-                     zoomOutBtn { "-" }, zoomInBtn { "+" }, fitBtn { "ADATTA" },
-                     importBtn { "IMPORTA" }, exportBtn { "ESPORTA" }, addTrackBtn { "+ TRACCIA" },
+                     zoomOutBtn { "-" }, zoomInBtn { "+" }, fitBtn { TRANS ("ADATTA") },
+                     importBtn { TRANS ("IMPORTA") }, exportBtn { TRANS ("ESPORTA") }, addTrackBtn { TRANS ("+ TRACCIA") },
                      videoBtn { "VIDEO" }, mixerBtn { "MIXER" };
 
     static constexpr int toolbarH = 74;
@@ -203,6 +203,10 @@ private:
     void togglePoolWindow();
     void logicalEditorDialog();
     void batchRenameDialog();
+public:
+    /** Apre le finestre principali e scrive in un file tutti i testi visibili (pulsanti, etichette, menu, suggerimenti): serve a controllare le traduzioni. */
+    void dumpUiTexts (const juce::File& out);
+private:
     void toggleDirectorWindow();
     std::unique_ptr<class BoothWindow> directorWindow;
     juce::PopupMenu buildSnapshotMenu();

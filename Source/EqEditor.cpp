@@ -49,11 +49,11 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
     addAndMakeVisible (compOn);
     struct CS { juce::Slider* s; juce::Label* l; const char* name; double lo, hi, step, mid; const char* suffix; std::atomic<float> TrackComp::* p; };
     const CS comps[] = {
-        { &compThr, &compThrLbl, "SOGLIA", -60.0, 0.0, 0.5, -18.0, " dB", &TrackComp::thresholdDb },
-        { &compRatio, &compRatioLbl, "RAPPORTO", 1.0, 20.0, 0.1, 4.0, " :1", &TrackComp::ratio },
-        { &compAtk, &compAtkLbl, "ATTACCO", 0.1, 200.0, 0.1, 20.0, " ms", &TrackComp::attackMs },
-        { &compRel, &compRelLbl, "RILASCIO", 5.0, 2000.0, 1.0, 200.0, " ms", &TrackComp::releaseMs },
-        { &compMakeup, &compMakeupLbl, "GUADAGNO", -12.0, 24.0, 0.1, 0.0, " dB", &TrackComp::makeupDb } };
+        { &compThr, &compThrLbl, TRX ("SOGLIA"), -60.0, 0.0, 0.5, -18.0, " dB", &TrackComp::thresholdDb },
+        { &compRatio, &compRatioLbl, TRX ("RAPPORTO"), 1.0, 20.0, 0.1, 4.0, " :1", &TrackComp::ratio },
+        { &compAtk, &compAtkLbl, TRX ("ATTACCO"), 0.1, 200.0, 0.1, 20.0, " ms", &TrackComp::attackMs },
+        { &compRel, &compRelLbl, TRX ("RILASCIO"), 5.0, 2000.0, 1.0, 200.0, " ms", &TrackComp::releaseMs },
+        { &compMakeup, &compMakeupLbl, TRX ("GUADAGNO"), -12.0, 24.0, 0.1, 0.0, " dB", &TrackComp::makeupDb } };
     for (auto& c : comps)
     {
         c.s->setRange (c.lo, c.hi, c.step);
@@ -62,7 +62,7 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
         c.s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 20);
         c.s->setColour (juce::Slider::thumbColourId, hilite);
         c.s->onValueChange = [this, c] { if (! loading) { (live->comp.*(c.p)).store ((float) c.s->getValue()); project.liveChanged(); repaint(); } };
-        c.l->setText (c.name, juce::dontSendNotification);
+        c.l->setText (juce::translate (c.name), juce::dontSendNotification);
         c.l->setFont (font (10.0f, true));
         c.l->setColour (juce::Label::textColourId, dim);
         addAndMakeVisible (*c.s);
@@ -103,7 +103,7 @@ EqEditor::EqEditor (Project& p, std::shared_ptr<TrackLive> l, std::function<doub
             l->setFont (font (10.0f, true));
             l->setColour (juce::Label::textColourId, dim);
         }
-        u.freqLbl.setText (TRANS ("FREQUENZA"), juce::dontSendNotification);
+        u.freqLbl.setText (TRANS ("FREQ"), juce::dontSendNotification);
         u.gainLbl.setText (TRANS ("GUADAGNO"), juce::dontSendNotification);
         u.qLbl.setText (TRANS ("Q (LARGHEZZA)"), juce::dontSendNotification);
         for (auto* c : std::initializer_list<juce::Component*> { &u.type, &u.on, &u.freq, &u.gain, &u.q, &u.freqLbl, &u.gainLbl, &u.qLbl }) addAndMakeVisible (*c);

@@ -121,7 +121,7 @@ juce::String BuiltinFx::kindName (Kind k)
         case Filter:    return TRANS ("Filtro HP/LP");
         case DeEsser:   return TRANS ("De-esser");
         case Gate:      return TRANS ("Gate / Expander");
-        case Multiband: return "Compressore multibanda";
+        case Multiband: return TRANS ("Compressore multibanda");
         case Reverb:    return TRANS ("Riverbero");
         case Delay:     return TRANS ("Delay");
         case Saturator: return TRANS ("Saturazione");
@@ -134,14 +134,14 @@ juce::String BuiltinFx::kindHelp (Kind k)
 {
     switch (k)
     {
-        case Filter:    return "Taglia i bassi (rumble, vento, pop) e gli alti: filtri a 24 dB/ottava.";
-        case DeEsser:   return "Riduce le sibilanti (s, sc) del dialogo senza toccare il resto della voce.";
-        case Gate:      return "Abbassa il segnale sotto soglia: elimina rumore di fondo e rientri fra le battute.";
-        case Multiband: return "Comprime separatamente bassi, medi e alti: uniforma la voce senza pompare.";
-        case Reverb:    return "Riverbero stereo a stanza: per dare ambiente a un dialogo registrato in studio.";
-        case Delay:     return "Eco stereo con feedback e modalita' ping-pong.";
-        case Saturator: return "Saturazione morbida (tanh): scalda e fa emergere la voce o gli effetti.";
-        case Chorus:    return "Raddoppio modulato: allarga e ispessisce il suono.";
+        case Filter:    return TRANS ("Taglia i bassi (rumble, vento, pop) e gli alti: filtri a 24 dB/ottava.");
+        case DeEsser:   return TRANS ("Riduce le sibilanti (s, sc) del dialogo senza toccare il resto della voce.");
+        case Gate:      return TRANS ("Abbassa il segnale sotto soglia: elimina rumore di fondo e rientri fra le battute.");
+        case Multiband: return TRANS ("Comprime separatamente bassi, medi e alti: uniforma la voce senza pompare.");
+        case Reverb:    return TRANS ("Riverbero stereo a stanza: per dare ambiente a un dialogo registrato in studio.");
+        case Delay:     return TRANS ("Eco stereo con feedback e modalita' ping-pong.");
+        case Saturator: return TRANS ("Saturazione morbida (tanh): scalda e fa emergere la voce o gli effetti.");
+        case Chorus:    return TRANS ("Raddoppio modulato: allarga e ispessisce il suono.");
         default:        return {};
     }
 }
@@ -154,7 +154,7 @@ juce::PluginDescription BuiltinFx::describe (Kind k)
     d.pluginFormatName = formatName;
     d.fileOrIdentifier = juce::String ("builtin:") + kIds[k];
     d.manufacturerName = "ADR Dub Studio";
-    d.category = "Effetto";
+    d.category = TRANS ("Effetto");
     d.version = "1.0";
     d.isInstrument = false;
     d.numInputChannels = 2;

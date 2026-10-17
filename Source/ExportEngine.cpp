@@ -36,7 +36,7 @@ std::unique_ptr<juce::AudioFormatWriter> makeWriter (const juce::String& format,
 {
     file.deleteFile();
     std::unique_ptr<juce::FileOutputStream> out (file.createOutputStream());
-    if (out == nullptr) { error = "Impossibile creare " + file.getFullPathName(); return nullptr; }
+    if (out == nullptr) { error = TRANS ("Impossibile creare ") + file.getFullPathName(); return nullptr; }
 
     std::unique_ptr<juce::AudioFormat> fmt;
     if (format == "aiff") fmt = std::make_unique<juce::AiffAudioFormat>();
@@ -44,7 +44,7 @@ std::unique_ptr<juce::AudioFormatWriter> makeWriter (const juce::String& format,
     else fmt = std::make_unique<juce::WavAudioFormat>();
 
     std::unique_ptr<juce::AudioFormatWriter> w (fmt->createWriterFor (out.get(), rate, 2, bits, {}, 0));
-    if (w == nullptr) { error = "Formato o profondita' di bit non supportati."; return nullptr; }
+    if (w == nullptr) { error = TRANS ("Formato o profondita' di bit non supportati."); return nullptr; }
     out.release();
     // il writer possiede lo stream, ma non il formato: lo teniamo vivo ricreandolo e' superfluo (nessuno stato condiviso)
     return w;
@@ -109,7 +109,7 @@ bool convertTemp (const juce::File& temp, double rate, const ExportOptions& o, d
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (temp));
-    if (reader == nullptr) { error = "File temporaneo non leggibile."; return false; }
+    if (reader == nullptr) { error = TRANS ("File temporaneo non leggibile."); return false; }
 
     const double outRate = o.outRate > 0.0 ? o.outRate : rate;
     auto writer = makeWriter (o.format, dest, outRate, o.bitDepth, error);
@@ -287,7 +287,7 @@ juce::String reportHtml (const ExportOptions& o, const std::vector<ExportItem>& 
         h << "<tr><td>" << htmlEsc (juce::File (it.file).getFileName()) << TRANS ("</td><td class=\"r\">") << juce::String (it.peakDb, 1) << TRANS ("</td><td class=\"r\">") << juce::String (it.truePeakDb, 1)
           << TRANS ("</td><td class=\"r\">") << (it.lufs > -99.0 ? juce::String (it.lufs, 1) : juce::String ("n/d")) << TRANS ("</td><td class=\"r\">") << (it.lra > 0.0 ? juce::String (it.lra, 1) : juce::String ("-")) << "</td></tr>";
     h << "</table>";
-    if (o.norm == ExportOptions::Norm::Lufs) h << "<p>Normalizzazione del MIX a " << juce::String (o.normTarget, 1) << " LUFS (guadagno " << (mi.gainDb >= 0 ? "+" : "") << juce::String (mi.gainDb, 1)
+    if (o.norm == ExportOptions::Norm::Lufs) h << TRANS ("<p>Normalizzazione del MIX a ") << juce::String (o.normTarget, 1) << TRANS (" LUFS (guadagno ") << (mi.gainDb >= 0 ? "+" : "") << juce::String (mi.gainDb, 1)
                                                   << TRANS (" dB, tetto true-peak ") << juce::String (mi.ceiling, 1) << " dBTP" << (mi.limited ? TRANS (", limiter intervenuto") : "") << TRANS ("). Gli stem hanno lo stesso guadagno.</p>");
     h << TRANS ("<p style=\"font-size:12px;color:#555\">Misura di loudness: programma intero secondo ITU-R BS.1770 / EBU R128 (non limitata al solo dialogo). Gli stem sono presi prima del bus master.</p>");
     if (unrouted > 0) h << TRANS ("<div class=\"warn\">") << unrouted << TRANS (" tracce con clip non sono assegnate a un bus di ruolo (Dialoghi / M&amp;E / Effetti): compaiono solo nel MIX.</div>");
@@ -391,7 +391,7 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
         res.peakDb = items.front().peakDb; res.truePeakDb = items.front().truePeakDb; res.lufs = mi.lufs; res.lra = mi.m.lra;
         res.message = TRANS ("Consegna esportata in ") + target.getFullPathName() + "\n" + juce::String ((int) items.size()) + TRANS (" file (MIX") + (active.empty() ? juce::String() : juce::String (" + ") + juce::String ((int) active.size()) + " stem")
                       + TRANS (") e rapporto.\nMIX: ") + (mi.lufs > -99.0 ? juce::String (mi.lufs, 1) + " LUFS" : juce::String ("n/d")) + TRANS (", true-peak ") + juce::String (items.front().truePeakDb, 1) + " dBTP";
-        if (unrouted > 0) res.message << "\nATTENZIONE: " << unrouted << TRANS (" tracce non sono sul bus di un ruolo e sono solo nel MIX.");
+        if (unrouted > 0) res.message << TRANS ("\nATTENZIONE: ") << unrouted << TRANS (" tracce non sono sul bus di un ruolo e sono solo nel MIX.");
         return res;
     }
 
@@ -401,7 +401,7 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
         target.createDirectory();
         int index = 0, count = 0;
         for (auto& t : base.tracks) if (! t.clips.empty() && ! isGuide (t)) ++count;
-        if (count == 0) { res.message = "Nessuna traccia con clip da esportare."; return res; }
+        if (count == 0) { res.message = TRANS ("Nessuna traccia con clip da esportare."); return res; }
 
         for (size_t ti = 0; ti < base.tracks.size(); ++ti)
         {
@@ -437,7 +437,7 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
     juce::String msg = TRANS ("Esportato in ") + target.getFullPathName();
     msg << TRANS ("\nLoudness integrato: ") << (res.lufs > -99.0 ? juce::String (res.lufs, 1) + " LUFS" : juce::String ("n/d"))
         << "   LRA: " << juce::String (res.lra, 1) << " LU"
-        << "\nPicco: " << juce::String (res.peakDb, 1) << TRANS (" dBFS   True-peak: ") << juce::String (res.truePeakDb, 1) << " dBTP";
+        << TRANS ("\nPicco: ") << juce::String (res.peakDb, 1) << TRANS (" dBFS   True-peak: ") << juce::String (res.truePeakDb, 1) << " dBTP";
     if (std::abs (mi.gainDb) > 0.005) msg << TRANS ("\nGuadagno di normalizzazione: ") << (mi.gainDb >= 0 ? "+" : "") << juce::String (mi.gainDb, 1) << " dB";
     if (mi.limited) msg << TRANS ("\nLimiter true-peak intervenuto (riduzione massima ") << juce::String (mi.gr, 1) << " dB)";
     if (res.peakDb > 0.0) msg << TRANS ("\nATTENZIONE: il picco supera 0 dBFS, il file puo' distorcere.");

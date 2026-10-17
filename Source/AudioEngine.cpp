@@ -360,14 +360,14 @@ bool renderMixdown (const Session& source, double rate, const juce::File& file,
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
     auto* format = fm.findFormatForFileExtension (file.getFileExtension());
-    if (format == nullptr) { message = "Formato di esportazione non supportato."; return false; }
+    if (format == nullptr) { message = TRANS ("Formato di esportazione non supportato."); return false; }
 
     Session session = source.cloneDetached();
     file.deleteFile();
     std::unique_ptr<juce::FileOutputStream> out (file.createOutputStream());
-    if (out == nullptr) { message = "Impossibile creare " + file.getFullPathName(); return false; }
+    if (out == nullptr) { message = TRANS ("Impossibile creare ") + file.getFullPathName(); return false; }
     std::unique_ptr<juce::AudioFormatWriter> writer (format->createWriterFor (out.get(), rate, 2, 24, {}, 0));
-    if (writer == nullptr) { message = "Impossibile creare il writer audio."; return false; }
+    if (writer == nullptr) { message = TRANS ("Impossibile creare il writer audio."); return false; }
     out.release();
 
     // i plug-in lavorano in modalita' offline (qualita' massima, niente vincoli di tempo reale)
@@ -419,7 +419,7 @@ bool renderMixdown (const Session& source, double rate, const juce::File& file,
         return false;
     }
 
-    message = TRANS ("Esportato in ") + file.getFullPathName() + "\nPicco: "
+    message = TRANS ("Esportato in ") + file.getFullPathName() + TRANS ("\nPicco: ")
               + juce::String (juce::Decibels::gainToDecibels (peak, -120.0f), 1) + " dBFS"
               + (peak > 1.0f ? TRANS (" (attenzione: sopra 0 dBFS, abbassa i fader o il master)") : "");
     return true;
@@ -477,9 +477,9 @@ juce::String AudioEngine::startRecording (const std::vector<TakeSpec>& specs)
         sp.file.getParentDirectory().createDirectory();
         sp.file.deleteFile();
         std::unique_ptr<juce::FileOutputStream> os (sp.file.createOutputStream());
-        if (os == nullptr) return "Impossibile creare " + sp.file.getFullPathName();
+        if (os == nullptr) return TRANS ("Impossibile creare ") + sp.file.getFullPathName();
         std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), rate, (unsigned) nch, 24, {}, 0));
-        if (w == nullptr) return "Impossibile creare il file WAV di registrazione.";
+        if (w == nullptr) return TRANS ("Impossibile creare il file WAV di registrazione.");
         os.release();
         t->writer = std::make_unique<juce::AudioFormatWriter::ThreadedWriter> (w.release(), writerThread, 262144);
         made.push_back (std::move (t));
@@ -682,7 +682,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* in, int 
 juce::String AudioEngine::openCueOutputs (int pair)
 {
     auto* dev = deviceManager.getCurrentAudioDevice();
-    if (dev == nullptr) return "Nessun dispositivo audio aperto.";
+    if (dev == nullptr) return TRANS ("Nessun dispositivo audio aperto.");
     const int need = 2 * (pair + 1), avail = dev->getOutputChannelNames().size();
     if (avail < need) return TRANS ("La scheda audio ha solo ") + juce::String (avail) + TRANS (" uscite: per le cuffie dell'attore ne servono almeno ") + juce::String (need) + ".";
     auto setup = deviceManager.getAudioDeviceSetup();

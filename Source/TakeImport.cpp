@@ -132,9 +132,9 @@ Plan plan (Project& p, const std::vector<Found>& found, double fallbackRate)
         cueIds.insert (cue->id);
     }
     pl.cues = (int) cueIds.size();
-    if (notFound > 0) pl.notes.add (juce::String (notFound) + " file non hanno un cue con quel numero nella sessione (primo: " + firstMissing + ").");
-    if (otherCharacter > 0) pl.notes.add (juce::String (otherCharacter) + " file hanno un personaggio diverso da quello del cue e sono stati saltati.");
-    if (alreadyThere > 0) pl.notes.add (juce::String (alreadyThere) + " take erano gia' nella sessione.");
+    if (notFound > 0) pl.notes.add (juce::String (notFound) + TRANS (" file non hanno un cue con quel numero nella sessione (primo: ") + firstMissing + ").");
+    if (otherCharacter > 0) pl.notes.add (juce::String (otherCharacter) + TRANS (" file hanno un personaggio diverso da quello del cue e sono stati saltati."));
+    if (alreadyThere > 0) pl.notes.add (juce::String (alreadyThere) + TRANS (" take erano gia' nella sessione."));
     return pl;
 }
 } // namespace fc::takes
