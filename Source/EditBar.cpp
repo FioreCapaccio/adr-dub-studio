@@ -128,6 +128,43 @@ void ToolButton::paintButton (juce::Graphics& g, bool over, bool down)
             break;
         }
 
+        case Tool::Warp:
+        {
+            // onda con un punto trascinato: la linea si piega
+            g.drawLine (P (0.05f, 0.5f).x, P (0.05f, 0.5f).y, P (0.38f, 0.5f).x, P (0.38f, 0.5f).y, 1.6f);
+            g.drawLine (P (0.38f, 0.5f).x, P (0.38f, 0.5f).y, P (0.62f, 0.15f).x, P (0.62f, 0.15f).y, 1.6f);
+            g.drawLine (P (0.62f, 0.15f).x, P (0.62f, 0.15f).y, P (0.95f, 0.15f).x, P (0.95f, 0.15f).y, 1.6f);
+            g.fillEllipse (P (0.38f, 0.5f).x - 3.5f, P (0.38f, 0.5f).y - 3.5f, 7.0f, 7.0f);
+            g.fillEllipse (P (0.62f, 0.15f).x - 3.5f, P (0.62f, 0.15f).y - 3.5f, 7.0f, 7.0f);
+            g.fillRect (juce::Rectangle<float> (P (0.05f, 0.85f).x, P (0.05f, 0.85f).y, ir.getWidth() * 0.9f, 2.0f));
+            break;
+        }
+
+        case Tool::Envelope:
+        {
+            // linea spezzata con due punti
+            g.drawLine (P (0.04f, 0.35f).x, P (0.04f, 0.35f).y, P (0.34f, 0.35f).x, P (0.34f, 0.35f).y, 1.6f);
+            g.drawLine (P (0.34f, 0.35f).x, P (0.34f, 0.35f).y, P (0.64f, 0.8f).x, P (0.64f, 0.8f).y, 1.6f);
+            g.drawLine (P (0.64f, 0.8f).x, P (0.64f, 0.8f).y, P (0.96f, 0.8f).x, P (0.96f, 0.8f).y, 1.6f);
+            g.fillEllipse (P (0.34f, 0.35f).x - 3.5f, P (0.34f, 0.35f).y - 3.5f, 7.0f, 7.0f);
+            g.fillEllipse (P (0.64f, 0.8f).x - 3.5f, P (0.64f, 0.8f).y - 3.5f, 7.0f, 7.0f);
+            break;
+        }
+
+        case Tool::Scrub:
+        {
+            // testina con le onde del suono che esce
+            g.fillRect (juce::Rectangle<float> (P (0.48f, 0.0f).x, ir.getY(), 2.0f, ir.getHeight()));
+            p.addTriangle (P (0.30f, 0.0f).x, P (0.30f, 0.0f).y, P (0.70f, 0.0f).x, P (0.70f, 0.0f).y, P (0.5f, 0.22f).x, P (0.5f, 0.22f).y);
+            g.fillPath (p);
+            for (float k : { 0.14f, 0.26f })
+            {
+                g.drawLine (P (0.5f + k, 0.45f).x, P (0.5f + k, 0.45f).y, P (0.5f + k, 0.75f).x, P (0.5f + k, 0.75f).y, 1.4f);
+                g.drawLine (P (0.5f - k, 0.45f).x, P (0.5f - k, 0.45f).y, P (0.5f - k, 0.75f).x, P (0.5f - k, 0.75f).y, 1.4f);
+            }
+            break;
+        }
+
         case Tool::Zoom:
         {
             const auto c = P (0.42f, 0.42f);
@@ -156,6 +193,9 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
         { Tool::Mute,   TRX ("Mute (K): clic su un clip per silenziarlo o riattivarlo (su un take ADR lo rende quello attivo)") },
         { Tool::Erase,  TRX ("Gomma (G): clic su un clip per eliminarlo. In modalita' Ripple o Shuffle il vuoto si chiude") },
         { Tool::Comp,   TRX ("Comp (C): su un clip di una traccia con piu' take sovrapposti trascina un intervallo: quel take diventa quello che suona li', gli altri si silenziano") },
+        { Tool::Warp,   TRX ("Time Warp (O): clic su un clip per mettere un punto sulla parola, trascinalo dove deve arrivare. Invio applica (il resto si adatta senza cambiare il tono), Esc annulla, Alt + clic toglie un punto") },
+        { Tool::Envelope, TRX ("Inviluppo del clip (D): clic su un clip per mettere un punto di guadagno (in alto +12 dB, la riga chiara e' 0 dB), trascina per spostarlo, Alt + clic lo toglie. Serve per abbassare un respiro o un colpo di vento solo in quel punto") },
+        { Tool::Scrub,  TRX ("Scrub (J): trascina sulle tracce per ascoltare a scatti la posizione, come muovendo il nastro a mano. Anche Alt + trascina sul righello") },
         { Tool::Automation, TRX ("Automazione (U): clic su una traccia per aggiungere un punto alla curva mostrata (VOL, PAN, SEND A o SEND B: si cambia dal pulsante nell'intestazione della traccia), trascina per spostarlo, clic destro per eliminarlo") }
     };
     for (auto& t : tools)

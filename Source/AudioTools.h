@@ -9,6 +9,10 @@ namespace fc::tools
 std::vector<std::pair<int64_t, int64_t>> soundRegions (const juce::AudioBuffer<float>& audio, int64_t offset, int64_t length, double rate,
                                                        float thresholdDb, double minSilenceSec, double padSec);
 
+/** Punti di attacco (hitpoints): dove il livello sale all'improvviso, in campioni relativi alla porzione.
+    sensitivity 0..1 (1 = anche attacchi deboli), minGapSec = distanza minima fra due punti. */
+std::vector<int64_t> findHitpoints (const juce::AudioBuffer<float>& audio, int64_t offset, int64_t length, double rate, double sensitivity, double minGapSec);
+
 /** Loudness integrato (LUFS, BS.1770) di una porzione di audio; -100 se e' silenzio. 'dialogueOnly' misura solo i blocchi in cui c'e' parlato
     (energia sopra la soglia di silenzio), come la misura "dialogue-gated". */
 double measureLufs (const juce::AudioBuffer<float>& audio, int64_t offset, int64_t length, double rate, bool dialogueOnly = false);

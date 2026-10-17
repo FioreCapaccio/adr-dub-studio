@@ -50,7 +50,13 @@ public:
     std::function<void (const std::vector<int>&)> onFreezeRequest;   // Freeze / Unfreeze delle tracce scelte   // JOIN dei clip selezionati
     std::function<void (bool toCue)> onStretchRequest;
     std::function<void (int64_t clipId, double ratio, int64_t newStart)> onStretchCommit;   // al rilascio dello strumento Stretch
+    std::function<void (int64_t clipId, std::vector<warp::Anchor>)> onWarpCommit;   // Time Warp: applica i punti di ancoraggio
+    std::function<void (int64_t clipId)> onOpenEditor;   // doppio clic su un clip: Sample Editor
     std::function<void()> onExportRequested;   // dal menu della barra di esportazione   // time-stretch dei clip selezionati (toCue: durata del cue ADR)
+
+    bool warpActive() const noexcept { return warpClipId != 0; }
+    void applyWarp();
+    void cancelWarp();
 
     void renameTrackDialog (int trackId);
     void renameMarkerDialog (int markerId);
@@ -79,7 +85,7 @@ public:
 
 private:
     enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, Trim, AutoSegment, TrackResize, VideoMove,
-                      Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove, Range, Comp };
+                      Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove, Range, Comp, Warp, Scrub, Envelope };
     enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderInput, TrackResize,
                          Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane, GroupBar, HeaderLock, GlobalMute, GlobalSolo, GlobalVisibility };
     struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; int group = 0, groupPart = 0; /* 0 barra, 1 muto, 2 solo */ };
@@ -223,6 +229,16 @@ private:
     int rangeAnchorRow = 0, compTrackId = 0;
     int64_t compClipId = 0, compA = 0, compB = 0, compAnchor = 0;
     int64_t cueOrigIn = 0, cueOrigOut = 0;
+    // Time Warp: punti di ancoraggio del clip in lavorazione (campioni dall'inizio del clip)
+    int64_t warpClipId = 0;
+    std::vector<warp::Anchor> warpAnchors;
+    int warpDragIdx = -1;
+    // inviluppo di guadagno del clip
+    int64_t envClipId = 0;
+    int envIdx = -1;
+    static float envYFor (juce::Rectangle<float> wf, float db) noexcept { return wf.getY() + std::pow (juce::jlimit (0.0f, 1.0f, (12.0f - db) / 72.0f), 0.55f) * wf.getHeight(); }
+    static float envDbFor (juce::Rectangle<float> wf, float y) noexcept { return 12.0f - 72.0f * std::pow (juce::jlimit (0.0f, 1.0f, (y - wf.getY()) / juce::jmax (1.0f, wf.getHeight())), 1.0f / 0.55f); }
+    static juce::Rectangle<float> envArea (juce::Rectangle<float> r) noexcept { return r.withTrimmedTop (18.0f).reduced (0.0f, 3.0f); }
 
     int64_t lastPos = -1;
     float lastPlayheadX = -100.0f;

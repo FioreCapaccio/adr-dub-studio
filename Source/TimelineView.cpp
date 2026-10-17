@@ -859,6 +859,7 @@ void TimelineView::drawClip (juce::Graphics& g, const Track& t, int ti, const Cl
     g.setColour (juce::Colours::black.withAlpha (0.82f));
     g.setFont (font (11.0f, true));
     const juce::String label = (c.cueId != 0 ? "T" + juce::String (c.takeNo) + "  " : juce::String()) + c.asset->name + (std::abs (c.gainDb) > 0.05f ? "   " + juce::String (c.gainDb, 1) + " dB" : juce::String())
+                             + (c.id == warpClipId ? "     " + TRANS ("WARP: Invio = applica, Esc = annulla, Alt + clic su un punto = elimina") : juce::String())
                              + (preview ? "     STRETCH " + juce::String (100.0 * (double) stretchLen / (double) juce::jmax<int64_t> (1, stretchOrigLen), 1) + " %   " + juce::String ((double) stretchLen / project.getSampleRate(), 2) + " s" : juce::String());
     auto labelBox = head.toNearestInt().withTrimmedLeft (7).withTrimmedRight (4);
     if (labelBox.getX() < lanes.getX() + 4) labelBox.setLeft (juce::jmin (labelBox.getRight(), lanes.getX() + 4));
@@ -873,6 +874,58 @@ void TimelineView::drawClip (juce::Graphics& g, const Track& t, int ti, const Cl
 
     g.setColour (col.brighter (0.4f).withAlpha (0.22f));
     g.drawHorizontalLine ((int) wf.getCentreY(), r.getX(), r.getRight());
+
+    if (! c.env.empty() || (tool == Tool::Envelope && sel))   // inviluppo di guadagno
+    {
+        const auto ea = envArea (r);
+        const bool active = tool == Tool::Envelope;
+        if (active)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.18f));
+            g.drawHorizontalLine ((int) envYFor (ea, 0.0f), r.getX(), r.getRight());
+        }
+        if (! c.env.empty())
+        {
+            juce::Path ep;
+            ep.startNewSubPath (r.getX(), envYFor (ea, envDbAt (c.env, c.offset)));
+            for (auto& gp : c.env) ep.lineTo (sampleToX (c.start + gp.pos - c.offset), envYFor (ea, gp.db));
+            ep.lineTo (r.getRight(), envYFor (ea, envDbAt (c.env, c.offset + c.length)));
+            g.setColour (juce::Colour (0xffffe27a).withAlpha (active ? 0.95f : 0.6f));
+            g.strokePath (ep, juce::PathStrokeType (1.6f));
+            if (active)
+                for (auto& gp : c.env)
+                {
+                    const float px = sampleToX (c.start + gp.pos - c.offset), py = envYFor (ea, gp.db);
+                    g.setColour (juce::Colour (0xffffe27a));
+                    g.fillEllipse (px - 4.0f, py - 4.0f, 8.0f, 8.0f);
+                    g.setColour (juce::Colours::black.withAlpha (0.7f));
+                    g.drawEllipse (px - 4.0f, py - 4.0f, 8.0f, 8.0f, 1.0f);
+                }
+        }
+    }
+    if (c.hasSync())   // punto di sincronia: bandierina e linea
+    {
+        const float sx = sampleToX (c.syncTime());
+        g.setColour (juce::Colour (0xff4ad0ff));
+        g.drawVerticalLine ((int) sx, wf.getY(), wf.getBottom());
+        juce::Path flag;
+        flag.addTriangle (sx, wf.getY(), sx + 9.0f, wf.getY() + 4.5f, sx, wf.getY() + 9.0f);
+        g.fillPath (flag);
+    }
+    if (c.id == warpClipId)   // Time Warp: i punti sulla forma d'onda e dove andranno
+    {
+        for (size_t i = 0; i < warpAnchors.size(); ++i)
+        {
+            const float x0 = sampleToX (c.start + warpAnchors[i].src), x1 = sampleToX (c.start + warpAnchors[i].dst);
+            const bool moved = warpAnchors[i].src != warpAnchors[i].dst;
+            g.setColour (juce::Colour (0xffffc94d).withAlpha (moved ? 0.9f : 0.5f));
+            g.drawVerticalLine ((int) x0, wf.getY(), wf.getBottom());
+            g.drawLine (x0, wf.getY(), x1, wf.getBottom(), 1.4f);
+            g.fillEllipse (x1 - 5.0f, wf.getBottom() - 10.0f, 10.0f, 10.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.7f));
+            g.drawEllipse (x1 - 5.0f, wf.getBottom() - 10.0f, 10.0f, 10.0f, 1.0f);
+        }
+    }
 
     // dissolvenze
     const auto shade = juce::Colours::black.withAlpha (0.58f);
@@ -1458,9 +1511,30 @@ bool TimelineView::findAutoPointAt (juce::Point<int> p, int& trackIndex, int& po
     return false;
 }
 
+void TimelineView::cancelWarp()
+{
+    if (warpClipId == 0) return;
+    warpClipId = 0;
+    warpAnchors.clear();
+    warpDragIdx = -1;
+    repaint();
+}
+
+void TimelineView::applyWarp()
+{
+    if (warpClipId == 0) return;
+    const auto id = warpClipId;
+    auto anchors = warpAnchors;
+    cancelWarp();
+    // i punti non spostati restano come ancore ferme; senza nessun punto spostato non c'e' nulla da fare
+    const bool moved = std::any_of (anchors.begin(), anchors.end(), [] (const warp::Anchor& a) { return a.src != a.dst; });
+    if (moved && onWarpCommit) onWarpCommit (id, std::move (anchors));
+}
+
 void TimelineView::setTool (Tool t)
 {
     if (tool == t) return;
+    if (tool == Tool::Warp) cancelWarp();
     tool = t;
     razorGuide = {};
     setMouseCursor (juce::MouseCursor::NormalCursor);
@@ -1544,6 +1618,67 @@ bool TimelineView::handleToolMouseDown (const juce::MouseEvent& e, const Hit& hi
             project.sendChangeMessage();
             return true;
         }
+
+        case Tool::Warp:
+        {
+            if (! onClip) return false;
+            auto* c = project.findClip (hit.clip);
+            if (c == nullptr || c->asset == nullptr || c->asset->offline) return false;
+            if (project.trackLocked (hit.track)) return true;
+            project.selectedTrackId = hit.track;
+            project.selection = { c->id };
+            primaryId = c->id;
+            if (warpClipId != c->id) { warpClipId = c->id; warpAnchors.clear(); }
+            buildSnapPoints (true);
+            const int64_t rel = xToSample (e.x) - c->start;
+            warpDragIdx = -1;
+            for (size_t i = 0; i < warpAnchors.size(); ++i)
+                if (std::abs (sampleToX (c->start + warpAnchors[i].dst) - (float) e.x) < 6.0f) warpDragIdx = (int) i;
+            if (warpDragIdx >= 0 && e.mods.isAltDown()) { warpAnchors.erase (warpAnchors.begin() + warpDragIdx); warpDragIdx = -1; repaint(); return true; }
+            if (warpDragIdx < 0)
+            {
+                const auto minGap = (int64_t) (0.06 * project.getSampleRate());
+                if (rel <= minGap || rel >= c->length - minGap) { repaint(); return true; }
+                warpAnchors.push_back ({ rel, rel });
+                std::sort (warpAnchors.begin(), warpAnchors.end(), [] (const warp::Anchor& a, const warp::Anchor& b) { return a.src < b.src; });
+                for (size_t i = 0; i < warpAnchors.size(); ++i) if (warpAnchors[i].src == rel) warpDragIdx = (int) i;
+            }
+            drag = Drag::Warp;
+            project.sendChangeMessage();
+            return true;
+        }
+
+        case Tool::Envelope:
+        {
+            if (! onClip) return false;
+            auto* c = project.findClip (hit.clip);
+            if (c == nullptr || c->asset == nullptr || c->asset->offline) return false;
+            if (project.trackLocked (hit.track)) return true;
+            project.selectedTrackId = hit.track;
+            project.selection = { c->id };
+            primaryId = envClipId = c->id;
+            const auto wf = envArea (clipRect (hit.trackIndex, *c));
+            envIdx = -1;
+            for (size_t i = 0; i < c->env.size(); ++i)
+            {
+                const float px = sampleToX (c->start + c->env[i].pos - c->offset), py = envYFor (wf, c->env[i].db);
+                if (std::abs (px - (float) e.x) < 7.0f && std::abs (py - (float) e.y) < 7.0f) envIdx = (int) i;
+            }
+            if (envIdx >= 0 && e.mods.isAltDown()) { project.removeEnvPoint (c->id, envIdx); envIdx = -1; return true; }
+            if (envIdx < 0)
+            {
+                envIdx = project.addEnvPoint (c->id, xToSample (e.x), envDbFor (wf, (float) e.y));
+                dragStarted = true;   // il punto nuovo e' gia' un passo di undo: trascinarlo lo modifica
+            }
+            drag = Drag::Envelope;
+            return true;
+        }
+
+        case Tool::Scrub:
+            if (! inLanes || engine.isRecording()) return false;
+            drag = Drag::Scrub;
+            engine.scrub (juce::jmax<int64_t> (0, xToSample (e.x)));
+            return true;
 
         case Tool::Mute:
             if (! onClip) return false;
@@ -1701,7 +1836,7 @@ void TimelineView::mouseMove (const juce::MouseEvent& e)
     if (hit.type == HitType::HeaderTrim) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
     if (hit.type == HitType::HeaderGrip) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); return; }
 
-    if ((tool == Tool::Razor || tool == Tool::Range || tool == Tool::Comp) && inLanes) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
+    if ((tool == Tool::Razor || tool == Tool::Range || tool == Tool::Comp || tool == Tool::Warp || tool == Tool::Scrub || tool == Tool::Envelope) && inLanes) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
     if ((tool == Tool::Mute || tool == Tool::Erase) && onClip) { setMouseCursor (juce::MouseCursor::PointingHandCursor); return; }
     if ((tool == Tool::Slip || tool == Tool::Stretch) && onClip) { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
     if (tool == Tool::Hand && (inLanes || hit.type == HitType::Video)) { setMouseCursor (juce::MouseCursor::PointingHandCursor); return; }
@@ -2116,7 +2251,8 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
 
     if (drag == Drag::RulerSeek)
     {
-        engine.setPosition (juce::jmax<int64_t> (0, xToSample (e.x)));
+        if (e.mods.isAltDown() && ! engine.isRecording()) engine.scrub (juce::jmax<int64_t> (0, xToSample (e.x)));
+        else engine.setPosition (juce::jmax<int64_t> (0, xToSample (e.x)));
         repaint();
         return;
     }
@@ -2158,6 +2294,36 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
         else if (exportMode == 1) project.exportIn = juce::jmin (cur, project.exportOut - 1);
         else if (exportMode == 2) project.exportOut = juce::jmax (cur, project.exportIn + 1);
         else { project.exportIn = juce::jmin (exportAnchor, cur); project.exportOut = juce::jmax (exportAnchor, cur); }
+        repaint();
+        return;
+    }
+    if (drag == Drag::Warp)
+    {
+        const auto* c = project.findClip (warpClipId);
+        if (c == nullptr || warpDragIdx < 0 || warpDragIdx >= (int) warpAnchors.size()) return;
+        const auto minGap = (int64_t) (0.06 * project.getSampleRate());
+        int64_t dst = xToSample (e.x) - c->start, snapped = 0;
+        if (snapTo (xToSample (e.x), snapped)) dst = snapped - c->start;
+        const int64_t lo = (warpDragIdx > 0 ? warpAnchors[(size_t) warpDragIdx - 1].dst : 0) + minGap;
+        const int64_t hi = warpDragIdx + 1 < (int) warpAnchors.size() ? warpAnchors[(size_t) warpDragIdx + 1].dst - minGap : std::numeric_limits<int64_t>::max();
+        warpAnchors[(size_t) warpDragIdx].dst = juce::jlimit (lo, juce::jmax (lo, hi), dst);
+        repaint();
+        return;
+    }
+    if (drag == Drag::Envelope)
+    {
+        int ti = -1;
+        const auto* c = project.findClip (envClipId, &ti);
+        if (c == nullptr || envIdx < 0) return;
+        if (! dragStarted && e.getDistanceFromDragStart() < 3) return;
+        beginDragEdit();
+        const auto wf = envArea (clipRect (ti, *c));
+        project.moveEnvPoint (envClipId, envIdx, xToSample (e.x), envDbFor (wf, (float) juce::jlimit (wf.getY(), wf.getBottom(), (float) e.y)));
+        return;
+    }
+    if (drag == Drag::Scrub)
+    {
+        engine.scrub (juce::jmax<int64_t> (0, xToSample (e.x)));
         repaint();
         return;
     }
@@ -2225,7 +2391,13 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
             int64_t sa = 0, sb = 0;
             const bool snapA = snapTo (po.start + delta, sa);
             const bool snapB = snapTo (po.start + po.length + delta, sb);
-            if (snapA && (! snapB || std::abs (sa - (po.start + delta)) <= std::abs (sb - (po.start + po.length + delta))))
+            int64_t ss = 0;
+            const int64_t syncRel = primary->hasSync() ? primary->syncPoint - po.offset : -1;   // il punto di sincronia si aggancia come un bordo
+            if (syncRel >= 0 && snapTo (po.start + syncRel + delta, ss)
+                && (! snapA || std::abs (ss - (po.start + syncRel + delta)) < std::abs (sa - (po.start + delta)))
+                && (! snapB || std::abs (ss - (po.start + syncRel + delta)) < std::abs (sb - (po.start + po.length + delta))))
+                delta = ss - po.start - syncRel;
+            else if (snapA && (! snapB || std::abs (sa - (po.start + delta)) <= std::abs (sb - (po.start + po.length + delta))))
                 delta = sa - po.start;
             else if (snapB)
                 delta = sb - (po.start + po.length);
@@ -2318,6 +2490,15 @@ void TimelineView::mouseUp (const juce::MouseEvent& e)
         project.markDirty();
         repaint();
     }
+    else if (drag == Drag::Warp)
+    {
+        warpDragIdx = -1;
+        repaint();
+    }
+    else if (drag == Drag::Scrub)
+        engine.endScrub();
+    else if (drag == Drag::Envelope)
+        envIdx = -1;
     else if (drag == Drag::Stretch)
     {
         const double ratio = (double) stretchLen / (double) juce::jmax<int64_t> (1, stretchOrigLen);
@@ -2414,6 +2595,8 @@ void TimelineView::mouseDoubleClick (const juce::MouseEvent& e)
     }
     else if (hit.type == HitType::Lane && hit.clip == 0 && hit.track < 0 && onImportRequested)
         onImportRequested();
+    else if (hit.clip != 0 && tool == Tool::Select && onOpenEditor)
+        onOpenEditor (hit.clip);
 }
 
 void TimelineView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
@@ -2866,6 +3049,13 @@ void TimelineView::showClipMenu (int64_t clipId)
         m.addSubMenu (TRANS ("Elaborazione (offline)"), proc);
     }
     m.addItem (10, TRANS ("Time-stretch..."));
+    m.addSeparator();
+    if (auto* cl = project.findClip (clipId); cl != nullptr)
+    {
+        m.addItem (30, TRANS ("Cancella l'inviluppo di guadagno"), ! cl->env.empty());
+        m.addItem (31, TRANS ("Punto di sincronia: imposta alla testina"));
+        m.addItem (32, TRANS ("Punto di sincronia: togli"), cl->hasSync());
+    }
 
     juce::Component::SafePointer<TimelineView> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options(), [safe, clipId] (int r)
@@ -2882,6 +3072,9 @@ void TimelineView::showClipMenu (int64_t clipId)
             case 5: if (c != nullptr) p.setClipGain (clipId, c->gainDb + 3.0f); break;
             case 6: if (c != nullptr) p.setClipGain (clipId, c->gainDb - 3.0f); break;
             case 7: p.setClipGain (clipId, 0.0f); break;
+            case 30: p.clearEnvelope (clipId); break;
+            case 31: p.setSyncPoint (clipId, safe->engine.getPosition()); break;
+            case 32: p.setSyncPoint (clipId, -1); break;
             case 8: if (c != nullptr) p.setActiveTake (c->cueId, c->takeNo); break;
             case 9: if (c != nullptr) p.deleteTake (c->cueId, c->takeNo); break;
             case 12: if (safe->onJoinRequest) safe->onJoinRequest(); break;

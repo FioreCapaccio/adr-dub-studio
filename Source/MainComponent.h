@@ -198,6 +198,10 @@ private:
     bool deliveredThisSession = false, lastCheckClean = false;
     std::unique_ptr<class RelinkJob> relinkJob;
     void toggleScriptWindow();
+    void openSampleEditor (int64_t clipId);
+    void sliceHitsDialog();
+    void timeEditDialog (bool remove);
+    std::unique_ptr<class BoothWindow> sampleWindow;
     void toggleCueWindow();
     AdrPanel* adrPanel = nullptr;
     int adrRecCue = 0;                // cue in registrazione (0 = nessuno)
@@ -214,6 +218,8 @@ private:
     void applyLayout (int index, bool resizeTracks);
     void exportCueSheet();
     void alignSelectedToGuide();
+    void alignPhrasesSelected();
+    int64_t singleSelectedClip() const;   // il solo clip selezionato, 0 se non e' uno solo
     void autoDuckDialog();
     void detectVideoCuts();
     void newFromTemplate (int index);

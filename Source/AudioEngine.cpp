@@ -76,7 +76,10 @@ void Mixer::renderClip (const Clip& c, int64_t pos, int n)
     const float gain = dbToGain (c.gainDb) * (c.invert ? -1.0f : 1.0f);
     const int64_t inClip0 = cs - c.start;
 
-    const bool needsFade = (c.fadeIn > 0 && inClip0 < c.fadeIn)
+    const bool hasEnv = ! c.env.empty();
+    float envG[kChunk];
+    if (hasEnv) fillEnvGain (c.env, srcOff, cnt, envG);
+    const bool needsFade = hasEnv || (c.fadeIn > 0 && inClip0 < c.fadeIn)
                         || (c.fadeOut > 0 && inClip0 + cnt > c.length - c.fadeOut)
                         || (c.xfadeIn > 0 && inClip0 < c.xfadeIn)
                         || (c.xfadeOut > 0 && inClip0 + cnt > c.length - c.xfadeOut);
@@ -96,6 +99,7 @@ void Mixer::renderClip (const Clip& c, int64_t pos, int n)
         {
             const int64_t ic = inClip0 + i;
             float g = gain;
+            if (hasEnv) g *= envG[i];
             if (c.fadeIn > 0 && ic < c.fadeIn) g *= (float) ic / (float) c.fadeIn;
             const int64_t toEnd = c.length - ic;
             if (c.fadeOut > 0 && toEnd < c.fadeOut) g *= (float) toEnd / (float) c.fadeOut;
@@ -853,6 +857,8 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
             }
         }
     }
+
+    if (scrubLeft.load() > 0 && (scrubLeft -= n) <= 0) { scrubLeft = 0; playing = false; }   // fine del frammento di scrub
 
     // arresto automatico a fine contenuto
     if (wantPlay && ! looping && ! recording.load() && pos > current->playEnd() + (int64_t) sampleRate.load())

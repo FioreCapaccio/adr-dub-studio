@@ -9,6 +9,7 @@
 #include "ParamEq.h"
 #include "TrackComp.h"
 #include "Limiter.h"
+#include "Warp.h"
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -69,6 +70,53 @@ using AssetPtr = std::shared_ptr<Asset>;
 AssetPtr loadAsset (juce::AudioFormatManager& fm, const juce::File& f, double rate, juce::String& error, const std::function<void (float)>& progress = {});
 
 //==============================================================================
+/** Punto dell'inviluppo di guadagno di un clip: posizione nel file (campioni dell'asset, cosi' segue il contenuto se si rifila o si fa scorrere) e guadagno in dB. */
+struct GainPoint { int64_t pos = 0; float db = 0.0f; };
+
+/** Guadagno in dB dell'inviluppo alla posizione 'pos' del file (0 senza punti; prima/dopo i punti resta il valore del primo/ultimo). */
+inline float envDbAt (const std::vector<GainPoint>& e, int64_t pos) noexcept
+{
+    if (e.empty()) return 0.0f;
+    if (pos <= e.front().pos) return e.front().db;
+    for (size_t k = 1; k < e.size(); ++k)
+        if (pos <= e[k].pos)
+            return e[k - 1].db + (e[k].db - e[k - 1].db) * (float) ((double) (pos - e[k - 1].pos) / (double) juce::jmax<int64_t> (1, e[k].pos - e[k - 1].pos));
+    return e.back().db;
+}
+
+/** Riempie 'out' con il guadagno lineare dell'inviluppo per le posizioni p0..p0+n-1 del file: la rampa e' lineare in dB (esponenziale in ampiezza). */
+inline void fillEnvGain (const std::vector<GainPoint>& e, int64_t p0, int n, float* out) noexcept
+{
+    size_t k = 0;
+    while (k < e.size() && e[k].pos <= p0) ++k;
+    int i = 0;
+    while (i < n)
+    {
+        const int64_t p = p0 + i;
+        while (k < e.size() && e[k].pos <= p) ++k;
+        if (k == 0 || k == e.size())   // fuori dai punti: valore costante
+        {
+            const float g = dbToGain (k == 0 ? e.front().db : e.back().db);
+            for (; i < n; ++i) out[i] = g;
+            break;
+        }
+        const int64_t a = e[k - 1].pos, b = e[k].pos;
+        const float g0 = dbToGain (e[k - 1].db), g1 = dbToGain (e[k].db);
+        const int len = (int) juce::jmin<int64_t> (n - i, b - p);
+        if (g0 <= 0.0f || g1 <= 0.0f)   // verso il silenzio: rampa lineare in ampiezza
+        {
+            for (int j = 0; j < len; ++j) out[i + j] = g0 + (g1 - g0) * (float) ((double) (p + j - a) / (double) (b - a));
+        }
+        else
+        {
+            const double ratio = std::pow ((double) g1 / (double) g0, 1.0 / (double) (b - a));
+            double g = (double) g0 * std::pow (ratio, (double) (p - a));
+            for (int j = 0; j < len; ++j) { out[i + j] = (float) g; g *= ratio; }
+        }
+        i += len;
+    }
+}
+
 struct Clip
 {
     int64_t id = 0;
@@ -85,6 +133,8 @@ struct Clip
     bool invert = false;     // polarita' invertita (DOP)
     int xShape = 0;          // forma del crossfade che finisce su questo clip: 0 automatica, 1 lineare, 2 a potenza costante
     int lane = 0;            // corsia (calcolata da Session::computeLanes, non salvata)
+    std::vector<GainPoint> env;   // inviluppo di guadagno del clip (vuoto = nessuno), ordinato per posizione
+    int64_t syncPoint = -1;  // punto di sincronia: posizione nel file (campioni dell'asset) che si aggancia al cue / al cursore; -1 = nessuno
     int rating = 0;          // take ADR: valutazione 0..5 stelle
     bool rejected = false;   // take ADR scartato: non suona mai e non conta; si puo' ripristinare o eliminare del tutto
     // crossfade automatico con i clip che si sovrappongono (calcolato da Session::computeCrossfades, non salvato)
@@ -92,6 +142,9 @@ struct Clip
     bool xLinear = false;      // stesso materiale continuo: dissolvenza a guadagno costante invece che a potenza costante
 
     int64_t end() const noexcept { return start + length; }
+    /** Il punto di sincronia sulla timeline, se cade dentro il clip. */
+    bool hasSync() const noexcept { return syncPoint >= offset && syncPoint < offset + length; }
+    int64_t syncTime() const noexcept { return start + syncPoint - offset; }
 };
 
 /** Mantiene vivo un oggetto per qualche secondo prima di rilasciarlo sul thread messaggi: il thread audio
@@ -650,6 +703,10 @@ public:
     Range range;
     void rangeSplit();                // divide i clip ai due bordi del range
     void rangeDelete (bool ripple);   // elimina l'audio nel range; con ripple chiude il vuoto sulle tracce del range
+    /** Insert Silence / Remove Time: modifiche del tempo su TUTTE le tracce insieme a cue, marker, automazione e intervallo di esportazione.
+        Ritorna un messaggio d'errore (vuoto se e' andata bene). */
+    juce::String insertTime (int64_t pos, int64_t length);
+    juce::String removeTime (int64_t from, int64_t to);
     void rangeTrim();                 // tiene solo l'audio nel range
     // comping: l'audio del clip scelto diventa quello attivo nell'intervallo [a, b) (gli altri clip della traccia si silenziano li')
     void compRange (int trackId, int64_t clipId, int64_t a, int64_t b);
@@ -662,6 +719,22 @@ public:
     int joinableGroups (const std::set<int64_t>& ids) const;
     /** Cambia la durata del clip (ratio = durata finale / originale): ricalcola l'audio in un nuovo file in 'folder' e lo sostituisce (un passo di undo). */
     void stretchClip (int64_t id, double ratio, bool keepPitch, const juce::File& folder, std::function<void (juce::String)> done, int64_t newStart = -1);
+    /** Divide i clip nei punti dati (posizioni sulla timeline) in un solo passo di undo; ritorna quanti pezzi nuovi nascono. */
+    int sliceClip (int64_t clipId, std::vector<int64_t> positions);
+    /** Sample Editor: elabora solo la porzione [from, to) del clip (campioni dall'inizio del clip) e sostituisce l'audio con una copia nuova in 'folder' (un passo di undo). */
+    enum class RangeOp { Gain, Normalize, FadeIn, FadeOut, Silence, Reverse, Invert, RemoveDc };
+    void processRange (int64_t clipId, int64_t from, int64_t to, RangeOp op, double param, const juce::File& folder, std::function<void (juce::String)> done);
+    /** Time Warp: sposta parole dentro il clip con punti di ancoraggio (campioni dall'inizio del clip); il nuovo file va in 'folder' (un passo di undo). */
+    void warpClip (int64_t id, std::vector<warp::Anchor> anchors, const juce::File& folder, std::function<void (juce::String)> done, int64_t newStart = -1);
+    /** Punto di sincronia del clip alla posizione 'pos' della timeline (dentro il clip); pos < 0 lo toglie. */
+    /** Inviluppo di guadagno del clip: aggiunge un punto (pos = posizione sulla timeline), ritorna l'indice; i tre metodi seguenti lavorano dentro un'unica modifica gia' iniziata. */
+    int addEnvPoint (int64_t clipId, int64_t timelinePos, float db);
+    void moveEnvPoint (int64_t clipId, int index, int64_t timelinePos, float db);
+    void removeEnvPoint (int64_t clipId, int index);
+    void clearEnvelope (int64_t clipId);
+    bool setSyncPoint (int64_t clipId, int64_t pos);
+    /** Sposta il clip in modo che il suo punto di sincronia cada su 'pos'. */
+    bool moveSyncTo (int64_t clipId, int64_t pos);
 
     int64_t contentEnd() const noexcept { return session.endSample(); }
 

@@ -21,6 +21,28 @@ std::vector<float> levels (const juce::AudioBuffer<float>& a, int64_t offset, in
 }
 }
 
+std::vector<int64_t> findHitpoints (const juce::AudioBuffer<float>& a, int64_t offset, int64_t length, double rate, double sensitivity, double minGapSec)
+{
+    std::vector<int64_t> out;
+    const int hop = juce::jmax (16, (int) (rate * 0.0025));
+    const auto lv = levels (a, offset, length, hop);
+    const double rise = 18.0 - 14.0 * juce::jlimit (0.0, 1.0, sensitivity);   // salita richiesta in dB: 18 (poco sensibile) .. 4
+    const int back = 10, gap = juce::jmax (1, (int) std::ceil (minGapSec * rate / hop));
+    int lastHit = -1000000;
+    for (int i = back; i < (int) lv.size(); ++i)
+    {
+        if (lv[(size_t) i] < -50.0f || i - lastHit < gap) continue;
+        float ref = -120.0f;
+        for (int j = i - back; j < i - 2; ++j) ref = juce::jmax (ref, lv[(size_t) j]);   // massimo dei dieci frame precedenti (esclusi i due piu' vicini)
+        if ((double) (lv[(size_t) i] - juce::jmax (ref, -70.0f)) < rise) continue;
+        int p = i;
+        while (p > lastHit + 1 && p > 0 && lv[(size_t) p - 1] > lv[(size_t) i] - 6.0f) --p;   // risale all'inizio della salita
+        out.push_back ((int64_t) juce::jmax (0, p - 1) * hop);
+        lastHit = i;
+    }
+    return out;
+}
+
 std::vector<std::pair<int64_t, int64_t>> soundRegions (const juce::AudioBuffer<float>& a, int64_t offset, int64_t length, double rate,
                                                        float thresholdDb, double minSilenceSec, double padSec)
 {

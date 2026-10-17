@@ -1,4 +1,5 @@
 #include "AudioAlign.h"
+#include "AudioTools.h"
 #include "TrackPresets.h"
 
 namespace fc::align
@@ -207,6 +208,80 @@ std::vector<Item> alignToGuide (Project& p, const std::vector<int64_t>& clipIds,
                 c->start = m.second;
             }
         p.changed();
+    }
+    return items;
+}
+
+std::vector<PhraseItem> alignPhrases (Project& p, const std::vector<int64_t>& clipIds, double maxShiftSec, double minConfidence)
+{
+    std::vector<PhraseItem> items;
+    const double rate = p.getSampleRate();
+    const auto& s = p.getSession();
+    std::vector<const Clip*> guide;
+    for (auto& t : s.tracks)
+        if (t.live->trackType.load() == TrackGuide && ! t.live->mute.load())
+            for (auto& c : t.clips) guide.push_back (&c);
+    if (guide.empty()) return items;
+
+    for (auto id : clipIds)
+    {
+        PhraseItem it;
+        it.clipId = id;
+        int ti = -1;
+        const Clip* c = p.findClip (id, &ti);
+        if (c == nullptr || c->asset == nullptr || c->asset->offline) { it.note = "clip non valido"; items.push_back (it); continue; }
+        if (s.tracks[(size_t) ti].live->trackType.load() == TrackGuide) { it.note = "e' sulla traccia Guida"; items.push_back (it); continue; }
+
+        const int64_t margin = (int64_t) std::llround (maxShiftSec * rate);
+        const int64_t t0 = juce::jmax<int64_t> (0, c->start - margin), t1 = c->end() + margin, n = t1 - t0;
+        std::vector<const Clip*> near;
+        for (auto* g : guide) if (g->end() > t0 && g->start < t1) near.push_back (g);
+        if (near.empty()) { it.note = TRANS ("nessun dialogo di guida in questa posizione"); items.push_back (it); continue; }
+
+        const auto ref = renderMono (near, t0, n), tgt = renderMono ({ c }, t0, n);
+        const auto sh = findShift (ref, tgt, rate, maxShiftSec);
+        it.confidence = sh.confidence;
+        it.shiftMs = sh.samples * 1000.0 / rate;
+        if (! sh.ok || sh.confidence < minConfidence) { it.note = TRANS ("somiglianza troppo bassa (") + juce::String (sh.confidence, 2) + ")"; items.push_back (it); continue; }
+
+        const int64_t shift = (int64_t) std::llround (sh.samples);   // spostamento vero: il clip non puo' andare prima dello zero, ma le frasi si abbinano comunque
+        it.newStart = juce::jmax<int64_t> (0, c->start + shift);
+        const auto gr = tools::soundRegions (ref, 0, n, rate, -42.0f, 0.2, 0.0);
+        auto tr = tools::soundRegions (tgt, 0, n, rate, -42.0f, 0.2, 0.0);
+        const int64_t minLen = (int64_t) (0.12 * rate);
+        std::erase_if (tr, [minLen] (const auto& r) { return r.second - r.first < minLen; });
+        it.phrases = (int) tr.size();
+
+        // ogni frase del take (spostata) si abbina alla frase della guida con cui si sovrappone di piu', nell'ordine
+        size_t lastG = 0;
+        bool haveLast = false;
+        for (auto& r : tr)
+        {
+            const int64_t a0 = r.first + shift, a1 = r.second + shift;
+            int best = -1;
+            double bestOv = 0.4;
+            for (size_t g = haveLast ? lastG + 1 : 0; g < gr.size(); ++g)
+            {
+                const int64_t ov = juce::jmin (a1, gr[g].second) - juce::jmax (a0, gr[g].first);
+                const double f = (double) ov / (double) juce::jmax<int64_t> (1, juce::jmin (a1 - a0, gr[g].second - gr[g].first));
+                if (f > bestOv) { bestOv = f; best = (int) g; }
+            }
+            if (best < 0) continue;
+            lastG = (size_t) best;
+            haveLast = true;
+            const auto& gg = gr[(size_t) best];
+            const int64_t durT = r.second - r.first, durG = gg.second - gg.first;
+            const double ratio = (double) durG / (double) juce::jmax<int64_t> (1, durT);
+            const int64_t dstEnd = (ratio >= 0.85 && ratio <= 1.2) ? gg.first + durG : gg.first + durT;   // durate troppo diverse: si sposta soltanto
+            // posizioni relative all'inizio del clip (dopo lo spostamento globale)
+            const int64_t base = t0 - it.newStart;
+            it.anchors.push_back ({ r.first + t0 - c->start, gg.first + base });
+            it.anchors.push_back ({ r.second + t0 - c->start, dstEnd + base });
+            ++it.matched;
+        }
+        it.anchors = warp::normalise (std::move (it.anchors), c->length, rate);
+        it.note = juce::String (it.matched) + TRANS (" frasi su ") + juce::String (it.phrases) + TRANS (" agganciate alla guida");
+        items.push_back (it);
     }
     return items;
 }

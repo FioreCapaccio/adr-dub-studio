@@ -3,6 +3,7 @@
 #include "DubWorkflow.h"
 #include "CueSheet.h"
 #include "AudioAlign.h"
+#include "SampleEditor.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
 #include "Relink.h"
@@ -264,6 +265,13 @@ MainComponent::MainComponent()
         juce::Component::SafePointer<MainComponent> safe (this);
         project->stretchClip (id, ratio, true, folder, [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); }, newStart);
     };
+    timeline->onWarpCommit = [this] (int64_t id, std::vector<warp::Anchor> anchors)
+    {
+        const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+        juce::Component::SafePointer<MainComponent> safe (this);
+        project->warpClip (id, std::move (anchors), folder, [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); });
+    };
+    timeline->onOpenEditor = [this] (int64_t id) { openSampleEditor (id); };
     timeline->onExportRequested = [this] { exportDialog(); };
     timeline->onVideoOffsetChanged = [this] { viewer.refreshOffset(); };
     addChildComponent (viewer);
@@ -366,6 +374,7 @@ MainComponent::~MainComponent()
     autosaveInfo().deleteFile();
     if (videoWindow != nullptr) { videoWindow->clearContentComponent(); videoWindow.reset(); }
     scriptWindow.reset();
+    sampleWindow.reset();
     cueWindow.reset();
     mtcWindow.reset();
     mtcSync.reset();
@@ -1506,7 +1515,8 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
-                  cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker });
+                  cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1617,6 +1627,20 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdScriptReader:  i.setInfo (TRANS ("Lettore copione per l'attore"), "", TRANS ("ADR"), 0); i.setTicked (scriptWindow != nullptr); break;
         case cmdCueMix:        i.setInfo (TRANS ("Cuffie dell'attore e talkback..."), "", TRANS ("ADR"), 0); i.setTicked (cueWindow != nullptr); break;
         case cmdAlignToGuide:  i.setInfo (TRANS ("Allinea alla guida (sincronia automatica)..."), "", TRANS ("Modifica"), 0); break;
+        case cmdAlignPhrases:  i.setInfo (TRANS ("Allinea alla guida frase per frase (Time Warp)..."), "", TRANS ("Modifica"), 0); break;
+        case cmdToolWarp:      i.setInfo (TRANS ("Time Warp"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('o', 0); i.setTicked (timeline->getTool() == Tool::Warp); break;
+        case cmdToolEnvelope:  i.setInfo (TRANS ("Inviluppo del clip"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('d', 0); i.setTicked (timeline->getTool() == Tool::Envelope); break;
+        case cmdInsertTime:    i.setInfo (TRANS ("Inserisci silenzio (sposta tutto)..."), "", TRANS ("Modifica"), 0); break;
+        case cmdRemoveTime:    i.setInfo (TRANS ("Rimuovi tempo (chiude il vuoto su tutto)..."), "", TRANS ("Modifica"), 0); break;
+        case cmdSliceHits:     i.setInfo (TRANS ("Dividi sui punti di attacco (hitpoints)..."), "", TRANS ("Modifica"), 0); i.setActive (! project->selection.empty()); break;
+        case cmdSampleEditor:  i.setInfo (TRANS ("Sample Editor (clip selezionato)..."), "", TRANS ("Modifica"), 0); i.setActive (singleSelectedClip() != 0); break;
+        case cmdClearEnvelope: i.setInfo (TRANS ("Cancella l'inviluppo di guadagno dei clip selezionati"), "", TRANS ("Modifica"), 0); break;
+        case cmdToolScrub:     i.setInfo (TRANS ("Scrub"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('j', 0); i.setTicked (timeline->getTool() == Tool::Scrub); break;
+        case cmdWarpApply:     i.setInfo (TRANS ("Time Warp: applica"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress (juce::KeyPress::returnKey, 0); i.setActive (timeline->warpActive()); break;
+        case cmdWarpCancel:    i.setInfo (TRANS ("Time Warp: annulla i punti"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress (juce::KeyPress::escapeKey, 0); i.setActive (timeline->warpActive()); break;
+        case cmdSyncSet:       i.setInfo (TRANS ("Punto di sincronia: imposta alla testina"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('s', juce::ModifierKeys::altModifier); i.setActive (singleSelectedClip() != 0); break;
+        case cmdSyncClear:     i.setInfo (TRANS ("Punto di sincronia: togli"), "", TRANS ("Modifica"), 0); i.setActive (singleSelectedClip() != 0); break;
+        case cmdSyncToCue:     i.setInfo (TRANS ("Punto di sincronia: porta sul cue (o sulla testina)"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('s', juce::ModifierKeys::altModifier | juce::ModifierKeys::shiftModifier); i.setActive (singleSelectedClip() != 0); break;
         case cmdAutoDuck:      i.setInfo (TRANS ("Ducking automatico del fondo sotto i dialoghi..."), "", TRANS ("Traccia"), 0); break;
         case cmdDetectCuts:    i.setInfo (TRANS ("Rileva i tagli del video (marker)..."), "", TRANS ("Marker"), 0); i.setActive (project->getSession().video != nullptr); break;
         case cmdAdrCueSheet:   i.setInfo (TRANS ("Foglio cue e copione per personaggio (stampabile)..."), "", TRANS ("ADR"), 0); i.setActive (! project->getSession().cues.empty()); break;
@@ -1814,6 +1838,30 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrExportBwf:  exportAdrBwf(); break;
         case cmdAdrCueSheet:   exportCueSheet(); break;
         case cmdAlignToGuide:  alignSelectedToGuide(); break;
+        case cmdAlignPhrases:  alignPhrasesSelected(); break;
+        case cmdToolWarp:      timeline->setTool (Tool::Warp); break;
+        case cmdToolScrub:     timeline->setTool (Tool::Scrub); break;
+        case cmdToolEnvelope:  timeline->setTool (Tool::Envelope); break;
+        case cmdSliceHits:     sliceHitsDialog(); break;
+        case cmdInsertTime:    timeEditDialog (false); break;
+        case cmdRemoveTime:    timeEditDialog (true); break;
+        case cmdSampleEditor:  if (const auto id = singleSelectedClip(); id != 0) openSampleEditor (id); break;
+        case cmdClearEnvelope: for (auto id : std::vector<int64_t> (project->selection.begin(), project->selection.end())) project->clearEnvelope (id); break;
+        case cmdWarpApply:     timeline->applyWarp(); break;
+        case cmdWarpCancel:    timeline->cancelWarp(); break;
+        case cmdSyncSet:
+            if (const auto id = singleSelectedClip(); id != 0 && ! project->setSyncPoint (id, engine.getPosition())) showError (TRANS ("Metti la testina dentro il clip, su una traccia non bloccata."));
+            break;
+        case cmdSyncClear:     if (const auto id = singleSelectedClip(); id != 0) project->setSyncPoint (id, -1); break;
+        case cmdSyncToCue:
+            if (const auto id = singleSelectedClip(); id != 0)
+            {
+                const auto* c = project->findClip (id);
+                const auto* cue = c != nullptr && c->cueId != 0 ? project->findCue (c->cueId) : nullptr;
+                if (c == nullptr || ! c->hasSync()) { showError (TRANS ("Prima imposta il punto di sincronia: testina sul suono da agganciare, poi Modifica > Punto di sincronia: imposta.")); break; }
+                if (! project->moveSyncTo (id, cue != nullptr ? cue->inPos : engine.getPosition())) showError (TRANS ("Non si puo' spostare il clip li' (traccia bloccata o prima dell'inizio)."));
+            }
+            break;
         case cmdMtc:           toggleMtcWindow(); break;
         case cmdKeyEditor:     keyEditorDialog(); break;
         case cmdReConform:     reconformDialog(); break;
@@ -2058,9 +2106,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck }); break;
-        case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
+        case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdToolWarp, cmdToolEnvelope, cmdToolScrub, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
         case 4:
         {
             add ({ cmdAddMarker, cmdCycleMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdDetectCuts });
@@ -3000,6 +3048,85 @@ void MainComponent::workflowDialog()
     lo.launchAsync();
 }
 
+void MainComponent::timeEditDialog (bool remove)
+{
+    const double rate = project->getSampleRate();
+    double from = (double) engine.getPosition() / rate, len = remove ? 1.0 : 2.0;
+    if (remove)
+    {
+        if (project->range.valid()) { from = (double) project->range.a / rate; len = (double) (project->range.b - project->range.a) / rate; }
+        else if (engine.getLoopEnd() > engine.getLoopStart()) { from = (double) engine.getLoopStart() / rate; len = (double) (engine.getLoopEnd() - engine.getLoopStart()) / rate; }
+        else if (project->exportOut > project->exportIn) { from = (double) project->exportIn / rate; len = (double) (project->exportOut - project->exportIn) / rate; }
+    }
+    auto* aw = new juce::AlertWindow (remove ? TRANS ("Rimuovi tempo") : TRANS ("Inserisci silenzio"),
+                                      remove ? TRANS ("Toglie un tratto di tempo da TUTTE le tracce (anche bloccate) e chiude il vuoto: clip, cue, marker e automazione dopo il tratto si spostano indietro. Annullabile.")
+                                             : TRANS ("Inserisce un vuoto su TUTTE le tracce (anche bloccate): clip, cue, marker e automazione dopo il punto si spostano in avanti; il clip che attraversa il punto viene diviso. Annullabile."),
+                                      juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("from", juce::String (from, 3), remove ? TRANS ("Da (secondi)") : TRANS ("Posizione (secondi)"));
+    aw->addTextEditor ("len", juce::String (len, 3), TRANS ("Durata (secondi)"));
+    aw->addButton (remove ? TRANS ("Rimuovi") : TRANS ("Inserisci"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, remove, rate] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        auto num = [aw] (const char* n) { return aw->getTextEditorContents (n).replaceCharacter (',', '.').getDoubleValue(); };
+        const int64_t a = (int64_t) std::llround (num ("from") * rate), d = (int64_t) std::llround (num ("len") * rate);
+        const auto err = remove ? safe->project->removeTime (a, a + d) : safe->project->insertTime (a, d);
+        if (err.isNotEmpty()) safe->showError (err);
+        safe->timeline->repaint();
+    }), true);
+}
+
+void MainComponent::sliceHitsDialog()
+{
+    if (project->selection.empty()) { showError (TRANS ("Seleziona i clip da dividere.")); return; }
+    auto* aw = new juce::AlertWindow (TRANS ("Dividi sui punti di attacco"), TRANS ("Ogni punto dove il suono parte all'improvviso (una sillaba, un colpo) diventa un taglio: i clip selezionati vengono divisi in pezzi (annullabile)."),
+                                      juce::MessageBoxIconType::NoIcon);
+    aw->addComboBox ("sens", { TRANS ("Bassa (solo attacchi forti)"), TRANS ("Media"), TRANS ("Alta (anche attacchi deboli)") }, TRANS ("Sensibilita'"));
+    aw->getComboBoxComponent ("sens")->setSelectedItemIndex (1);
+    aw->addTextEditor ("gap", "80", TRANS ("Distanza minima fra i tagli (millisecondi)"));
+    aw->addButton (TRANS ("Dividi"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        const double sens = 0.2 + 0.3 * aw->getComboBoxComponent ("sens")->getSelectedItemIndex() + (aw->getComboBoxComponent ("sens")->getSelectedItemIndex() == 2 ? 0.2 : 0.0);
+        const double gap = juce::jlimit (20.0, 2000.0, aw->getTextEditorContents ("gap").replaceCharacter (',', '.').getDoubleValue()) / 1000.0;
+        auto& p = *safe->project;
+        int clips = 0, cuts = 0;
+        for (auto id : std::vector<int64_t> (p.selection.begin(), p.selection.end()))
+        {
+            const auto* c = p.findClip (id);
+            if (c == nullptr || c->asset == nullptr || c->asset->offline) continue;
+            std::vector<int64_t> pos;
+            for (auto h : tools::findHitpoints (c->asset->audio, c->offset, c->length, p.getSampleRate(), sens, gap)) pos.push_back (c->start + h);
+            if (const int n = p.sliceClip (id, pos); n > 0) { ++clips; cuts += n; }
+        }
+        safe->timeline->repaint();
+        juce::AlertWindow::showMessageBoxAsync (clips > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Dividi sui punti di attacco"),
+                                                clips > 0 ? juce::String (clips) + TRANS (" clip divisi con ") + juce::String (cuts) + TRANS (" tagli.") : TRANS ("Nessun punto di attacco trovato: prova con una sensibilita' piu' alta."));
+    }), true);
+}
+
+void MainComponent::openSampleEditor (int64_t clipId)
+{
+    const auto* c = project->findClip (clipId);
+    if (c == nullptr || c->asset == nullptr || c->asset->offline) { showError (TRANS ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media.")); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    sampleWindow = std::make_unique<BoothWindow> (TRANS ("Sample Editor - ") + c->asset->name, [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->sampleWindow.reset(); safe->commandManager.commandStatusChanged(); } });
+    });
+    sampleWindow->setContentOwned (new SampleEditor (*project, engine, clipId, [safe] (juce::String err) { if (safe != nullptr) safe->showError (err); }), true);
+    sampleWindow->setResizeLimits (720, 300, 4000, 2000);
+    sampleWindow->addKeyListener (commandManager.getKeyMappings());
+    sampleWindow->centreAroundComponent (this, 980, 420);
+    sampleWindow->setVisible (true);
+    commandManager.commandStatusChanged();
+}
+
 void MainComponent::toggleScriptWindow()
 {
     if (scriptWindow != nullptr) { scriptWindow.reset(); commandManager.commandStatusChanged(); return; }
@@ -3076,6 +3203,56 @@ void MainComponent::alignSelectedToGuide()
         }
         safe->timeline->repaint();
         juce::AlertWindow::showMessageBoxAsync (done > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Allinea alla guida"),
+                                                juce::String (done) + TRANS (" di ") + juce::String ((int) items.size()) + TRANS (" clip allineati.\n\n") + msg
+                                                    + (done > 0 ? TRANS ("\nSe il risultato non ti convince, annulla con Modifica > Annulla.") : juce::String()));
+    }), true);
+}
+
+int64_t MainComponent::singleSelectedClip() const
+{
+    return project->selection.size() == 1 ? *project->selection.begin() : 0;
+}
+
+void MainComponent::alignPhrasesSelected()
+{
+    bool haveGuide = false;
+    for (auto& t : project->getSession().tracks) haveGuide = haveGuide || (t.live->trackType.load() == TrackGuide && ! t.clips.empty());
+    if (! haveGuide) { showError (TRANS ("Serve una traccia Guida con il dialogo originale.\n\nImposta il tipo della traccia su Guida (clic destro sulla traccia, Tipo di traccia) e mettici l'audio di riferimento.")); return; }
+
+    std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
+    if (ids.empty())
+        if (const auto* cue = project->findCue (project->selectedCueId))
+            for (auto& t : project->getSession().tracks)
+                for (auto& c : t.clips) if (c.cueId == cue->id && c.takeNo == cue->activeTake) ids.push_back (c.id);
+    if (ids.empty()) { showError (TRANS ("Seleziona i clip da allineare (o un cue ADR con un take attivo).")); return; }
+
+    auto* aw = new juce::AlertWindow (TRANS ("Allinea frase per frase"), TRANS ("Ogni frase del take viene portata sulla frase corrispondente della guida: il clip si sposta e le pause fra le frasi si accorciano o si allungano (Time Warp, senza cambiare il tono). Annullabile."),
+                                      juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("range", "1500", TRANS ("Spostamento massimo (millisecondi)"));
+    aw->addButton (TRANS ("Allinea"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, ids] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        const double range = juce::jlimit (50.0, 5000.0, aw->getTextEditorContents ("range").replaceCharacter (',', '.').getDoubleValue()) / 1000.0;
+        auto& p = *safe->project;
+        const auto items = align::alignPhrases (p, ids, range, 0.55);
+        const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+        auto report = [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); };
+        int done = 0;
+        juce::String msg;
+        for (auto& it : items)
+        {
+            const auto* c = p.findClip (it.clipId);
+            const juce::String name = c != nullptr && c->asset != nullptr ? c->asset->name : juce::String ("clip");
+            msg << name << ": " << it.note << "\n";
+            if (it.newStart < 0) continue;
+            if (! it.anchors.empty()) { p.warpClip (it.clipId, it.anchors, folder, report, it.newStart); ++done; }
+            else if (c != nullptr && it.newStart != c->start) { p.beginEdit(); p.findClip (it.clipId)->start = it.newStart; p.changed(); ++done; }
+        }
+        safe->timeline->repaint();
+        juce::AlertWindow::showMessageBoxAsync (done > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Allinea frase per frase"),
                                                 juce::String (done) + TRANS (" di ") + juce::String ((int) items.size()) + TRANS (" clip allineati.\n\n") + msg
                                                     + (done > 0 ? TRANS ("\nSe il risultato non ti convince, annulla con Modifica > Annulla.") : juce::String()));
     }), true);

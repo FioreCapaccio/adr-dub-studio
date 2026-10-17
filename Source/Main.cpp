@@ -12,6 +12,7 @@
 #include "DubWorkflow.h"
 #include "CueSheet.h"
 #include "AudioAlign.h"
+#include "SampleEditor.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
 #include "Relink.h"
@@ -217,6 +218,7 @@ private:
         juce::String err;
         project->getSession().group[2]->volumeDb = -3.0f;   // gruppi: i parametri e l'instradamento si salvano (un gruppo a 0 dB non cambia il mix)
         project->getSession().tracks[0].live->outBus = 4;
+        { auto& c0 = project->edit().tracks[0].clips[0]; c0.env = { { c0.offset, 0.0f }, { c0.offset + 1000, -12.5f }, { c0.offset + c0.length, 3.0f } }; c0.syncPoint = c0.offset + 777; }
         project->exportIn = 12000; project->exportOut = 96000; project->adrDialogueSize = 44; project->adrNaming = "{progetto}-{cue}";
         { auto& t3 = project->edit().tracks[3]; fc::AutoPoint a; a.pos = 4800; a.db = -0.5f; t3.panAuto = { a }; a.db = -9.0f; t3.sendAAuto = { a }; t3.live->autoParam = fc::AutoSendA; }   // curve su una traccia vuota
         { auto& t3 = project->edit().tracks[3]; t3.live->trimDb = 7.5f; t3.live->trackType = fc::TrackEffects; t3.live->comp.enabled = true; t3.live->comp.ratio = 5.5f; t3.live->comp.thresholdDb = -33.0f; }
@@ -262,6 +264,10 @@ private:
             expect (reload->adrNaming == "{progetto}-{cue}", "schema dei nomi dei take: salvato e ricaricato con la sessione");
             expect (reload->getSession().tracks[3].live->limiterOn.load() && ! reload->getSession().tracks[0].live->limiterOn.load() && std::abs (reload->getSession().tracks[3].live->ceilingDb.load() + 3.0f) < 1.0e-4f,
                     "limiter di traccia: salvato e ricaricato (le altre tracce restano senza)");
+            {
+                const auto& c0 = reload->getSession().tracks[0].clips[0];
+                expect (c0.env.size() == 3 && std::abs (c0.env[1].db + 12.5f) < 1.0e-4f && c0.env[1].pos == c0.offset + 1000 && c0.syncPoint == c0.offset + 777, "inviluppo del clip e punto di sincronia: salvati e ricaricati con la sessione");
+            }
             expect (reload->exportIn == 12000 && reload->exportOut == 96000 && reload->adrDialogueSize == 44, "intervallo di esportazione e dimensione del dialogo salvati con la sessione");
             expect (reload->getSession().markers.size() == 2 && reload->getSession().markers[0].name == "Scena 1"
                         && reload->getSession().markers[1].pos == 9 * 48000, "marker: salvati e ricaricati con la sessione");
@@ -270,7 +276,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepAdrBeeps(); stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepLoadProbe ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepAdrBeeps(); stepEnvelope(); stepHitpoints(); stepTimeEdit(); stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepLoadProbe ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); }); });
         });
     }
 
@@ -960,11 +966,112 @@ private:
             auto* back = stretchProject->findClip (9100);
             expect (back != nullptr && back->length == 48000 && back->fadeIn == 4800 && back->asset->file == juce::File(), "time-stretch: l'undo ripristina il clip originale");
             folder.deleteRecursively();
-            next();
+            stepWarp (next);
         }, 12000);
     }
 
     std::unique_ptr<fc::Project> stretchProject;
+
+    // Time Warp, punto di sincronia e allineamento per frasi
+    static juce::AudioBuffer<float> bursts (const std::vector<std::pair<double, double>>& spans, double seconds)
+    {
+        juce::AudioBuffer<float> b (1, (int) (seconds * 48000.0));
+        b.clear();
+        juce::Random rnd (1234);
+        for (auto& sp : spans)
+            for (int i = (int) (sp.first * 48000.0); i < (int) (sp.second * 48000.0); ++i) b.setSample (0, i, (rnd.nextFloat() - 0.5f) * 0.8f);
+        return b;
+    }
+    static double onsetOf (const juce::AudioBuffer<float>& b, double fromSec)   // primo punto in cui il livello (finestre di 5 ms) supera 0,05
+    {
+        for (int i = (int) (fromSec * 48000.0); i + 240 < b.getNumSamples(); i += 48)
+            if (b.getRMSLevel (0, i, 240) > 0.05f) return (double) i / 48000.0;
+        return -1.0;
+    }
+
+    std::unique_ptr<fc::Project> warpProject;
+
+    void stepWarp (std::function<void()> next)
+    {
+        const double R = 48000.0;
+        const auto src = bursts ({ { 1.0, 1.5 }, { 3.0, 3.6 } }, 6.0);
+        {
+            using A = fc::warp::Anchor;
+            const auto n = fc::warp::normalise ({ { (int64_t) (2.0 * R), (int64_t) (2.5 * R) }, { (int64_t) (2.01 * R), (int64_t) (2.6 * R) }, { 0, 5 }, { (int64_t) (9 * R), 1 } }, (int64_t) (6 * R), R);
+            expect (n.size() == 1 && n[0].src == (int64_t) (2.0 * R), "warp: punti troppo vicini, a zero o fuori dal clip vengono scartati");
+            expect (fc::warp::warpedLength (n, (int64_t) (6 * R)) == (int64_t) (6.5 * R), "warp: il materiale dopo l'ultimo punto segue lo spostamento (6 s -> 6,5 s)");
+            expect (fc::warp::mapPosition (n, (int64_t) (6 * R), (int64_t) (1.0 * R)) == (int64_t) (1.25 * R) && fc::warp::mapPosition (n, (int64_t) (6 * R), (int64_t) (4.0 * R)) == (int64_t) (4.5 * R),
+                    "warp: la mappa delle posizioni interpola fra i punti");
+            const auto out = fc::warp::render (src, 0, (int) (6 * R), n, R);
+            expect (out.getNumSamples() == (int) (6.5 * R), "warp: lunghezza dell'audio generato");
+            const double o1 = onsetOf (out, 0.5), o2 = onsetOf (out, 3.2);
+            expect (std::abs (o1 - 1.25) < 0.06, "warp: la prima parola si sposta con la parte allungata (inizio " + juce::String (o1, 3) + " s, atteso 1,25)");
+            expect (std::abs (o2 - 3.5) < 0.03, "warp: la seconda parola segue lo spostamento senza deformarsi (inizio " + juce::String (o2, 3) + " s, atteso 3,5)");
+            (void) sizeof (A);
+        }
+
+        warpProject = std::make_unique<fc::Project> (formats, 48000.0);
+        auto asset = std::make_shared<fc::Asset>();
+        asset->name = "parole";
+        asset->audio = src;
+        asset->buildPeaks();
+        fc::Clip c; c.id = 9200; c.asset = asset; c.start = 48000; c.length = (int64_t) (6 * R); c.syncPoint = (int64_t) (3.0 * R);
+        warpProject->edit().tracks[0].clips = { c };
+        const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("arotron-warp-test");
+        folder.deleteRecursively();
+        warpProject->warpClip (9200, { { (int64_t) (2.0 * R), (int64_t) (2.5 * R) } }, folder, [this, next, folder, R] (juce::String err)
+        {
+            auto* cl = warpProject->findClip (9200);
+            expect (err.isEmpty() && cl != nullptr && cl->length == (int64_t) (6.5 * R) && cl->start == 48000 && cl->offset == 0 && cl->asset->file.existsAsFile(), "warp del clip: nuova durata 6,5 s, stessa posizione " + err);
+            expect (cl != nullptr && cl->hasSync() && cl->syncPoint == (int64_t) (3.5 * R), "warp: il punto di sincronia segue la parola");
+            warpProject->undo();
+            auto* back = warpProject->findClip (9200);
+            expect (back != nullptr && back->length == (int64_t) (6 * R) && back->syncPoint == (int64_t) (3.0 * R), "warp: l'undo ripristina clip e punto di sincronia");
+
+            // punto di sincronia: porta la parola sulla testina e si aggancia al cue
+            expect (warpProject->setSyncPoint (9200, 48000 + (int64_t) (3.0 * R)) && warpProject->findClip (9200)->syncPoint == (int64_t) (3.0 * R), "sincronia: il punto si imposta alla posizione sulla timeline");
+            expect (warpProject->moveSyncTo (9200, 6 * 48000) && warpProject->findClip (9200)->start == 3 * 48000, "sincronia: il clip si sposta per portare il punto dove richiesto");
+            expect (! warpProject->moveSyncTo (9200, 1000), "sincronia: non si porta il clip prima dell'inizio della timeline");
+            expect (warpProject->setSyncPoint (9200, -1) && ! warpProject->findClip (9200)->hasSync(), "sincronia: il punto si toglie");
+            folder.deleteRecursively();
+            stepPhraseAlign (next);
+        });
+    }
+
+    void stepPhraseAlign (std::function<void()> next)
+    {
+        const double R = 48000.0;
+        // guida: due frasi a 1,0 s e 3,0 s; take: le stesse frasi, ma a 1,2 s e 3,4 s (ritardi diversi)
+        warpProject = std::make_unique<fc::Project> (formats, 48000.0);
+        auto mk = [] (const juce::AudioBuffer<float>& b, const char* name) { auto a = std::make_shared<fc::Asset>(); a->name = name; a->audio = b; a->buildPeaks(); return a; };
+        auto& tr = warpProject->edit().tracks;
+        while (tr.size() < 2) warpProject->addTrack();
+        auto& tracks = warpProject->edit().tracks;
+        tracks[0].live->trackType = fc::TrackGuide;
+        fc::Clip g; g.id = 9301; g.asset = mk (bursts ({ { 1.0, 1.5 }, { 3.0, 3.6 } }, 5.0), "guida"); g.start = 0; g.length = g.asset->length();
+        fc::Clip t; t.id = 9302; t.asset = mk (bursts ({ { 1.2, 1.7 }, { 3.4, 4.0 } }, 5.5), "take"); t.start = 0; t.length = t.asset->length();
+        tracks[0].clips = { g };
+        tracks[1].clips = { t };
+        const auto items = fc::align::alignPhrases (*warpProject, { 9302 }, 1.5, 0.3);
+        expect (items.size() == 1 && items[0].matched == 2 && items[0].phrases == 2 && ! items[0].anchors.empty(), "allinea per frasi: due frasi su due agganciate alla guida (" + (items.empty() ? juce::String() : items[0].note) + ")");
+        if (items.empty() || items[0].anchors.empty()) { stepSampleEditor (next); return; }
+        const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("arotron-warp-test2");
+        folder.deleteRecursively();
+        const auto it = items[0];
+        warpProject->warpClip (9302, it.anchors, folder, [this, next, folder, it] (juce::String err)
+        {
+            auto* cl = warpProject->findClip (9302);
+            expect (err.isEmpty() && cl != nullptr, "allinea per frasi: warp applicato " + err);
+            if (cl != nullptr)
+            {
+                const double s = (double) cl->start / 48000.0;
+                const double a1 = s + onsetOf (cl->asset->audio, 0.3), a2 = s + onsetOf (cl->asset->audio, 2.8);
+                expect (std::abs (a1 - 1.0) < 0.04 && std::abs (a2 - 3.0) < 0.04, "allinea per frasi: le due frasi cadono sulla guida (" + juce::String (a1, 3) + " s e " + juce::String (a2, 3) + " s, attesi 1,0 e 3,0)");
+            }
+            folder.deleteRecursively();
+            stepSampleEditor (next);
+        }, it.newStart);
+    }
 
     void stepEq()
     {
@@ -1597,6 +1704,151 @@ private:
     }
 
     // bip del conto alla rovescia ADR
+    // Insert Silence / Remove Time
+    void stepTimeEdit()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "x"; a->audio.setSize (1, 96000); a->buildPeaks();
+        fc::Clip c1; c1.id = 1; c1.asset = a; c1.start = 0; c1.length = 48000;
+        fc::Clip c2; c2.id = 2; c2.asset = a; c2.start = 60000; c2.length = 30000;
+        fc::Clip c3; c3.id = 3; c3.asset = a; c3.start = 20000; c3.length = 20000;   // sull'altra traccia, a cavallo di 24000
+        p.edit().tracks[0].clips = { c1, c2 };
+        p.addTrack();
+        p.edit().tracks[1].clips = { c3 };
+        p.addMarker (50000, "M");
+        p.edit().cues.push_back ({}); auto& cue = p.edit().cues.back(); cue.id = 1; cue.inPos = 62000; cue.outPos = 80000;
+        fc::AutoPoint ap; ap.pos = 70000; ap.db = -3.0f; p.edit().tracks[0].volAuto = { ap };
+        expect (p.insertTime (24000, 10000).isEmpty(), "inserisci silenzio: eseguito");
+        auto t0 = p.getSession().tracks[0].clips;
+        std::sort (t0.begin(), t0.end(), [] (const fc::Clip& x, const fc::Clip& y) { return x.start < y.start; });
+        expect (t0.size() == 3 && t0[0].start == 0 && t0[0].length == 24000 && t0[2].start == 70000 && t0[1].start == 34000 && t0[1].offset == 24000,
+                "inserisci silenzio: il clip a cavallo si divide, il resto scivola in avanti");
+        expect (p.getSession().tracks[1].clips.size() == 2 && p.getSession().tracks[1].clips[1].start == 34000, "inserisci silenzio: vale su tutte le tracce");
+        expect (p.getSession().markers[0].pos == 60000 && p.getSession().cues[0].inPos == 72000 && p.getSession().cues[0].outPos == 90000 && p.getSession().tracks[0].volAuto[0].pos == 80000, "inserisci silenzio: marker, cue e automazione si spostano");
+        p.undo();
+        expect (p.getSession().tracks[0].clips.size() == 2 && p.getSession().markers[0].pos == 50000 && p.getSession().cues[0].inPos == 62000, "inserisci silenzio: un solo undo ripristina tutto");
+        expect (p.removeTime (10000, 30000).isEmpty(), "rimuovi tempo: eseguito");
+        auto r0 = p.getSession().tracks[0].clips;
+        std::sort (r0.begin(), r0.end(), [] (const fc::Clip& x, const fc::Clip& y) { return x.start < y.start; });
+        expect (r0.size() == 3 && r0[0].length == 10000 && r0[1].start == 10000 && r0[1].length == 18000 && r0[2].start == 40000, "rimuovi tempo: il tratto sparisce e il resto torna indietro");
+        expect (p.getSession().markers[0].pos == 30000 && p.getSession().cues[0].inPos == 42000 && p.getSession().tracks[0].volAuto[0].pos == 50000, "rimuovi tempo: marker, cue e automazione si spostano");
+        expect (! p.removeTime (500, 400).isEmpty() && ! p.insertTime (0, 0).isEmpty(), "tempo: valori non validi rifiutati");
+    }
+
+    // hitpoint e divisione
+    void stepHitpoints()
+    {
+        const double R = 48000.0;
+        auto b = bursts ({ { 0.5, 0.6 }, { 1.0, 1.1 }, { 1.8, 1.9 } }, 3.0);   // tre colpi di rumore dopo silenzio
+        const auto hp = fc::tools::findHitpoints (b, 0, b.getNumSamples(), R, 0.5, 0.08);
+        expect (hp.size() == 3 && std::abs (hp[0] - (int64_t) (0.5 * R)) < 0.02 * R && std::abs (hp[1] - (int64_t) (1.0 * R)) < 0.02 * R && std::abs (hp[2] - (int64_t) (1.8 * R)) < 0.02 * R,
+                "hitpoint: tre attacchi trovati nel punto giusto (" + juce::String ((int) hp.size()) + ")");
+        expect (fc::tools::findHitpoints (juce::AudioBuffer<float> (1, 48000), 0, 48000, R, 1.0, 0.08).empty(), "hitpoint: il silenzio non ha attacchi");
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "colpi"; a->audio = b; a->buildPeaks();
+        fc::Clip c; c.id = 55; c.asset = a; c.start = 1000; c.offset = 0; c.length = b.getNumSamples(); c.fadeIn = 200; c.fadeOut = 300;
+        p.edit().tracks[0].clips = { c };
+        const int n = p.sliceClip (55, { 1000 + hp[0], 1000 + hp[1], 1000 + hp[2] });
+        const auto& cl = p.getSession().tracks[0].clips;
+        int64_t total = 0;
+        for (auto& x : cl) total += x.length;
+        expect (n == 3 && cl.size() == 4 && total == b.getNumSamples() && cl[0].fadeIn == 200 && cl.back().fadeOut == 300, "slice: quattro pezzi che sommano il clip, fade ai bordi esterni");
+        p.undo();
+        expect (p.getSession().tracks[0].clips.size() == 1 && p.getSession().tracks[0].clips[0].length == b.getNumSamples(), "slice: un solo undo ricompone il clip");
+    }
+
+    // Sample Editor: elaborazione di una porzione e spettrogramma
+    std::unique_ptr<fc::Project> edProject;
+    void stepSampleEditor (std::function<void()> next)
+    {
+        {
+            // un tono a 1 kHz compare nella riga giusta dello spettrogramma
+            juce::AudioBuffer<float> tone (1, 48000);
+            for (int i = 0; i < 48000; ++i) tone.setSample (0, i, 0.5f * (float) std::sin (juce::MathConstants<double>::twoPi * 1000.0 * i / 48000.0));
+            const auto img = fc::makeSpectrogram (tone, 0, 48000, 48000.0, 20, 200);
+            float best = -1.0f;
+            for (int y = 0; y < 200; ++y) best = juce::jmax (best, img.getPixelAt (10, y).getBrightness());
+            double rows = 0.0; int nrows = 0;
+            for (int y = 0; y < 200; ++y) if (img.getPixelAt (10, y).getBrightness() >= best - 0.001f) { rows += y; ++nrows; }
+            const double hz = 60.0 * std::pow (12000.0 / 60.0, (200.0 - rows / juce::jmax (1, nrows) - 0.5) / 200.0);
+            expect (std::abs (hz - 1000.0) < 120.0, "spettrogramma: un tono a 1 kHz sta sulla riga di 1 kHz (" + juce::String (hz, 0) + " Hz)");
+        }
+        edProject = std::make_unique<fc::Project> (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "onda"; a->audio.setSize (1, 48000);
+        for (int i = 0; i < 48000; ++i) a->audio.setSample (0, i, 0.5f);
+        a->buildPeaks();
+        fc::Clip c; c.id = 88; c.asset = a; c.start = 1000; c.offset = 4000; c.length = 20000;
+        c.env = { { 4000, 0.0f }, { 24000, -6.0f } }; c.syncPoint = 10000;
+        edProject->edit().tracks[0].clips = { c };
+        const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("arotron-editor-test");
+        folder.deleteRecursively();
+        edProject->processRange (88, 5000, 10000, fc::Project::RangeOp::Gain, -6.0, folder, [this, next, folder] (juce::String err)
+        {
+            auto* cl = edProject->findClip (88);
+            const auto& au = cl->asset->audio;
+            expect (err.isEmpty() && cl->offset == 0 && cl->length == 20000 && cl->start == 1000, "editor: l'audio elaborato sostituisce il file, stessa posizione e durata " + err);
+            expect (std::abs (au.getSample (0, 4999) - 0.5f) < 1.0e-5f && std::abs (au.getSample (0, 7000) - 0.2506f) < 1.0e-3f && std::abs (au.getSample (0, 10000) - 0.5f) < 1.0e-5f, "editor: il guadagno agisce solo sulla selezione");
+            expect (cl->env.size() == 2 && cl->env[0].pos == 0 && cl->env[1].pos == 20000 && cl->syncPoint == 6000, "editor: inviluppo e punto di sincronia seguono il nuovo file");
+            edProject->undo();
+            expect (edProject->findClip (88)->offset == 4000 && edProject->findClip (88)->asset->file == juce::File(), "editor: l'undo ripristina il file originale");
+            edProject->processRange (88, 5000, 6000, fc::Project::RangeOp::Silence, 0.0, folder, [this, next, folder] (juce::String e2)
+            {
+                const auto& au2 = edProject->findClip (88)->asset->audio;
+                expect (e2.isEmpty() && au2.getMagnitude (0, 5000, 1000) == 0.0f && au2.getSample (0, 2000) == 0.5f, "editor: silenzio sulla selezione");
+                edProject->processRange (88, 0, 20000, fc::Project::RangeOp::FadeOut, 0.0, folder, [this, next, folder] (juce::String e3)
+                {
+                    const auto& au3 = edProject->findClip (88)->asset->audio;
+                    expect (e3.isEmpty() && au3.getSample (0, 0) > 0.49f && au3.getSample (0, 10000) < 0.26f && au3.getSample (0, 10000) > 0.24f && au3.getSample (0, 19999) < 0.01f, "editor: dissolvenza in calando sulla selezione");
+                    edProject->processRange (88, 3, 3, fc::Project::RangeOp::Gain, 0.0, folder, [this, next, folder] (juce::String e4)
+                    {
+                        expect (e4.isNotEmpty(), "editor: senza una selezione valida avvisa");
+                        folder.deleteRecursively();
+                        next();
+                    });
+                });
+            });
+        });
+    }
+
+    // inviluppo di guadagno del clip
+    void stepEnvelope()
+    {
+        {
+            const std::vector<fc::GainPoint> e { { 0, 0.0f }, { 1000, -20.0f }, { 2000, -20.0f }, { 3000, 0.0f } };
+            std::vector<float> g (3500);
+            fc::fillEnvGain (e, 0, 3500, g.data());
+            expect (std::abs (g[0] - 1.0f) < 1.0e-4f && std::abs (g[500] - 0.3162f) < 0.01f && std::abs (g[1500] - 0.1f) < 1.0e-3f && std::abs (g[2500] - 0.3162f) < 0.01f && std::abs (g[3400] - 1.0f) < 1.0e-4f,
+                    "inviluppo: rampa lineare in dB fra i punti, costante fuori");
+            std::vector<float> h (100);
+            fc::fillEnvGain (e, 700, 100, h.data());
+            float d = 0.0f;
+            for (int i = 0; i < 100; ++i) d = juce::jmax (d, std::abs (h[(size_t) i] - g[(size_t) (700 + i)]));
+            expect (d < 1.0e-4f, "inviluppo: lo stesso risultato calcolando a blocchi");
+        }
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "dc"; a->audio.setSize (2, 48000);
+        for (int i = 0; i < 48000; ++i) { a->audio.setSample (0, i, 0.5f); a->audio.setSample (1, i, 0.5f); }
+        a->buildPeaks();
+        fc::Clip c; c.id = 77; c.asset = a; c.length = 48000;
+        p.edit().tracks[0].clips = { c };
+        juce::AudioBuffer<float> plain (2, 2000), shaped (2, 2000);
+        fc::Mixer m1, m2;
+        m1.render (p.getSession(), 23000, plain, 0, 2000);
+        const int idx = p.addEnvPoint (77, 24000, -20.0f);
+        const auto* cl = p.findClip (77);
+        expect (idx == 1 && cl->env.size() == 3 && cl->env[0].db == 0.0f && cl->env[1].pos == 24000 && cl->env[2].pos == 48000, "inviluppo: il primo punto crea gli estremi a 0 dB");
+        m2.render (p.getSession(), 23000, shaped, 0, 2000);
+        const float r = shaped.getSample (0, 1000) / plain.getSample (0, 1000);
+        expect (std::abs (r - 0.1f) < 0.005f, "inviluppo: il punto a -20 dB abbassa il suono di 20 dB (rapporto " + juce::String (r, 3) + ")");
+        p.moveEnvPoint (77, 1, 30000, -6.0f);
+        expect (p.findClip (77)->env[1].pos == 30000 && std::abs (p.findClip (77)->env[1].db + 6.0f) < 1.0e-4f, "inviluppo: il punto si sposta");
+        p.undo();
+        expect (p.findClip (77)->env.empty(), "inviluppo: un solo undo annulla la creazione");
+        p.redo();
+        p.removeEnvPoint (77, 1);
+        expect (p.findClip (77)->env.empty(), "inviluppo: tolto l'unico punto spostato torna piatto e sparisce");
+    }
+
     void stepAdrBeeps()
     {
         const double r = 48000.0;
@@ -3604,7 +3856,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.19.3"; }
+    const juce::String getApplicationVersion() override { return "2.20.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

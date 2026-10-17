@@ -1815,6 +1815,55 @@ void Project::rangeDelete (bool ripple)
     changed();
 }
 
+juce::String Project::insertTime (int64_t pos, int64_t len)
+{
+    if (len <= 0 || pos < 0) return TRANS ("Posizione o durata non valide.");
+    for (auto& t : session.tracks) if (t.frozen != nullptr) return TRANS ("Ci sono tracce congelate: scongelale prima di cambiare il tempo.");
+    beginEdit();
+    selection.clear();
+    range = {};
+    auto mapPos = [=] (int64_t p) { return p >= pos ? p + len : p; };
+    for (auto& t : session.tracks)
+    {
+        splitTrackAt (t, pos, nextClipId);
+        for (auto& c : t.clips) if (c.start >= pos) c.start += len;
+        for (auto* lane : { &t.volAuto, &t.panAuto, &t.sendAAuto, &t.sendBAuto }) for (auto& p : *lane) p.pos = mapPos (p.pos);
+    }
+    for (auto& c : session.cues) { c.inPos = mapPos (c.inPos); c.outPos = mapPos (c.outPos); }
+    for (auto& m : session.markers) { m.pos = mapPos (m.pos); if (m.end >= 0) m.end = mapPos (m.end); }
+    if (exportIn >= 0) { exportIn = mapPos (exportIn); exportOut = mapPos (exportOut); }
+    changed();
+    return {};
+}
+
+juce::String Project::removeTime (int64_t a, int64_t b)
+{
+    if (b <= a || a < 0) return TRANS ("Posizione o durata non valide.");
+    for (auto& t : session.tracks) if (t.frozen != nullptr) return TRANS ("Ci sono tracce congelate: scongelale prima di cambiare il tempo.");
+    beginEdit();
+    selection.clear();
+    range = {};
+    const int64_t d = b - a;
+    auto mapPos = [=] (int64_t p) { return p < a ? p : (p >= b ? p - d : a); };
+    for (auto& t : session.tracks)
+    {
+        splitTrackAt (t, a, nextClipId);
+        splitTrackAt (t, b, nextClipId);
+        t.clips.erase (std::remove_if (t.clips.begin(), t.clips.end(), [a, b] (const Clip& c) { return c.start >= a && c.end() <= b; }), t.clips.end());
+        for (auto& c : t.clips) if (c.start >= b) c.start -= d;
+        for (auto* lane : { &t.volAuto, &t.panAuto, &t.sendAAuto, &t.sendBAuto })
+        {
+            lane->erase (std::remove_if (lane->begin(), lane->end(), [a, b] (const AutoPoint& p) { return p.pos >= a && p.pos < b; }), lane->end());
+            for (auto& p : *lane) p.pos = mapPos (p.pos);
+        }
+    }
+    for (auto& c : session.cues) { c.inPos = mapPos (c.inPos); c.outPos = mapPos (c.outPos); }
+    for (auto& m : session.markers) { m.pos = mapPos (m.pos); if (m.end >= 0) m.end = mapPos (m.end); }
+    if (exportIn >= 0) { exportIn = mapPos (exportIn); exportOut = mapPos (exportOut); }
+    changed();
+    return {};
+}
+
 void Project::rangeTrim()
 {
     if (! range.valid()) return;
@@ -2269,12 +2318,275 @@ void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce:
             auto* cl = findClip (id);
             if (a == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String ("Il clip non c'e' piu'.")); return; }
             beginEdit();
+            if (! cl->env.empty())   // l'inviluppo segue il materiale allungato
+            {
+                std::vector<GainPoint> ne { { 0, envDbAt (cl->env, cl->offset) } };
+                for (auto& gp : cl->env)
+                    if (gp.pos > cl->offset && gp.pos < cl->offset + len) ne.push_back ({ (int64_t) std::llround ((double) (gp.pos - cl->offset) * ratio), gp.db });
+                ne.push_back ({ a->length(), envDbAt (cl->env, cl->offset + len) });
+                cl->env = std::move (ne);
+            }
+            cl->syncPoint = cl->hasSync() ? (int64_t) std::llround ((double) (cl->syncPoint - cl->offset) * ratio) : -1;
             cl->asset = a;
             if (newStart >= 0) cl->start = newStart;   // stretch dal bordo sinistro: anche l'inizio si sposta
             cl->offset = 0;
             cl->length = a->length();
             cl->fadeIn = (int64_t) std::llround ((double) cl->fadeIn * ratio);
             cl->fadeOut = (int64_t) std::llround ((double) cl->fadeOut * ratio);
+            changed();
+            if (done) done ({});
+        };
+    });
+}
+
+int Project::addEnvPoint (int64_t clipId, int64_t timelinePos, float db)
+{
+    int ti = -1;
+    auto* c = findClip (clipId, &ti);
+    if (c == nullptr || session.tracks[(size_t) ti].editLocked() || c->asset == nullptr) return -1;
+    beginEdit();
+    c = findClip (clipId);
+    const int64_t p = juce::jlimit (c->offset, c->offset + c->length, c->offset + (timelinePos - c->start));
+    if (c->env.empty()) c->env = { { c->offset, 0.0f }, { c->offset + c->length, 0.0f } };   // il primo punto crea l'inviluppo piatto a 0 dB agli estremi
+    GainPoint gp { p, juce::jlimit (-60.0f, 12.0f, db) };
+    auto it = std::lower_bound (c->env.begin(), c->env.end(), gp, [] (const GainPoint& a, const GainPoint& b) { return a.pos < b.pos; });
+    if (it != c->env.end() && it->pos == gp.pos) { it->db = gp.db; changed(); return (int) (it - c->env.begin()); }
+    it = c->env.insert (it, gp);
+    changed();
+    return (int) (it - c->env.begin());
+}
+
+void Project::moveEnvPoint (int64_t clipId, int index, int64_t timelinePos, float db)
+{
+    auto* c = findClip (clipId);
+    if (c == nullptr || index < 0 || index >= (int) c->env.size()) return;
+    const int64_t lo = index > 0 ? c->env[(size_t) index - 1].pos + 1 : c->offset;
+    const int64_t hi = index + 1 < (int) c->env.size() ? c->env[(size_t) index + 1].pos - 1 : c->offset + c->length;
+    c->env[(size_t) index].pos = juce::jlimit (lo, juce::jmax (lo, hi), c->offset + (timelinePos - c->start));
+    c->env[(size_t) index].db = juce::jlimit (-60.0f, 12.0f, db);
+    changed();
+}
+
+void Project::removeEnvPoint (int64_t clipId, int index)
+{
+    int ti = -1;
+    auto* c = findClip (clipId, &ti);
+    if (c == nullptr || session.tracks[(size_t) ti].editLocked() || index < 0 || index >= (int) c->env.size()) return;
+    beginEdit();
+    c = findClip (clipId);
+    c->env.erase (c->env.begin() + index);
+    if (std::all_of (c->env.begin(), c->env.end(), [] (const GainPoint& g) { return std::abs (g.db) < 0.05f; })) c->env.clear();   // tutto a 0 dB: e' come non averlo
+    changed();
+}
+
+void Project::clearEnvelope (int64_t clipId)
+{
+    int ti = -1;
+    auto* c = findClip (clipId, &ti);
+    if (c == nullptr || c->env.empty() || session.tracks[(size_t) ti].editLocked()) return;
+    beginEdit();
+    findClip (clipId)->env.clear();
+    changed();
+}
+
+bool Project::setSyncPoint (int64_t clipId, int64_t pos)
+{
+    int ti = -1;
+    auto* c = findClip (clipId, &ti);
+    if (c == nullptr || session.tracks[(size_t) ti].editLocked()) return false;
+    if (pos >= 0 && (pos < c->start || pos >= c->end())) return false;
+    beginEdit();
+    c = findClip (clipId);
+    c->syncPoint = pos < 0 ? -1 : c->offset + (pos - c->start);
+    changed();
+    return true;
+}
+
+bool Project::moveSyncTo (int64_t clipId, int64_t pos)
+{
+    int ti = -1;
+    const auto* c = findClip (clipId, &ti);
+    if (c == nullptr || ! c->hasSync() || session.tracks[(size_t) ti].editLocked()) return false;
+    const int64_t ns = c->start + (pos - c->syncTime());
+    if (ns < 0) return false;
+    beginEdit();
+    findClip (clipId)->start = ns;
+    changed();
+    return true;
+}
+
+int Project::sliceClip (int64_t id, std::vector<int64_t> positions)
+{
+    int ti = -1;
+    auto* c0 = findClip (id, &ti);
+    if (c0 == nullptr || session.tracks[(size_t) ti].editLocked()) return 0;
+    std::sort (positions.begin(), positions.end());
+    std::vector<int64_t> cuts;
+    for (auto p : positions)
+    {
+        p = zeroCrossNear (*c0, p);
+        if (p > c0->start + 16 && p < c0->end() - 16 && (cuts.empty() || p > cuts.back() + 16)) cuts.push_back (p);
+    }
+    if (cuts.empty()) return 0;
+    beginEdit();
+    auto& clips = session.tracks[(size_t) ti].clips;
+    const size_t idx = (size_t) (findClip (id) - clips.data());
+    const Clip orig = clips[idx];
+    const int64_t af = autoFadeSamples();
+    std::vector<Clip> pieces;
+    int64_t s0 = orig.start;
+    for (size_t k = 0; k <= cuts.size(); ++k)
+    {
+        const int64_t s1 = k < cuts.size() ? cuts[k] : orig.end();
+        Clip piece = orig;
+        piece.id = k == 0 ? orig.id : nextClipId++;
+        piece.start = s0;
+        piece.offset = orig.offset + (s0 - orig.start);
+        piece.length = s1 - s0;
+        piece.fadeIn = k == 0 ? juce::jmin (orig.fadeIn, piece.length) : (af > 0 ? juce::jmin (af, piece.length / 2) : 0);
+        piece.fadeOut = k == cuts.size() ? juce::jmin (orig.fadeOut, piece.length) : (af > 0 ? juce::jmin (af, piece.length / 2) : 0);
+        pieces.push_back (piece);
+        s0 = s1;
+    }
+    clips[idx] = pieces.front();
+    clips.insert (clips.end(), pieces.begin() + 1, pieces.end());
+    selection.clear();
+    for (auto& p : pieces) selection.insert (p.id);
+    changed();
+    return (int) cuts.size();
+}
+
+void Project::processRange (int64_t id, int64_t from, int64_t to, RangeOp op, double param, const juce::File& folder, std::function<void (juce::String)> done)
+{
+    int sti = -1;
+    auto* c = findClip (id, &sti);
+    if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done ("Clip non valido."); return; }
+    if (session.tracks[(size_t) sti].editLocked()) { if (done) done (TRANS ("La traccia e' bloccata: sbloccala per modificare i suoi clip.")); return; }
+    if (c->asset->offline) { if (done) done (TRANS ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media.")); return; }
+    from = juce::jlimit<int64_t> (0, c->length, from);
+    to = juce::jlimit<int64_t> (0, c->length, to);
+    if (to - from < 2) { if (done) done (TRANS ("Seleziona prima una porzione di audio.")); return; }
+    const auto src = c->asset;
+    const int off = (int) c->offset, len = (int) c->length, a = (int) from, b = (int) to;
+    const double rate = sampleRate;
+    auto* fm = &formats;
+    const auto base = juce::File::createLegalFileName (src->name + "_ed");
+
+    runAsync ([=, this]() -> std::function<void()>
+    {
+        const int nch = src->audio.getNumChannels();
+        juce::AudioBuffer<float> buf (nch, len);
+        for (int ch = 0; ch < nch; ++ch) buf.copyFrom (ch, 0, src->audio, ch, off, len);
+        const int n = b - a;
+        juce::String err;
+        float gain = 1.0f;
+        if (op == RangeOp::Gain) gain = juce::Decibels::decibelsToGain ((float) param);
+        if (op == RangeOp::Normalize)
+        {
+            float peak = 0.0f;
+            for (int ch = 0; ch < nch; ++ch) peak = juce::jmax (peak, buf.getMagnitude (ch, a, n));
+            if (peak < 1.0e-5f) err = TRANS ("La selezione e' silenzio: non c'e' nulla da normalizzare.");
+            else gain = juce::jmin (100.0f, juce::Decibels::decibelsToGain ((float) param) / peak);   // param = picco di arrivo in dBFS
+        }
+        for (int ch = 0; ch < nch && err.isEmpty(); ++ch)
+        {
+            float* d = buf.getWritePointer (ch) + a;
+            switch (op)
+            {
+                case RangeOp::Gain: case RangeOp::Normalize: juce::FloatVectorOperations::multiply (d, gain, n); break;
+                case RangeOp::FadeIn:  for (int i = 0; i < n; ++i) d[i] *= (float) i / (float) n; break;
+                case RangeOp::FadeOut: for (int i = 0; i < n; ++i) d[i] *= 1.0f - (float) i / (float) n; break;
+                case RangeOp::Silence: juce::FloatVectorOperations::clear (d, n); break;
+                case RangeOp::Reverse: std::reverse (d, d + n); break;
+                case RangeOp::Invert:  juce::FloatVectorOperations::negate (d, d, n); break;
+                case RangeOp::RemoveDc:
+                {
+                    double mean = 0.0;
+                    for (int i = 0; i < n; ++i) mean += d[i];
+                    juce::FloatVectorOperations::add (d, (float) (-mean / n), n);
+                    break;
+                }
+            }
+        }
+        AssetPtr asset;
+        if (err.isEmpty())
+        {
+            folder.createDirectory();
+            const auto file = folder.getNonexistentChildFile (base, ".wav", false);
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w;
+            if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) nch, 32, {}, 0));
+            if (w == nullptr) err = "Impossibile scrivere " + file.getFullPathName();
+            else { os.release(); w->writeFromAudioSampleBuffer (buf, 0, buf.getNumSamples()); w.reset(); asset = loadAsset (*fm, file, rate, err); }
+        }
+
+        return [=, this]
+        {
+            auto* cl = findClip (id);
+            if (asset == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String ("Il clip non c'e' piu'.")); return; }
+            beginEdit();
+            for (auto& gp : cl->env) gp.pos -= cl->offset;      // il nuovo file comincia dove comincia il clip
+            if (cl->syncPoint >= 0) cl->syncPoint -= cl->offset;
+            cl->asset = asset;
+            cl->offset = 0;
+            changed();
+            if (done) done ({});
+        };
+    });
+}
+
+void Project::warpClip (int64_t id, std::vector<warp::Anchor> anchors, const juce::File& folder, std::function<void (juce::String)> done, int64_t newStart)
+{
+    int sti = -1;
+    auto* c = findClip (id, &sti);
+    if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done ("Clip non valido."); return; }
+    if (session.tracks[(size_t) sti].editLocked()) { if (done) done (TRANS ("La traccia e' bloccata: sbloccala per modificare i suoi clip.")); return; }
+    if (c->asset->offline) { if (done) done (TRANS ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media.")); return; }
+    const auto src = c->asset;
+    const int off = (int) c->offset, len = (int) c->length;
+    const double rate = sampleRate;
+    anchors = warp::normalise (std::move (anchors), len, rate);
+    if (anchors.empty()) { if (done) done (TRANS ("Nessun punto di ancoraggio spostato.")); return; }
+    auto* fm = &formats;
+    const auto base = juce::File::createLegalFileName (src->name + "_warp");
+
+    runAsync ([=, this]() -> std::function<void()>
+    {
+        auto warped = warp::render (src->audio, off, len, anchors, rate);
+        folder.createDirectory();
+        const auto file = folder.getNonexistentChildFile (base, ".wav", false);
+        juce::String err;
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::FileOutputStream> os (file.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w;
+            if (os != nullptr) w.reset (wav.createWriterFor (os.get(), rate, (unsigned) warped.getNumChannels(), 32, {}, 0));
+            if (w == nullptr) err = "Impossibile scrivere " + file.getFullPathName();
+            else { os.release(); w->writeFromAudioSampleBuffer (warped, 0, warped.getNumSamples()); }
+        }
+        AssetPtr a = err.isEmpty() ? loadAsset (*fm, file, rate, err) : nullptr;
+
+        return [=, this]
+        {
+            auto* cl = findClip (id);
+            if (a == nullptr || cl == nullptr) { if (done) done (err.isNotEmpty() ? err : juce::String ("Il clip non c'e' piu'.")); return; }
+            beginEdit();
+            cl->syncPoint = cl->hasSync() ? warp::mapPosition (anchors, len, cl->syncPoint - cl->offset) : -1;
+            if (! cl->env.empty())
+            {
+                std::vector<GainPoint> ne { { 0, envDbAt (cl->env, cl->offset) } };
+                for (auto& gp : cl->env)
+                    if (gp.pos > cl->offset && gp.pos < cl->offset + len) ne.push_back ({ warp::mapPosition (anchors, len, gp.pos - cl->offset), gp.db });
+                ne.push_back ({ a->length(), envDbAt (cl->env, cl->offset + len) });
+                cl->env = std::move (ne);
+            }
+            cl->asset = a;
+            if (newStart >= 0) cl->start = newStart;
+            cl->offset = 0;
+            cl->length = a->length();
+            cl->fadeIn = juce::jmin (cl->fadeIn, cl->length);
+            cl->fadeOut = juce::jmin (cl->fadeOut, cl->length);
             changed();
             if (done) done ({});
         };
@@ -2337,9 +2649,12 @@ void Project::joinClips (const std::vector<int64_t>& ids, const juce::File& fold
                 {
                     const float* src = c.asset->audio.getReadPointer (juce::jmin (ch, nch - 1)) + c.offset;
                     float* dst = out.getWritePointer (ch) + dst0;
+                    std::vector<float> envG;
+                    if (! c.env.empty()) { envG.resize ((size_t) cnt); fillEnvGain (c.env, c.offset, (int) cnt, envG.data()); }
                     for (int64_t i = 0; i < cnt; ++i)
                     {
                         float g = gain;
+                        if (! envG.empty()) g *= envG[(size_t) i];
                         if (c.fadeIn > 0 && i < c.fadeIn) g *= (float) i / (float) c.fadeIn;
                         const int64_t toEnd = c.length - i;
                         if (c.fadeOut > 0 && toEnd < c.fadeOut) g *= (float) toEnd / (float) c.fadeOut;
@@ -2556,6 +2871,13 @@ juce::var Project::toVar() const
             co->setProperty ("fadeOut", (juce::int64) c.fadeOut);
             if (c.muted) co->setProperty ("muted", true);
             if (c.invert) co->setProperty ("invert", true);
+            if (c.syncPoint >= 0) co->setProperty ("sync", (juce::int64) c.syncPoint);
+            if (! c.env.empty())
+            {
+                juce::Array<juce::var> pts;
+                for (auto& gp : c.env) { juce::Array<juce::var> one; one.add ((juce::int64) gp.pos); one.add (gp.db); pts.add (juce::var (one)); }
+                co->setProperty ("env", pts);
+            }
             if (c.xShape != 0) co->setProperty ("xShape", c.xShape);
             if (c.cueId != 0) { co->setProperty ("cueId", c.cueId); co->setProperty ("takeNo", c.takeNo); if (c.rating > 0) co->setProperty ("rating", c.rating); if (c.rejected) co->setProperty ("rejected", true); }
             clips.add (juce::var (co));
@@ -3010,6 +3332,11 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                             c.rating = juce::jlimit (0, 5, (int) cv.getProperty ("rating", 0));
                             c.rejected = (bool) cv.getProperty ("rejected", false);
                             c.invert = (bool) cv.getProperty ("invert", false);
+                            if (cv.hasProperty ("sync")) c.syncPoint = sc (cv.getProperty ("sync", 0));
+                            if (auto* pts = cv.getProperty ("env", {}).getArray())
+                                for (auto& pv : *pts)
+                                    if (auto* one = pv.getArray(); one != nullptr && one->size() == 2)
+                                        c.env.push_back ({ sc ((*one)[0]), (float) (double) (*one)[1] });
                             c.xShape = juce::jlimit (0, 2, (int) cv.getProperty ("xShape", 0));
                             if (c.asset->offline) c.asset->offlineLength = juce::jmax (c.asset->offlineLength, c.offset + c.length);   // la lunghezza minima che i clip richiedono
                             c.offset = juce::jlimit<int64_t> (0, c.asset->length(), c.offset);

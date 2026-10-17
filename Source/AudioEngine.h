@@ -113,7 +113,10 @@ public:
     void publish (std::shared_ptr<const Session> s);
 
     // trasporto (qualunque thread)
-    void play() { playing = true; }
+    void play() { scrubLeft = 0; playing = true; }
+    /** Scrub: ascolta un breve frammento alla posizione indicata (ad ogni spostamento ne parte uno nuovo, come un nastro mosso a mano). */
+    void scrub (int64_t p) { pendingSeek = juce::jmax<int64_t> (0, p); scrubLeft = (int) (0.09 * sampleRate.load()); playing = true; }
+    void endScrub() noexcept {}   // l'ultimo frammento finisce da solo
     void stop() { playing = false; }
     bool isPlaying() const noexcept { return playing.load(); }
     void setPosition (int64_t p) { pendingSeek = juce::jmax<int64_t> (0, p); }
@@ -252,6 +255,7 @@ private:
     float playGain = 0.0f;
 
     std::atomic<bool> playing { false };
+    std::atomic<int> scrubLeft { 0 };   // campioni che restano del frammento di scrub: a zero il trasporto si ferma
     std::atomic<int64_t> position { 0 }, pendingSeek { -1 };
     std::atomic<bool> loopOn { false };
     std::atomic<int64_t> loopStart { 0 }, loopEnd { 0 };

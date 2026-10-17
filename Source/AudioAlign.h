@@ -38,4 +38,18 @@ struct Item
 /** Allinea i clip alla traccia Guida (le tracce con ruolo Guida, non in mute). Sposta i clip in un solo passo di undo; se adaptDuration
     calcola anche il rapporto per far coincidere inizio e fine del parlato (lo stretch lo applica chi chiama: e' asincrono). */
 std::vector<Item> alignToGuide (Project&, const std::vector<int64_t>& clipIds, double maxShiftSec, double minConfidence, bool adaptDuration);
+
+struct PhraseItem
+{
+    int64_t clipId = 0;
+    int phrases = 0, matched = 0;              // frasi del take e frasi agganciate a quelle della guida
+    int64_t newStart = -1;                     // nuova posizione del clip (spostamento globale)
+    std::vector<warp::Anchor> anchors;         // da dare a Project::warpClip
+    double shiftMs = 0.0, confidence = 0.0;
+    juce::String note;
+};
+
+/** Allineamento fine: oltre allo spostamento globale, ogni frase del take (zona con parlato) viene portata sulla frase corrispondente della guida
+    con un Time Warp. Non modifica il progetto: i punti vanno applicati con Project::warpClip. */
+std::vector<PhraseItem> alignPhrases (Project&, const std::vector<int64_t>& clipIds, double maxShiftSec, double minConfidence);
 } // namespace fc::align
