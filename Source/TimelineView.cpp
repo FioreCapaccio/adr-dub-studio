@@ -26,13 +26,50 @@ TimelineView::~TimelineView()
 }
 
 //==============================================================================
+const TimelineView::LaneInfo& TimelineView::lanesOf (int i) const
+{
+    static const LaneInfo single;
+    const auto& tracks = project.getSession().tracks;
+    if (i < 0 || i >= (int) tracks.size() || ! tracks[(size_t) i].showLanes) return single;
+    const auto& t = tracks[(size_t) i];
+    size_t sig = t.clips.size();
+    for (auto& c : t.clips) sig = sig * 1000003u + (size_t) c.start + 31u * (size_t) c.length + (size_t) c.id;
+    auto& li = laneCache[t.id];
+    if (li.sig == sig && sig != 0) return li;
+    li = {};
+    li.sig = sig;
+    std::vector<const Clip*> order;
+    for (auto& c : t.clips) order.push_back (&c);
+    std::stable_sort (order.begin(), order.end(), [] (const Clip* a, const Clip* b) { return a->start < b->start; });
+    std::vector<int64_t> laneEnd;
+    for (auto* c : order)
+    {
+        size_t l = 0;
+        while (l < laneEnd.size() && laneEnd[l] > c->start) ++l;   // la corsia e' ancora occupata
+        if (l == laneEnd.size()) laneEnd.push_back (0);
+        laneEnd[l] = c->end();
+        li.index[c->id] = (int) l;
+    }
+    li.count = juce::jmax (1, (int) laneEnd.size());
+    return li;
+}
+
+int TimelineView::laneHeight (int i) const
+{
+    const auto& t = project.getSession().tracks;
+    if (i < 0 || i >= (int) t.size()) return 96;
+    return juce::jlimit (44, 140, juce::jlimit (minTrackH, maxTrackH, t[(size_t) i].live->height.load()));
+}
+
 int TimelineView::heightOf (int i) const
 {
     const auto& t = project.getSession().tracks;
     if (i < 0 || i >= (int) t.size()) return 96;
     if (t[(size_t) i].hidden) return 0;
     if (const auto* g = project.findGroup (t[(size_t) i].groupId); g != nullptr && g->collapsed) return 0;
-    return juce::jlimit (minTrackH, maxTrackH, t[(size_t) i].live->height.load());
+    const int base = juce::jlimit (minTrackH, maxTrackH, t[(size_t) i].live->height.load());
+    if (t[(size_t) i].showLanes) return juce::jmax (base, laneHeight (i) * lanesOf (i).count);
+    return base;
 }
 
 int TimelineView::bandOf (int i) const
@@ -80,6 +117,14 @@ void TimelineView::fitTrackHeights()
 
 juce::Rectangle<float> TimelineView::clipRect (int ti, const Clip& c) const
 {
+    const auto& tracks = project.getSession().tracks;
+    if (ti >= 0 && ti < (int) tracks.size() && tracks[(size_t) ti].showLanes)
+    {
+        const auto& li = lanesOf (ti);
+        const auto it = li.index.find (c.id);
+        const int lane = it != li.index.end() ? it->second : 0, lh = laneHeight (ti);
+        return { sampleToX (c.start), (float) (laneTop (ti) + lane * lh) + 4.0f, (float) ((double) c.length / spp), (float) lh - 8.0f };
+    }
     return { sampleToX (c.start), (float) laneTop (ti) + 4.0f,
              (float) ((double) c.length / spp), (float) heightOf (ti) - 8.0f };
 }
@@ -461,7 +506,14 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
 
     g.setColour (text);
     g.setFont (font (13.0f, true));
-    g.drawText (t.name, 42, y + 9, headerW - knobW - 42 - 132, 20, juce::Justification::centredLeft, true);
+    {
+        int right = headerW - knobW - 8;   // il nome arriva fino al primo pulsante visibile
+        if (shows (CtlSolo)) right = lockRect (ti).getX() > 0 ? juce::jmin (right, soloRect (ti).getX() - 4) : right;
+        if (shows (CtlMute)) right = juce::jmin (right, muteRect (ti).getX() - 4);
+        if (shows (CtlRec)) right = juce::jmin (right, armRect (ti).getX() - 4);
+        if (shows (CtlLock)) right = juce::jmin (right, lockRect (ti).getX() - 4);
+        g.drawText (t.name, 42, y + 9, juce::jmax (30, right - 42), 20, juce::Justification::centredLeft, true);
+    }
 
     auto drawBtn = [&] (juce::Rectangle<int> b, const char* label, bool on, juce::Colour onCol)
     {
@@ -470,14 +522,18 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         g.setFont (font (11.5f, true));
         g.drawText (label, body.toNearestInt(), juce::Justification::centred);
     };
-    drawBtn (lockRect (ti), "L", t.locked, juce::Colour (0xffffc94d));
-    drawBtn (armRect (ti), "R", armed, accent);
-    drawBtn (muteRect (ti), "M", t.live->mute.load(), muteCol);
-    drawBtn (soloRect (ti), "S", t.live->solo.load(), soloCol);
+    if (shows (CtlLock))
+    {
+        if (t.frozen != nullptr) drawBtn (lockRect (ti), "F", true, juce::Colour (0xff4ad0ff));   // congelata: l'audio e' quello gia' elaborato
+        else drawBtn (lockRect (ti), "L", t.locked, juce::Colour (0xffffc94d));
+    }
+    if (shows (CtlRec)) drawBtn (armRect (ti), "R", armed, accent);
+    if (shows (CtlMute)) drawBtn (muteRect (ti), "M", t.live->mute.load(), muteCol);
+    if (shows (CtlSolo)) drawBtn (soloRect (ti), "S", t.live->solo.load(), soloCol);
 
-    drawHeaderMeter (g, ti);
+    if (shows (CtlMeter)) drawHeaderMeter (g, ti);
 
-    if (h >= 52)
+    if (h >= 52 && shows (CtlTrim))
     {
         // manopola graduata del guadagno in ingresso (-24..+24 dB): trascina in alto/in basso, Maiusc = fine, doppio clic = 0 dB
         const auto kr = trimRect (ti);
@@ -514,6 +570,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
     if (h >= 66)
     {
         // parametro di automazione mostrato sulla traccia: clic per passare a VOL / PAN / SEND A / SEND B
+        if (shows (CtlAutomation))
         {
             const auto pr = paramRect (ti).toFloat();
             const int mode = t.live->autoMode.load();
@@ -527,6 +584,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         }
 
         // modalita' di automazione: spenta / lettura / scrittura
+        if (shows (CtlAutomation))
         {
             const int mode = t.live->autoMode.load();
             const auto ar = autoRect (ti).toFloat();
@@ -541,6 +599,8 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         }
 
         static const char* inputNames[] = { "IN 1", "IN 2", "IN 1+2" };
+        if (shows (CtlInput))
+        {
         const auto ir = inputRect (ti).toFloat();
         g.setColour (armed ? accent.withAlpha (0.22f) : raised);
         g.fillRoundedRectangle (ir, 9.0f);
@@ -549,6 +609,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         g.setColour (armed ? text : dim);
         g.setFont (font (10.5f, true));
         g.drawText (inputNames[juce::jlimit (0, 2, t.live->inputMode.load())], ir.toNearestInt(), juce::Justification::centred);
+        }
     }
 
     // maniglia di ridimensionamento
@@ -868,9 +929,9 @@ void TimelineView::paint (juce::Graphics& g)
             if (h == 0 || y + h < lanes.getY() || y > lanes.getBottom()) continue;
             g.setColour (i % 2 == 0 ? lane : laneAlt);
             g.fillRect (lanes.getX(), y, lanes.getWidth(), h);
-            if (s.tracks[(size_t) i].locked)
+            if (s.tracks[(size_t) i].editLocked())
             {
-                g.setColour (juce::Colour (0xffffc94d).withAlpha (0.045f));
+                g.setColour ((s.tracks[(size_t) i].frozen != nullptr ? juce::Colour (0xff4ad0ff) : juce::Colour (0xffffc94d)).withAlpha (0.045f));
                 g.fillRect (lanes.getX(), y, lanes.getWidth(), h);
             }
             if (project.isTrackSelected (s.tracks[(size_t) i].id))
@@ -878,6 +939,12 @@ void TimelineView::paint (juce::Graphics& g)
                 g.setColour (juce::Colours::white.withAlpha (0.022f));
                 g.fillRect (lanes.getX(), y, lanes.getWidth(), h);
             }
+            if (s.tracks[(size_t) i].showLanes)
+                for (int k = 1; k < lanesOf (i).count; ++k)
+                {
+                    g.setColour (border.withAlpha (0.7f));
+                    g.drawHorizontalLine (y + k * laneHeight (i), (float) lanes.getX(), (float) lanes.getRight());
+                }
             g.setColour (border);
             g.drawHorizontalLine (y + h - 1, (float) lanes.getX(), (float) lanes.getRight());
         }
@@ -907,7 +974,7 @@ void TimelineView::paint (juce::Graphics& g)
         for (int i = 0; i < nTracks; ++i)
         {
             const auto& cl = s.tracks[(size_t) i].clips;
-            if (heightOf (i) == 0) continue;
+            if (heightOf (i) == 0 || s.tracks[(size_t) i].showLanes) continue;   // con le corsie i clip sovrapposti sono su righe diverse
             for (size_t a = 0; a < cl.size(); ++a)
                 for (size_t b = 0; b < cl.size(); ++b)
                 {
@@ -1032,6 +1099,31 @@ void TimelineView::paint (juce::Graphics& g)
                             juce::Justification::centredLeft, true);
             }
         }
+
+        // strumento Range: intervallo di tempo sulle tracce scelte
+        if (project.range.valid())
+        {
+            const auto& rg = project.range;
+            const float rx0 = juce::jmax ((float) lanes.getX(), sampleToX (rg.a)), rx1 = juce::jmin ((float) lanes.getRight(), sampleToX (rg.b));
+            if (rx1 > rx0)
+                for (int i = rg.first; i <= juce::jmin (rg.last, nTracks - 1); ++i)
+                {
+                    if (heightOf (i) == 0) continue;
+                    g.setColour (blue.withAlpha (0.20f));
+                    g.fillRect (rx0, (float) laneTop (i), rx1 - rx0, (float) heightOf (i));
+                    g.setColour (blue.withAlpha (0.9f));
+                    g.drawRect (rx0, (float) laneTop (i), rx1 - rx0, (float) heightOf (i), 1.0f);
+                }
+        }
+        if (drag == Drag::Comp && compB > compA)
+            if (const int ci = project.trackIndexForId (compTrackId); ci >= 0)
+            {
+                const float cx0 = sampleToX (compA), cx1 = sampleToX (compB);
+                g.setColour (green.withAlpha (0.25f));
+                g.fillRect (cx0, (float) laneTop (ci), cx1 - cx0, (float) heightOf (ci));
+                g.setColour (green);
+                g.drawRect (cx0, (float) laneTop (ci), cx1 - cx0, (float) heightOf (ci), 1.5f);
+            }
 
         // linee dei marker
         for (auto& m : s.markers)
@@ -1252,14 +1344,14 @@ TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
     if (p.x < headerW)
     {
         h.type = HitType::Header;
-        if (lockRect (ti).contains (p)) h.type = HitType::HeaderLock;
-        else if (armRect (ti).contains (p)) h.type = HitType::HeaderArm;
-        else if (heightOf (ti) >= 66 && inputRect (ti).contains (p)) h.type = HitType::HeaderInput;
-        else if (heightOf (ti) >= 66 && autoRect (ti).contains (p)) h.type = HitType::HeaderAuto;
-        else if (heightOf (ti) >= 66 && paramRect (ti).contains (p)) h.type = HitType::HeaderAutoParam;
-        else if (heightOf (ti) >= 52 && trimRect (ti).contains (p)) h.type = HitType::HeaderTrim;
-        else if (muteRect (ti).contains (p)) h.type = HitType::HeaderMute;
-        else if (soloRect (ti).contains (p)) h.type = HitType::HeaderSolo;
+        if (shows (CtlLock) && lockRect (ti).contains (p)) h.type = HitType::HeaderLock;
+        else if (shows (CtlRec) && armRect (ti).contains (p)) h.type = HitType::HeaderArm;
+        else if (shows (CtlInput) && heightOf (ti) >= 66 && inputRect (ti).contains (p)) h.type = HitType::HeaderInput;
+        else if (shows (CtlAutomation) && heightOf (ti) >= 66 && autoRect (ti).contains (p)) h.type = HitType::HeaderAuto;
+        else if (shows (CtlAutomation) && heightOf (ti) >= 66 && paramRect (ti).contains (p)) h.type = HitType::HeaderAutoParam;
+        else if (shows (CtlTrim) && heightOf (ti) >= 52 && trimRect (ti).contains (p)) h.type = HitType::HeaderTrim;
+        else if (shows (CtlMute) && muteRect (ti).contains (p)) h.type = HitType::HeaderMute;
+        else if (shows (CtlSolo) && soloRect (ti).contains (p)) h.type = HitType::HeaderSolo;
         else h.type = HitType::HeaderGrip;   // tutta l'intestazione si puo' trascinare per spostare la traccia
         return h;
     }
@@ -1427,6 +1519,45 @@ bool TimelineView::handleToolMouseDown (const juce::MouseEvent& e, const Hit& hi
             return true;
         }
 
+        case Tool::Mute:
+            if (! onClip) return false;
+            project.selection = { hit.clip };
+            project.toggleClipMute (hit.clip);
+            return true;
+
+        case Tool::Erase:
+            if (! onClip) return false;
+            project.eraseClip (hit.clip);
+            return true;
+
+        case Tool::Range:
+        {
+            if (! inLanes) return false;
+            buildSnapPoints (false);
+            int64_t pos = juce::jmax<int64_t> (0, xToSample (e.x)), snapped = 0;
+            if (snapTo (pos, snapped)) pos = snapped;
+            rangeAnchor = pos;
+            rangeAnchorRow = juce::jlimit (0, juce::jmax (0, (int) project.getSession().tracks.size() - 1), trackIndexAtY (e.y));
+            project.range = { pos, pos, rangeAnchorRow, rangeAnchorRow };
+            drag = Drag::Range;
+            repaint();
+            return true;
+        }
+
+        case Tool::Comp:
+        {
+            if (! onClip) return false;
+            if (project.trackLocked (hit.track)) return true;
+            if (const auto* tr = project.findTrack (hit.track); tr != nullptr && ! tr->showLanes) { project.setTracksLanes ({ hit.track }, true); updateScrollBars(); repaint(); return true; }   // il primo clic mostra le corsie
+            buildSnapPoints (false);
+            int64_t pos = juce::jmax<int64_t> (0, xToSample (e.x)), snapped = 0;
+            if (snapTo (pos, snapped)) pos = snapped;
+            compTrackId = hit.track; compClipId = hit.clip; compAnchor = compA = compB = pos;
+            drag = Drag::Comp;
+            repaint();
+            return true;
+        }
+
         case Tool::Hand:
             if (! inLanes && hit.type != HitType::Video) return false;
             drag = Drag::Pan;
@@ -1544,7 +1675,8 @@ void TimelineView::mouseMove (const juce::MouseEvent& e)
     if (hit.type == HitType::HeaderTrim) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
     if (hit.type == HitType::HeaderGrip) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); return; }
 
-    if (tool == Tool::Razor && inLanes) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
+    if ((tool == Tool::Razor || tool == Tool::Range || tool == Tool::Comp) && inLanes) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
+    if ((tool == Tool::Mute || tool == Tool::Erase) && onClip) { setMouseCursor (juce::MouseCursor::PointingHandCursor); return; }
     if ((tool == Tool::Slip || tool == Tool::Stretch) && onClip) { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
     if (tool == Tool::Hand && (inLanes || hit.type == HitType::Video)) { setMouseCursor (juce::MouseCursor::PointingHandCursor); return; }
     if (tool == Tool::Zoom && inLanes) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
@@ -1593,6 +1725,7 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
             }
         }
         if (hit.type == HitType::GroupBar) { showGroupMenu (hit.group); return; }
+        if (e.x < headerW && e.y < rulerH) { showControlsMenu(); return; }   // angolo in alto a sinistra: scelta dei controlli di traccia
         if (hit.type == HitType::ExportBar) { showExportBarMenu(); return; }
         if (hit.type == HitType::Marker) { showMarkerMenu (hit.markerId); return; }
         if (hit.type == HitType::Ruler) { showMarkerMenu (0); return; }
@@ -1777,7 +1910,7 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
 
             origins.clear();
             for (size_t ti = 0; ti < project.getSession().tracks.size(); ++ti)
-                if (! project.getSession().tracks[ti].locked)
+                if (! project.getSession().tracks[ti].editLocked())
                 for (auto& c : project.getSession().tracks[ti].clips)
                     if (project.selection.count (c.id) > 0 || c.id == primaryId)
                         origins.push_back ({ c.id, c.start, c.offset, c.length, c.fadeIn, c.fadeOut, (int) ti });
@@ -1845,6 +1978,19 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
             m->pos = pos;
             project.changed();
         }
+        return;
+    }
+    if (drag == Drag::Range || drag == Drag::Comp)
+    {
+        int64_t pos = juce::jmax<int64_t> (0, xToSample (e.x)), snapped = 0;
+        if (snapTo (pos, snapped)) pos = snapped;
+        if (drag == Drag::Range)
+        {
+            const int row = juce::jlimit (0, juce::jmax (0, (int) project.getSession().tracks.size() - 1), trackIndexAtY (e.y));
+            project.range = { juce::jmin (rangeAnchor, pos), juce::jmax (rangeAnchor, pos), juce::jmin (rangeAnchorRow, row), juce::jmax (rangeAnchorRow, row) };
+        }
+        else { compA = juce::jmin (compAnchor, pos); compB = juce::jmax (compAnchor, pos); }
+        repaint();
         return;
     }
     if (drag == Drag::CueIn || drag == Drag::CueOut || drag == Drag::CueMove)
@@ -2124,6 +2270,18 @@ void TimelineView::mouseUp (const juce::MouseEvent& e)
         for (auto& cue : project.getSession().cues)
             if (pos >= cue.inPos && pos < cue.outPos) { project.selectedCueId = cue.id; break; }
     }
+    else if (drag == Drag::Range)
+    {
+        if (project.range.b - project.range.a < (int64_t) (spp * 4.0)) project.range = {};   // un semplice clic toglie la selezione
+        repaint();
+    }
+    else if (drag == Drag::Comp)
+    {
+        if (compB - compA >= (int64_t) (spp * 4.0)) project.compRange (compTrackId, compClipId, compA, compB);
+        compTrackId = 0;
+    }
+    else if (drag == Drag::Move && dragStarted && project.editMode == Project::EditMode::Shuffle)
+        project.shuffleResolve();
     else if (drag == Drag::VideoMove && ! dragStarted)
         engine.setPosition (juce::jmax<int64_t> (0, xToSample (e.x)));
     else if (drag == Drag::TrackResize)
@@ -2341,6 +2499,29 @@ void TimelineView::drawGroupBars (juce::Graphics& g)
     }
 }
 
+void TimelineView::showControlsMenu()
+{
+    struct Item { Control c; const char* label; };
+    static const Item items[] = {
+        { CtlLock, TRX ("Lock / Freeze (L)") }, { CtlRec, TRX ("Registra (R)") }, { CtlMute, TRX ("Mute (M)") }, { CtlSolo, TRX ("Solo (S)") },
+        { CtlTrim, TRX ("Manopola del guadagno in ingresso") }, { CtlMeter, TRX ("Misuratore di livello") },
+        { CtlAutomation, TRX ("Automazione (parametro e modo)") }, { CtlInput, TRX ("Ingresso (IN 1 / IN 2)") } };
+    juce::PopupMenu m;
+    m.addSectionHeader (TRANS ("Controlli delle tracce"));
+    for (auto& it : items) m.addItem (100 + (int) it.c, juce::translate (it.label), true, shows (it.c));
+    m.addSeparator();
+    m.addItem (1, TRANS ("Mostra tutti i controlli"));
+    m.addItem (2, TRANS ("Solo il nome (vista compatta)"));
+    juce::Component::SafePointer<TimelineView> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int r)
+    {
+        if (safe == nullptr || r == 0) return;
+        if (r == 1) safe->setControlMask (CtlAll);
+        else if (r == 2) safe->setControlMask (0);
+        else if (r >= 100) safe->setControlMask (safe->controlMask ^ (r - 100));
+    });
+}
+
 void TimelineView::showVisibilityMenu()
 {
     juce::PopupMenu m;
@@ -2495,6 +2676,8 @@ void TimelineView::showTrackMenu (int trackId)
         m.addItem (2, TRANS ("Elimina traccia"));
         m.addItem (13, TRANS ("Blocca la traccia (Lock)"), true, project.trackLocked (trackId));
         m.addItem (14, TRANS ("Nascondi la traccia"));
+        m.addItem (16, TRANS ("Mostra le corsie dei take (Lanes)"), true, project.findTrack (trackId) != nullptr && project.findTrack (trackId)->showLanes);
+        m.addItem (15, project.findTrack (trackId) != nullptr && project.findTrack (trackId)->frozen != nullptr ? TRANS ("Scongela la traccia (Unfreeze)") : TRANS ("Congela la traccia (Freeze: rende EQ, compressore e plug-in)"));
         {
             juce::PopupMenu groups;
             const auto* tr = project.findTrack (trackId);
@@ -2536,6 +2719,8 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 6) p.clearAutomation (trackId);
         else if (r == 13) p.setTracksLocked (targets, ! p.trackLocked (trackId));
         else if (r == 14) p.setTracksHidden (targets, true);
+        else if (r == 16) { const auto* tr = p.findTrack (trackId); p.setTracksLanes (targets, tr != nullptr && ! tr->showLanes); safe->updateScrollBars(); safe->repaint(); }
+        else if (r == 15 && safe->onFreezeRequest) safe->onFreezeRequest (targets);
         else if (r == 399) p.setTracksGroup (targets, 0);
         else if (r == 398) safe->newGroupDialog (targets);
         else if (r == 397)

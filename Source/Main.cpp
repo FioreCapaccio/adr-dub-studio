@@ -107,7 +107,8 @@ private:
     }
 
     std::function<void (int)> finishCb;
-    std::unique_ptr<fc::Project> takesProject, realProject, joinProject;
+    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject;
+    juce::AudioBuffer<float> before;
     int dupsDummy = 0;
 
     void check (const juce::StringArray& errs)
@@ -267,7 +268,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepLockHide(); stepPlayEnd(); stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); });
         });
     }
 
@@ -1475,6 +1476,108 @@ private:
         juce::Timer::callAfterDelay (2500, [this] { if (probe != nullptr) probe->startTimerHz (30); });   // il video si carica in modo asincrono
     }
 
+    // strumenti Range, Mute, Erase, Comp e modalita' di modifica
+    void stepRangeTools()
+    {
+        auto asset = [] (float v) { auto a = std::make_shared<fc::Asset>(); a->name = "t"; a->audio.setSize (2, 48000 * 10); a->audio.clear(); a->audio.setSample (0, 0, v); a->buildPeaks(); return a; };
+        fc::Project p (formats, 48000.0);
+        auto A = asset (1.0f);
+        fc::Clip c1, c2;
+        c1.id = 1; c1.asset = A; c1.start = 0; c1.length = 10 * 48000;
+        c2 = c1; c2.id = 2; c2.asset = asset (0.5f);
+        p.edit().tracks[0].clips = { c1 };
+        p.edit().tracks[1].clips = { c2 };
+
+        // Range: dividi, elimina, rimuovi, tieni
+        p.range = { 2 * 48000, 4 * 48000, 0, 1 };
+        p.rangeSplit();
+        expect (p.getSession().tracks[0].clips.size() == 3 && p.getSession().tracks[1].clips.size() == 3, "Range: dividi crea tre pezzi su ognuna delle tracce del range");
+        p.undo();
+        p.rangeDelete (false);
+        auto& t0 = p.getSession().tracks[0].clips;
+        expect (t0.size() == 2 && t0[0].end() == 2 * 48000 && t0[1].start == 4 * 48000, "Range: elimina lascia il vuoto (due pezzi, buco di 2 s)");
+        p.undo();
+        p.rangeDelete (true);
+        auto& r0 = p.getSession().tracks[0].clips;
+        const int64_t endAll = r0.size() == 2 ? juce::jmax (r0[0].end(), r0[1].end()) : -1;
+        expect (r0.size() == 2 && endAll == 8 * 48000 && r0[1].start == 2 * 48000, "Range: rimuovi chiude il vuoto (la traccia diventa di 8 s)");
+        p.undo();
+        p.range = { 3 * 48000, 5 * 48000, 0, 0 };
+        p.rangeTrim();
+        expect (p.getSession().tracks[0].clips.size() == 1 && p.getSession().tracks[0].clips[0].start == 3 * 48000 && p.getSession().tracks[0].clips[0].length == 2 * 48000
+                    && p.getSession().tracks[1].clips.size() == 1, "Range: tieni solo il range (solo sulla traccia scelta)");
+        p.undo();
+        p.setTracksLocked ({ p.getSession().tracks[0].id }, true);
+        p.range = { 2 * 48000, 4 * 48000, 0, 1 };
+        p.rangeDelete (false);
+        expect (p.getSession().tracks[0].clips.size() == 1 && p.getSession().tracks[1].clips.size() == 2, "Range: le tracce bloccate non si toccano");
+        p.setTracksLocked ({ p.getSession().tracks[0].id }, false);
+        p.undo(); p.undo();
+
+        // Mute ed Erase
+        p.toggleClipMute (1);
+        expect (p.findClip (1)->muted, "Mute: il clic silenzia il clip");
+        p.toggleClipMute (1);
+        expect (! p.findClip (1)->muted, "Mute: un secondo clic lo riattiva");
+        p.eraseClip (2);
+        expect (p.findClip (2) == nullptr, "Gomma: elimina il clip");
+        p.undo();
+        expect (p.findClip (2) != nullptr, "Gomma: si annulla");
+
+        // modalita' di modifica
+        fc::Clip d1, d2;
+        d1.id = 11; d1.asset = A; d1.start = 0; d1.length = 48000;
+        d2 = d1; d2.id = 12; d2.start = 2 * 48000;
+        fc::Clip d3 = d1; d3.id = 13; d3.start = 4 * 48000;
+        p.edit().tracks[2].clips = { d1, d2, d3 };
+        p.editMode = fc::Project::EditMode::Ripple;
+        p.selection = { 12 };
+        p.deleteSelected();
+        expect (p.getSession().tracks[2].clips.size() == 2 && p.findClip (13)->start == 3 * 48000, "Ripple: Elimina chiude il vuoto");
+        p.undo();
+        p.editMode = fc::Project::EditMode::Normal;
+        p.selection = { 12 };
+        p.deleteSelected();
+        expect (p.findClip (13)->start == 4 * 48000, "Normale: Elimina lascia il vuoto");
+        p.undo();
+        p.editMode = fc::Project::EditMode::Shuffle;
+        p.moveClipTo (11, 2, 1 * 48000 + 24000);   // d1 finisce sopra d2 (che inizia a 2 s)
+        p.shuffleResolve();
+        {
+            auto& cl = p.getSession().tracks[2].clips;
+            std::vector<std::pair<int64_t, int64_t>> v;
+            for (auto& c : cl) v.emplace_back (c.start, c.id);
+            std::sort (v.begin(), v.end());
+            const bool noOverlap = cl.size() == 3 && v[0].first + 48000 <= v[1].first && v[1].first + 48000 <= v[2].first;
+            expect (noOverlap, "Shuffle: i clip non restano sovrapposti, quelli a destra scivolano");
+        }
+        p.editMode = fc::Project::EditMode::Normal;
+
+        // Comp: due take sovrapposti sulla stessa traccia
+        fc::Project q (formats, 48000.0);
+        auto T1 = asset (1.0f), T2 = asset (0.5f);
+        fc::Clip k1, k2;
+        k1.id = 21; k1.asset = T1; k1.start = 0; k1.length = 10 * 48000; k1.muted = false;
+        k2 = k1; k2.id = 22; k2.asset = T2; k2.muted = true;
+        q.edit().tracks[0].clips = { k1, k2 };
+        q.compRange (q.getSession().tracks[0].id, 22, 3 * 48000, 6 * 48000);
+        int audible1 = 0, audible2 = 0, mutedInside = 0;
+        for (auto& c : q.getSession().tracks[0].clips)
+        {
+            if (c.start >= 3 * 48000 && c.end() <= 6 * 48000) { if (c.asset == T2 && ! c.muted) ++audible2; if (c.asset == T1 && c.muted) ++mutedInside; }
+            else if (c.asset == T1 && ! c.muted) ++audible1;
+        }
+        expect (audible2 == 1 && mutedInside == 1 && audible1 == 2, "Comp: nell'intervallo suona il take scelto, fuori resta l'altro (" + juce::String (audible1) + "/" + juce::String (audible2) + "/" + juce::String (mutedInside) + ")");
+        fc::Mixer mx;
+        juce::AudioBuffer<float> out (2, 64);
+        auto s2 = q.getSession().cloneDetached();
+        s2.master->limiterOn = false;
+        mx.render (s2, 3 * 48000, out, 0, 64);
+        expect (std::abs (out.getSample (0, 0)) < 1.0e-6f || std::abs (out.getSample (0, 0)) > 0.0f, "Comp: il mixer legge la sessione");
+        q.undo();
+        expect (q.getSession().tracks[0].clips.size() == 2, "Comp: si annulla in un passo");
+    }
+
     // blocco e visibilita' delle tracce, mute/solo globali
     void stepLockHide()
     {
@@ -1506,6 +1609,11 @@ private:
         expect (p.getSession().tracks[0].clips.size() == 1, "Lock: Duplica non copia i clip di una traccia bloccata");
         p.rippleDeleteSelected();
         expect (p.findClip (1) != nullptr, "Lock: Ripple delete salta la traccia bloccata");
+        p.setTracksLocked ({ t1 }, true);
+        p.undo();   // annullare una modifica non cambia il blocco delle tracce
+        expect (p.trackLocked (t0) && p.trackLocked (t1), "Lock: l'undo non sblocca ne' blocca le tracce");
+        p.redo();
+        p.setTracksLocked ({ t1 }, false);
         p.setTracksLocked ({ t0 }, false);
         p.moveClipTo (1, 0, 3000);
         expect (p.findClip (1)->start == 3000, "Lock: sbloccata, il clip si sposta di nuovo");
@@ -1535,8 +1643,66 @@ private:
         juce::String err;
         const bool saved = p.save (f, err);
         const auto txt = f.loadFileAsString();
+        p.setTracksLanes ({ t0 }, true);
+        const bool saved2 = p.save (f, err);
+        expect (saved2 && f.loadFileAsString().contains ("\"lanes\""), "Corsie (Lanes) salvate nella sessione");
         expect (saved && txt.contains ("\"locked\"") && txt.contains ("\"hidden\""), "Lock e visibilita' salvati nella sessione");
         f.deleteFile();
+    }
+
+    // Freeze: la traccia congelata suona come prima (guadagno in ingresso ed EQ compresi), poi si scongela
+    void stepFreeze (std::function<void()> next)
+    {
+        auto a = std::make_shared<fc::Asset>(); a->name = "sin";
+        a->audio.setSize (2, 48000 * 2);
+        for (int i = 0; i < a->audio.getNumSamples(); ++i)
+        { const float v = 0.2f * std::sin (0.07f * (float) i); a->audio.setSample (0, i, v); a->audio.setSample (1, i, v); }
+        a->buildPeaks();
+        freezeProject = std::make_unique<fc::Project> (formats, 48000.0);
+        auto& p = *freezeProject;
+        fc::Clip c; c.id = 1; c.asset = a; c.start = 0; c.length = 2 * 48000;
+        p.edit().tracks[0].clips = { c };
+        auto& live = *p.getSession().tracks[0].live;
+        live.trimDb = 6.0f;
+        live.eq.enabled = true; live.eq.band[2].gainDb = 4.0f; live.eq.band[2].freq = 480.0f; live.eq.band[2].q = 1.0f;
+        p.getSession().master->limiterOn = false;
+        auto renderAt = [&p] (int64_t pos)
+        {
+            auto s = p.getSession().cloneDetached();
+            s.master->limiterOn = false;
+            fc::Mixer m;
+            juce::AudioBuffer<float> out (2, 2048);
+            m.render (s, pos, out, 0, 2048);
+            return out;
+        };
+        before = renderAt (30000);
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_freeze");
+        dir.deleteRecursively();
+        const int tid = p.getSession().tracks[0].id;
+        p.freezeTrack (tid, dir, [this, next, dir, tid, renderAt] (juce::String err)
+        {
+            auto& p = *freezeProject;
+            expect (err.isEmpty() && p.getSession().tracks[0].frozen != nullptr, "Freeze: traccia congelata " + err);
+            expect (p.trackLocked (tid), "Freeze: la traccia congelata e' protetta dalle modifiche");
+            const auto after = renderAt (30000);
+            float diff = 0.0f, peak = 0.0f;
+            for (int i = 1024; i < 2048; ++i) { diff = juce::jmax (diff, std::abs (after.getSample (0, i) - before.getSample (0, i))); peak = juce::jmax (peak, std::abs (before.getSample (0, i))); }
+            expect (peak > 0.2f && diff < 2.0e-3f, "Freeze: suona come la traccia in tempo reale (differenza " + juce::String (diff, 5) + ", picco " + juce::String (peak, 3) + ")");
+            // senza piu' il guadagno in ingresso non cambia nulla: e' gia' nel file
+            p.getSession().tracks[0].live->trimDb = 0.0f;
+            const auto still = renderAt (30000);
+            float d2 = 0.0f;
+            for (int i = 1024; i < 2048; ++i) d2 = juce::jmax (d2, std::abs (still.getSample (0, i) - before.getSample (0, i)));   // i primi campioni: il filtro dell'EQ parte a freddo
+            expect (d2 < 2.0e-3f, "Freeze: il guadagno in ingresso e l'EQ sono gia' nel file (cambiarli non cambia il suono)");
+            const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_freeze.adb");
+            juce::String e2;
+            expect (p.save (f, e2) && f.loadFileAsString().contains ("frozenFile"), "Freeze: il file e' registrato nella sessione");
+            f.deleteFile();
+            p.unfreezeTrack (tid);
+            expect (p.getSession().tracks[0].frozen == nullptr && ! p.trackLocked (tid), "Scongela: la traccia torna in tempo reale");
+            dir.deleteRecursively();
+            next();
+        });
     }
 
     // il motore continua a suonare oltre l'ultimo clip se c'e' un video o un cue piu' avanti
@@ -3072,7 +3238,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.14.0"; }
+    const juce::String getApplicationVersion() override { return "2.15.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include <JuceHeader.h>
 #include "Lang.h"
 #include "Timecode.h"
@@ -216,7 +218,10 @@ struct Track
 {
     int id = 0;
     int groupId = 0;   // 0 = nessun gruppo
+    std::shared_ptr<Asset> frozen;   // Freeze: l'audio della traccia gia' elaborato (EQ, compressore, plug-in); i clip restano ma non suonano
+    bool editLocked() const noexcept { return locked || frozen != nullptr; }   // bloccata a mano, oppure congelata
     bool locked = false;   // traccia bloccata: i suoi clip non si modificano (come Lock di Nuendo)
+    bool showLanes = false;   // Show Lanes: i clip che si sovrappongono (take) stanno su corsie separate
     bool hidden = false;   // traccia nascosta nella timeline e nel mixer (non nel mix)
     juce::String name;
     juce::Colour colour;
@@ -411,6 +416,9 @@ public:
     void beginEdit();
     bool canUndo() const noexcept { return ! undoStack.empty(); }
     bool canRedo() const noexcept { return ! redoStack.empty(); }
+    struct ViewState { std::map<int, std::pair<bool, bool>> tracks; std::map<int, bool> collapsed; };
+    ViewState viewState() const;
+    void applyViewState (const ViewState&);
     void undo();
     void redo();
 
@@ -447,6 +455,10 @@ public:
     // blocco, visibilita', mute/solo globali: stato di lavoro, senza passo di undo
     void setTracksLocked (const std::vector<int>& ids, bool locked);
     void setTracksHidden (const std::vector<int>& ids, bool hidden);
+    /** Freeze: l'audio della traccia (con EQ, compressore, plug-in e guadagno in ingresso) si rende in un file e suona al posto dei clip; si annulla con unfreeze. */
+    void freezeTrack (int trackId, const juce::File& folder, std::function<void (juce::String)> done);
+    void unfreezeTrack (int trackId);
+    void setTracksLanes (const std::vector<int>& ids, bool on);
     void showAllTracks();
     void hideEmptyTracks();
     bool trackLocked (int trackId) const noexcept;
@@ -518,6 +530,25 @@ public:
     void trimToPlayhead (bool trimStart, int64_t pos);    // taglia l'inizio/la fine dei clip alla testina
     void deleteSelected();
     void duplicateSelected();
+
+    // modalita' di modifica (come in Nuendo): Normale; Ripple: eliminare chiude il vuoto; Shuffle: in piu' i clip spostati spingono quelli vicini
+    enum class EditMode { Normal, Ripple, Shuffle };
+    EditMode editMode = EditMode::Normal;
+    static juce::String editModeName (EditMode m);
+    void shuffleResolve();   // dopo uno spostamento in modalita' Shuffle: i clip non si sovrappongono piu', quelli a destra scivolano
+
+    // strumenti Mute ed Erase
+    void toggleClipMute (int64_t clipId);
+    void eraseClip (int64_t clipId);
+
+    // strumento Range: un intervallo di tempo su una o piu' tracce (indici di traccia first..last)
+    struct Range { int64_t a = -1, b = -1; int first = -1, last = -1; bool valid() const noexcept { return b > a && first >= 0 && last >= first; } };
+    Range range;
+    void rangeSplit();                // divide i clip ai due bordi del range
+    void rangeDelete (bool ripple);   // elimina l'audio nel range; con ripple chiude il vuoto sulle tracce del range
+    void rangeTrim();                 // tiene solo l'audio nel range
+    // comping: l'audio del clip scelto diventa quello attivo nell'intervallo [a, b) (gli altri clip della traccia si silenziano li')
+    void compRange (int trackId, int64_t clipId, int64_t a, int64_t b);
     void selectAll();
     void normalizeClip (int64_t id);
     void setClipGain (int64_t id, float db);

@@ -41,4 +41,8 @@ struct ExportResult
 ExportResult exportSession (const Session& session, double projectRate, const ExportOptions&, const juce::File& target,
                             const juce::String& baseName, const std::function<bool (double)>& progress);
 
+/** Freeze: rende l'audio di una traccia con guadagno in ingresso, EQ, compressore e plug-in (prima del fader), come file WAV a 32 bit float. */
+bool renderTrackProcessed (const Session& source, int trackId, double rate, int64_t totalSamples, const juce::File& dest,
+                           const std::function<bool (double)>& progress, juce::String& error);
+
 } // namespace fc

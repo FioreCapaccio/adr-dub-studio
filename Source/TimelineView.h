@@ -43,7 +43,8 @@ public:
     std::function<void()> onLoopChanged;
     std::function<void()> onVideoOffsetChanged;
     std::function<void (const juce::File&)> onVideoDropped;
-    std::function<void()> onJoinRequest;   // JOIN dei clip selezionati
+    std::function<void()> onJoinRequest;
+    std::function<void (const std::vector<int>&)> onFreezeRequest;   // Freeze / Unfreeze delle tracce scelte   // JOIN dei clip selezionati
     std::function<void (bool toCue)> onStretchRequest;
     std::function<void (int64_t clipId, double ratio, int64_t newStart)> onStretchCommit;   // al rilascio dello strumento Stretch
     std::function<void()> onExportRequested;   // dal menu della barra di esportazione   // time-stretch dei clip selezionati (toCue: durata del cue ADR)
@@ -75,7 +76,7 @@ public:
 
 private:
     enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, Trim, AutoSegment, TrackResize, VideoMove,
-                      Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove };
+                      Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove, Range, Comp };
     enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderInput, TrackResize,
                          Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane, GroupBar, HeaderLock, GlobalMute, GlobalSolo, GlobalVisibility };
     struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; int group = 0, groupPart = 0; /* 0 barra, 1 muto, 2 solo */ };
@@ -85,6 +86,10 @@ private:
     bool hasVideo() const noexcept { return project.getSession().video != nullptr; }
     int lanesTop() const noexcept { return rulerH + (hasVideo() ? videoH : 0); }
     juce::Rectangle<int> laneArea() const { return { headerW, lanesTop(), juce::jmax (0, getWidth() - headerW - sbSize), juce::jmax (0, getHeight() - lanesTop() - sbSize) }; }
+    /** Corsie di una traccia con Show Lanes: ogni clip sulla prima corsia dove non si sovrappone a un altro. */
+    struct LaneInfo { size_t sig = 0; int count = 1; std::map<int64_t, int> index; };
+    const LaneInfo& lanesOf (int trackIdx) const;
+    int laneHeight (int trackIdx) const;
     int heightOf (int trackIdx) const;       // 0 se la traccia e' in un gruppo compresso
     int bandOf (int trackIdx) const;         // barra del gruppo sopra la traccia, se e' la prima di una serie di tracce dello stesso gruppo
     int contentTop (int trackIdx) const;     // somma delle altezze precedenti
@@ -94,6 +99,16 @@ private:
     int64_t xToSample (double x) const noexcept { return (int64_t) std::llround (xToSampleD (x)); }
     float sampleToX (int64_t s) const noexcept { return (float) (headerW + ((double) s - scrollX) / spp); }
     juce::Rectangle<float> clipRect (int trackIdx, const Clip&) const;
+public:
+    /** Controlli visibili nell'intestazione delle tracce (Track Controls Settings di Nuendo): bit di controlMask. */
+    enum Control { CtlLock = 1, CtlRec = 2, CtlMute = 4, CtlSolo = 8, CtlTrim = 16, CtlMeter = 32, CtlAutomation = 64, CtlInput = 128, CtlAll = 255 };
+    int getControlMask() const noexcept { return controlMask; }
+    void setControlMask (int m) { controlMask = m & CtlAll; repaint(); if (onControlsChanged) onControlsChanged(); }
+    std::function<void()> onControlsChanged;
+private:
+    int controlMask = CtlAll;
+    bool shows (Control c) const noexcept { return (controlMask & c) != 0; }
+    void showControlsMenu();
     juce::Rectangle<int> lockRect (int ti) const { return { headerW - knobW - 126, laneTop (ti) + 9, 26, 20 }; }
     // pulsanti nell'angolo in alto a sinistra: togli tutti i mute, togli tutti i solo, visibilita' delle tracce
     juce::Rectangle<int> globalRect (int part) const { return { headerW - 104 + part * 32, 7, 28, rulerH - 14 }; }
@@ -197,6 +212,11 @@ private:
     double videoOrigOffset = 0.0;
     int markerDragId = 0, autoTrackId = 0, autoPointId = 0;
     int cueDragId = 0;
+    mutable std::map<int, LaneInfo> laneCache;   // per id di traccia
+    // strumento Range e Comp
+    int64_t rangeAnchor = 0;
+    int rangeAnchorRow = 0, compTrackId = 0;
+    int64_t compClipId = 0, compA = 0, compB = 0, compAnchor = 0;
     int64_t cueOrigIn = 0, cueOrigOut = 0;
 
     int64_t lastPos = -1;

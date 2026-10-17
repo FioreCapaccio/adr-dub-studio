@@ -29,6 +29,7 @@ public:
     std::function<void (double)> onZoomChanged;   // campioni per pixel
 
     void setTool (Tool);
+    void setEditModeLabel (const juce::String&);
     void setHeightValue (int h);
     void setZoomValue (double samplesPerPixel);
 
@@ -44,6 +45,7 @@ private:
     juce::Slider zoomSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };   // 0 = tutto, 1 = campione per campione (scala logaritmica)
     juce::TextButton fitBtn { TRANS ("ADATTA") };
     juce::Rectangle<int> toolsBox;
+    juce::TextButton* modeButton = nullptr;
     int separatorX = 0, sliderCaptionX = 0, zoomCaptionX = 0;
 };
 

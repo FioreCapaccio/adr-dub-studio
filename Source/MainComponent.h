@@ -86,6 +86,7 @@ private:
     void showAdrWindow();
     void importAdrDialog();
     void joinSelected();
+    void freezeTracks (const std::vector<int>&);
     void onInputStalled();
     void importAdrFile (const juce::File&);
     void importTakesDialog();

@@ -29,7 +29,7 @@ int insertsLatency (const TrackLive& live, bool realtime)
 int Mixer::computeLatency (const Session& s)
 {
     int m = 0, a = 0;
-    for (auto& t : s.tracks) m = juce::jmax (m, insertsLatency (*t.live, false) + (t.live->limiterOn.load() ? Limiter::latencyFor (s.sampleRate) : 0));
+    for (auto& t : s.tracks) m = juce::jmax (m, (t.frozen != nullptr ? 0 : insertsLatency (*t.live, false)) + (t.live->limiterOn.load() ? Limiter::latencyFor (s.sampleRate) : 0));
     for (auto& x : s.aux) a = juce::jmax (a, insertsLatency (*x, false));
     for (auto& x : s.group) a = juce::jmax (a, insertsLatency (*x, false));
     return m + a;
@@ -131,7 +131,7 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
     {
         for (size_t i = 0; i < s.tracks.size(); ++i)
         {
-            latencies[i] = insertsLatency (*s.tracks[i].live, true) + (s.tracks[i].live->limiterOn.load() ? Limiter::latencyFor (s.sampleRate) : 0);
+            latencies[i] = (s.tracks[i].frozen != nullptr ? 0 : insertsLatency (*s.tracks[i].live, true)) + (s.tracks[i].live->limiterOn.load() ? Limiter::latencyFor (s.sampleRate) : 0);   // un track congelato non ha piu' plug-in da compensare
             trackMax = juce::jmax (trackMax, latencies[i]);
         }
         for (int k = 0; k < 2; ++k) { auxLat[k] = insertsLatency (*s.aux[k], true); auxD = juce::jmax (auxD, auxLat[k]); }
@@ -160,14 +160,22 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
 
             scratch.clear (0, chunk);
             scratch.clear (1, 0, chunk);
-            if (audible)
+            const bool frozen = t.frozen != nullptr;
+            if (audible && frozen && auditionClip == 0)   // Freeze: suona l'audio gia' elaborato al posto dei clip
+            {
+                Clip fc;
+                fc.asset = t.frozen;
+                fc.length = t.frozen->length();
+                if (fc.end() > cpos && fc.start < cpos + chunk) renderClip (fc, cpos, chunk);
+            }
+            else if (audible)
                 for (auto& c : t.clips)
                     if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! (auditionClip < 0 && c.cueId != 0))) && c.end() > cpos && c.start < cpos + chunk)
                         renderClip (c, cpos, chunk);
 
             if (audible)   // guadagno in ingresso (a rampa): alimenta EQ e compressore al livello giusto
             {
-                const float tgt = dbToGain (live.trimDb.load());
+                const float tgt = frozen ? 1.0f : dbToGain (live.trimDb.load());   // il guadagno in ingresso e' gia' nel file congelato
                 if (live.trimGainLast < 0.0f) live.trimGainLast = tgt;
                 if (live.trimGainLast != 1.0f || tgt != 1.0f)
                 {
@@ -179,9 +187,9 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
                 if (ml > live.meterL.load()) live.meterL.store (ml);
                 if (mr > live.meterR.load()) live.meterR.store (mr);
             }
-            if (audible) live.eq.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);   // EQ, compressore, poi plug-in
-            if (audible) live.comp.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);
-            if (audible) runInserts (live, scratch, chunk, midi);   // plug-in pre-fader
+            if (audible && ! frozen) live.eq.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);   // EQ, compressore, poi plug-in
+            if (audible && ! frozen) live.comp.process (scratch.getWritePointer (0), scratch.getWritePointer (1), chunk, s.sampleRate);
+            if (audible && ! frozen) runInserts (live, scratch, chunk, midi);   // plug-in pre-fader
 
             // compensazione di latenza: ritarda la traccia fino alla latenza della piu' lenta
             const int delay = audible && pdcEnabled ? juce::jmin (trackMax - latencies[ti], TrackLive::kPdcCap - 1) : 0;

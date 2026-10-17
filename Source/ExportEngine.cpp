@@ -306,6 +306,21 @@ Session prepare (const Session& source, const ExportOptions& o)
 }
 } // namespace
 
+bool renderTrackProcessed (const Session& source, int trackId, double rate, int64_t total, const juce::File& dest,
+                           const std::function<bool (double)>& progress, juce::String& error)
+{
+    Session one = source.cloneDetached();
+    one.tracks.erase (std::remove_if (one.tracks.begin(), one.tracks.end(), [trackId] (const Track& t) { return t.id != trackId; }), one.tracks.end());
+    if (one.tracks.empty()) { error = TRANS ("La traccia non c'e' piu'."); return false; }
+    auto& t = one.tracks.front();
+    t.frozen = nullptr;
+    auto& l = *t.live;
+    l.volumeDb = 0.0f; l.pan = 0.0f; l.mute = false; l.solo = false; l.invert = false; l.autoMode = 0;   // fader, pan e polarita' restano vivi dopo il freeze
+    l.limiterOn = false; l.outBus = 0; l.sendDb[0] = -80.0f; l.sendDb[1] = -80.0f;
+    for (auto& x : one.aux) x->volumeDb = -80.0f;
+    return renderToTemp (one, rate, 0, total, false, dest, nullptr, progress, error);
+}
+
 ExportResult exportSession (const Session& session, double rate, const ExportOptions& o, const juce::File& target,
                             const juce::String& baseName, const std::function<bool (double)>& progress)
 {

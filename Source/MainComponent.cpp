@@ -211,6 +211,9 @@ MainComponent::MainComponent()
     timeline->onAdrFileDropped = [this] (const juce::File& f) { importAdrFile (f); };
     timeline->onStretchRequest = [this] (bool toCue) { timeStretchSelected (toCue); };
     timeline->onJoinRequest = [this] { joinSelected(); };
+    timeline->setControlMask (settings().getIntValue ("trackControls", TimelineView::CtlAll));
+    timeline->onControlsChanged = [this] { settings().setValue ("trackControls", timeline->getControlMask()); settings().saveIfNeeded(); };
+    timeline->onFreezeRequest = [this] (const std::vector<int>& ids) { freezeTracks (ids); };
     timeline->onStretchCommit = [this] (int64_t id, double ratio, int64_t newStart)
     {
         const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
@@ -1368,7 +1371,8 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
+                  cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1429,6 +1433,16 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdToolRazor:     i.setInfo (TRANS ("Lama"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('b', 0); i.setTicked (timeline->getTool() == Tool::Razor); break;
         case cmdToolStretch:   i.setInfo (TRANS ("Stretch"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('e', 0); i.setTicked (timeline->getTool() == Tool::Stretch); break;
         case cmdToolSlip:      i.setInfo (TRANS ("Slip"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('y', 0); i.setTicked (timeline->getTool() == Tool::Slip); break;
+        case cmdToolRange:     i.setInfo (TRANS ("Range"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('x', 0); i.setTicked (timeline->getTool() == Tool::Range); break;
+        case cmdToolMute:      i.setInfo (TRANS ("Mute"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('k', 0); i.setTicked (timeline->getTool() == Tool::Mute); break;
+        case cmdToolErase:     i.setInfo (TRANS ("Gomma"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('g', 0); i.setTicked (timeline->getTool() == Tool::Erase); break;
+        case cmdToolComp:      i.setInfo (TRANS ("Comp"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('c', 0); i.setTicked (timeline->getTool() == Tool::Comp); break;
+        case cmdRangeSplit:    i.setInfo (TRANS ("Range: dividi ai bordi"), "", TRANS ("Modifica"), 0); i.setActive (project->range.valid()); break;
+        case cmdRangeDelete:   i.setInfo (TRANS ("Range: elimina (lascia il vuoto)"), "", TRANS ("Modifica"), 0); i.setActive (project->range.valid()); break;
+        case cmdRangeRemove:   i.setInfo (TRANS ("Range: rimuovi (chiude il vuoto)"), "", TRANS ("Modifica"), 0); i.setActive (project->range.valid()); break;
+        case cmdRangeTrim:     i.setInfo (TRANS ("Range: tieni solo il range"), "", TRANS ("Modifica"), 0); i.setActive (project->range.valid()); break;
+        case cmdRangeLoop:     i.setInfo (TRANS ("Range: loop sul range"), "", TRANS ("Modifica"), 0); i.setActive (project->range.valid()); break;
+        case cmdEditMode:      i.setInfo (TRANS ("Modalita' di modifica: cambia (Normale, Ripple, Shuffle)"), "", TRANS ("Modifica"), 0); break;
         case cmdToolHand:      i.setInfo (TRANS ("Mano"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('h', 0); i.setTicked (timeline->getTool() == Tool::Hand); break;
         case cmdToolZoom:      i.setInfo (TRANS ("Zoom"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('z', 0); i.setTicked (timeline->getTool() == Tool::Zoom); break;
         case cmdTimeStretch:   i.setInfo (TRANS ("Time-stretch dei clip selezionati..."), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('t', cmd | juce::ModifierKeys::altModifier); i.setActive (hasSel); break;
@@ -1544,6 +1558,22 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdToolSlip:      timeline->setTool (Tool::Slip); break;
         case cmdToolStretch:   timeline->setTool (Tool::Stretch); break;
         case cmdToolHand:      timeline->setTool (Tool::Hand); break;
+        case cmdToolRange:     timeline->setTool (Tool::Range); break;
+        case cmdToolMute:      timeline->setTool (Tool::Mute); break;
+        case cmdToolErase:     timeline->setTool (Tool::Erase); break;
+        case cmdToolComp:      timeline->setTool (Tool::Comp); break;
+        case cmdRangeSplit:    project->rangeSplit(); break;
+        case cmdRangeDelete:   project->rangeDelete (false); break;
+        case cmdRangeRemove:   project->rangeDelete (true); break;
+        case cmdRangeTrim:     project->rangeTrim(); break;
+        case cmdRangeLoop:     if (project->range.valid()) { engine.setLoop (true, project->range.a, project->range.b); syncToggles(); timeline->repaint(); } break;
+        case cmdEditMode:
+        {
+            using M = Project::EditMode;
+            project->editMode = project->editMode == M::Normal ? M::Ripple : (project->editMode == M::Ripple ? M::Shuffle : M::Normal);
+            editBar->setEditModeLabel (Project::editModeName (project->editMode));
+            break;
+        }
         case cmdToolZoom:      timeline->setTool (Tool::Zoom); break;
         case cmdSessionSettings: showSessionSettings(); break;
         case cmdTimeStretch:   timeStretchSelected (false); break;
@@ -1811,9 +1841,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck }); break;
-        case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
+        case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
         case 4:
         {
             add ({ cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdDetectCuts });
@@ -1852,6 +1882,21 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 }
 
 //==============================================================================
+void MainComponent::freezeTracks (const std::vector<int>& ids)
+{
+    if (engine.isRecording()) return;
+    engine.stop();   // il rendering usa gli stessi plug-in del motore: il trasporto deve essere fermo
+    const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    for (int id : ids)
+    {
+        const auto* t = project->findTrack (id);
+        if (t == nullptr) continue;
+        if (t->frozen != nullptr) { project->unfreezeTrack (id); continue; }
+        project->freezeTrack (id, folder, [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); });
+    }
+}
+
 void MainComponent::joinSelected()
 {
     std::vector<int64_t> ids (project->selection.begin(), project->selection.end());

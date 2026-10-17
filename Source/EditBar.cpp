@@ -85,6 +85,49 @@ void ToolButton::paintButton (juce::Graphics& g, bool over, bool down)
             break;
         }
 
+        case Tool::Range:
+        {
+            // intervallo tratteggiato con due parentesi
+            juce::Path box;
+            box.addRectangle (juce::Rectangle<float> (P (0.22f, 0.20f), P (0.78f, 0.80f)));
+            const float dashes[] = { 3.0f, 2.5f };
+            juce::Path dashed;
+            juce::PathStrokeType (1.4f).createDashedStroke (dashed, box, dashes, 2);
+            g.fillPath (dashed);
+            g.fillRect (juce::Rectangle<float> (P (0.04f, 0.10f).x, P (0.04f, 0.10f).y, 2.0f, ir.getHeight() * 0.80f));
+            g.fillRect (juce::Rectangle<float> (P (0.96f, 0.10f).x - 2.0f, P (0.96f, 0.10f).y, 2.0f, ir.getHeight() * 0.80f));
+            break;
+        }
+
+        case Tool::Mute:
+            g.setFont (font (ir.getHeight() * 1.05f, true));
+            g.drawText ("M", ir.toNearestInt(), juce::Justification::centred);
+            g.drawLine (P (0.05f, 0.95f).x, P (0.05f, 0.95f).y, P (0.95f, 0.05f).x, P (0.95f, 0.05f).y, 1.6f);
+            break;
+
+        case Tool::Erase:
+        {
+            juce::Path e;
+            e.startNewSubPath (P (0.30f, 0.10f)); e.lineTo (P (0.95f, 0.10f)); e.lineTo (P (0.70f, 0.62f)); e.lineTo (P (0.05f, 0.62f)); e.closeSubPath();
+            g.strokePath (e, juce::PathStrokeType (1.6f));
+            p.startNewSubPath (P (0.18f, 0.36f)); p.lineTo (P (0.83f, 0.36f)); p.lineTo (P (0.70f, 0.62f)); p.lineTo (P (0.05f, 0.62f)); p.closeSubPath();
+            g.fillPath (p);
+            g.fillRect (juce::Rectangle<float> (P (0.05f, 0.80f).x, P (0.05f, 0.80f).y, ir.getWidth() * 0.9f, 2.0f));
+            break;
+        }
+
+        case Tool::Comp:
+        {
+            // tre corsie di take: il pezzo scelto in quella di mezzo
+            const float ys[] = { 0.10f, 0.42f, 0.74f };
+            for (int i = 0; i < 3; ++i)
+                g.drawRect (juce::Rectangle<float> (P (0.04f, ys[i]).x, P (0.04f, ys[i]).y, ir.getWidth() * 0.92f, ir.getHeight() * 0.22f), 1.2f);
+            g.fillRect (juce::Rectangle<float> (P (0.30f, 0.42f).x, P (0.30f, 0.42f).y, ir.getWidth() * 0.40f, ir.getHeight() * 0.22f));
+            g.fillRect (juce::Rectangle<float> (P (0.04f, 0.10f).x, P (0.04f, 0.10f).y, ir.getWidth() * 0.26f, ir.getHeight() * 0.22f));
+            g.fillRect (juce::Rectangle<float> (P (0.70f, 0.74f).x, P (0.70f, 0.74f).y, ir.getWidth() * 0.26f, ir.getHeight() * 0.22f));
+            break;
+        }
+
         case Tool::Zoom:
         {
             const auto c = P (0.42f, 0.42f);
@@ -109,6 +152,10 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
         { Tool::Stretch, TRX ("Stretch (E): trascina il bordo di un clip per allungarlo o accorciarlo; l'audio si adatta senza cambiare il tono e il bordo si aggancia ai cue") },
         { Tool::Hand,   TRX ("Mano (H): trascina per spostare la vista") },
         { Tool::Zoom,   TRX ("Zoom (Z): clic per ingrandire, Alt + clic per ridurre, trascina per zoomare su un'area") },
+        { Tool::Range,  TRX ("Range (X): trascina per scegliere un intervallo di tempo su una o piu' tracce. Poi Modifica > Range: dividi, elimina, rimuovi (chiude il vuoto), tieni solo il range") },
+        { Tool::Mute,   TRX ("Mute (K): clic su un clip per silenziarlo o riattivarlo (su un take ADR lo rende quello attivo)") },
+        { Tool::Erase,  TRX ("Gomma (G): clic su un clip per eliminarlo. In modalita' Ripple o Shuffle il vuoto si chiude") },
+        { Tool::Comp,   TRX ("Comp (C): su un clip di una traccia con piu' take sovrapposti trascina un intervallo: quel take diventa quello che suona li', gli altri si silenziano") },
         { Tool::Automation, TRX ("Automazione (U): clic su una traccia per aggiungere un punto alla curva mostrata (VOL, PAN, SEND A o SEND B: si cambia dal pulsante nell'intestazione della traccia), trascina per spostarlo, clic destro per eliminarlo") }
     };
     for (auto& t : tools)
@@ -130,7 +177,8 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
         { TRX ("ELIMINA"),   68, cmdDelete,       TRX ("Elimina i clip selezionati (Canc)") },
         { TRX ("RIPPLE"),    62, cmdRippleDelete, TRX ("Elimina i clip selezionati chiudendo il vuoto sulla traccia (Maiusc + Canc)") },
         { TRX ("TAGLIA IN"), 76, cmdTrimStart,    TRX ("Taglia l'inizio dei clip alla testina (Q)") },
-        { TRX ("TAGLIA OUT"), 84, cmdTrimEnd,     TRX ("Taglia la fine dei clip alla testina (W)") }
+        { TRX ("TAGLIA OUT"), 84, cmdTrimEnd,     TRX ("Taglia la fine dei clip alla testina (W)") },
+        { TRX ("NORMALE"),   82, cmdEditMode,     TRX ("Modalita' di modifica: Normale, Ripple (eliminare chiude il vuoto) o Shuffle (anche gli spostamenti: i clip vicini scivolano). Clic per cambiare") }
     };
     for (auto& a : acts)
     {
@@ -139,6 +187,7 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
         b->setWantsKeyboardFocus (false);
         b->onClick = [this, id = a.cmd] { commands.invokeDirectly ((juce::CommandID) id, true); };
         addAndMakeVisible (*b);
+        if (a.cmd == cmdEditMode) modeButton = b.get();
         actions.push_back ({ std::move (b), a.w });
     }
 
@@ -158,6 +207,11 @@ EditBar::EditBar (juce::ApplicationCommandManager& cm) : commands (cm)
     fitBtn.setWantsKeyboardFocus (false);
     fitBtn.onClick = [this] { if (onFitHeights) onFitHeights(); };
     addAndMakeVisible (fitBtn);
+}
+
+void EditBar::setEditModeLabel (const juce::String& label)
+{
+    if (modeButton != nullptr) modeButton->setButtonText (label);
 }
 
 void EditBar::setTool (Tool t)
