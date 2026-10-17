@@ -30,6 +30,7 @@ int TimelineView::heightOf (int i) const
 {
     const auto& t = project.getSession().tracks;
     if (i < 0 || i >= (int) t.size()) return 96;
+    if (t[(size_t) i].hidden) return 0;
     if (const auto* g = project.findGroup (t[(size_t) i].groupId); g != nullptr && g->collapsed) return 0;
     return juce::jlimit (minTrackH, maxTrackH, t[(size_t) i].live->height.load());
 }
@@ -37,8 +38,10 @@ int TimelineView::heightOf (int i) const
 int TimelineView::bandOf (int i) const
 {
     const auto& t = project.getSession().tracks;
-    if (i < 0 || i >= (int) t.size() || t[(size_t) i].groupId == 0) return 0;
-    return i == 0 || t[(size_t) i - 1].groupId != t[(size_t) i].groupId ? groupBandH : 0;
+    if (i < 0 || i >= (int) t.size() || t[(size_t) i].groupId == 0 || t[(size_t) i].hidden) return 0;
+    int j = i - 1;
+    while (j >= 0 && t[(size_t) j].hidden) --j;   // la barra sta sopra la prima traccia visibile del gruppo
+    return j < 0 || t[(size_t) j].groupId != t[(size_t) i].groupId ? groupBandH : 0;
 }
 
 int TimelineView::contentTop (int idx) const
@@ -458,7 +461,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
 
     g.setColour (text);
     g.setFont (font (13.0f, true));
-    g.drawText (t.name, 42, y + 9, headerW - knobW - 42 - 104, 20, juce::Justification::centredLeft, true);
+    g.drawText (t.name, 42, y + 9, headerW - knobW - 42 - 132, 20, juce::Justification::centredLeft, true);
 
     auto drawBtn = [&] (juce::Rectangle<int> b, const char* label, bool on, juce::Colour onCol)
     {
@@ -467,6 +470,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         g.setFont (font (11.5f, true));
         g.drawText (label, body.toNearestInt(), juce::Justification::centred);
     };
+    drawBtn (lockRect (ti), "L", t.locked, juce::Colour (0xffffc94d));
     drawBtn (armRect (ti), "R", armed, accent);
     drawBtn (muteRect (ti), "M", t.live->mute.load(), muteCol);
     drawBtn (soloRect (ti), "S", t.live->solo.load(), soloCol);
@@ -864,6 +868,11 @@ void TimelineView::paint (juce::Graphics& g)
             if (h == 0 || y + h < lanes.getY() || y > lanes.getBottom()) continue;
             g.setColour (i % 2 == 0 ? lane : laneAlt);
             g.fillRect (lanes.getX(), y, lanes.getWidth(), h);
+            if (s.tracks[(size_t) i].locked)
+            {
+                g.setColour (juce::Colour (0xffffc94d).withAlpha (0.045f));
+                g.fillRect (lanes.getX(), y, lanes.getWidth(), h);
+            }
             if (project.isTrackSelected (s.tracks[(size_t) i].id))
             {
                 g.setColour (juce::Colours::white.withAlpha (0.022f));
@@ -1103,7 +1112,22 @@ void TimelineView::paint (juce::Graphics& g)
     g.setColour (border);
     g.drawHorizontalLine (rulerH - 1, 0.0f, (float) headerW);
     g.drawVerticalLine (headerW - 1, 0.0f, (float) rulerH);
-    drawCaption (g, TRANS ("Tracce"), juce::Rectangle<int> (16, 0, headerW - 16, rulerH));
+    drawCaption (g, TRANS ("Tracce"), juce::Rectangle<int> (16, 0, headerW - 16 - 104, rulerH));
+    {
+        const auto& s = project.getSession();
+        bool anyHidden = false;
+        for (auto& t : s.tracks) anyHidden = anyHidden || t.hidden;
+        auto btn = [&] (int part, const char* label, bool on, juce::Colour col)
+        {
+            const auto body = draw3dButton (g, globalRect (part).toFloat(), on ? col : raisedHi, 4.0f, on, false, col.brighter (0.4f));
+            g.setColour (on ? juce::Colours::black.withAlpha (0.85f) : dim);
+            g.setFont (font (11.0f, true));
+            g.drawText (label, body.toNearestInt(), juce::Justification::centred);
+        };
+        btn (0, "M", project.anyTrackMuted(), muteCol);       // clic: toglie tutti i mute
+        btn (1, "S", project.anyTrackSoloed(), soloCol);      // clic: toglie tutti i solo
+        btn (2, "V", anyHidden, blue);                        // clic: tracce visibili / nascoste
+    }
 
     // riordino delle tracce: linea di destinazione
     if (drag == Drag::TrackReorder && reorderTo >= 0 && reorderFrom >= 0 && reorderTo != reorderFrom)
@@ -1165,6 +1189,13 @@ TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
     const auto lanes = laneArea();
     if (p.y < rulerH)
     {
+        if (p.x < headerW)
+        {
+            if (globalRect (0).contains (p)) h.type = HitType::GlobalMute;
+            else if (globalRect (1).contains (p)) h.type = HitType::GlobalSolo;
+            else if (globalRect (2).contains (p)) h.type = HitType::GlobalVisibility;
+            return h;
+        }
         if (p.x >= headerW && p.y < exportH) { h.type = HitType::ExportBar; return h; }
         if (p.x >= headerW)
         {
@@ -1221,7 +1252,8 @@ TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
     if (p.x < headerW)
     {
         h.type = HitType::Header;
-        if (armRect (ti).contains (p)) h.type = HitType::HeaderArm;
+        if (lockRect (ti).contains (p)) h.type = HitType::HeaderLock;
+        else if (armRect (ti).contains (p)) h.type = HitType::HeaderArm;
         else if (heightOf (ti) >= 66 && inputRect (ti).contains (p)) h.type = HitType::HeaderInput;
         else if (heightOf (ti) >= 66 && autoRect (ti).contains (p)) h.type = HitType::HeaderAuto;
         else if (heightOf (ti) >= 66 && paramRect (ti).contains (p)) h.type = HitType::HeaderAutoParam;
@@ -1352,6 +1384,7 @@ bool TimelineView::handleToolMouseDown (const juce::MouseEvent& e, const Hit& hi
         case Tool::Slip:
         {
             if (! onClip) return false;
+            if (project.trackLocked (hit.track)) return true;
             project.selectedTrackId = hit.track;
             if (project.selection.count (hit.clip) == 0) { project.selection = { hit.clip }; }
             primaryId = hit.clip;
@@ -1368,6 +1401,7 @@ bool TimelineView::handleToolMouseDown (const juce::MouseEvent& e, const Hit& hi
             if (! onClip) return false;
             auto* c = project.findClip (hit.clip);
             if (c == nullptr || c->asset == nullptr || c->asset->offline) return false;
+            if (project.trackLocked (hit.track)) return true;
             project.selectedTrackId = hit.track;
             project.selection = { c->id };
             primaryId = c->id;
@@ -1699,6 +1733,16 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
         case HitType::HeaderInput:
             if (auto* t = project.findTrack (hit.track)) { t->live->inputMode = (t->live->inputMode.load() + 1) % 3; project.liveChanged(); }
             break;
+        case HitType::HeaderLock:
+            if (auto* t = project.findTrack (hit.track))
+            {
+                const auto targets = project.isTrackSelected (hit.track) ? project.selectedTracks() : std::vector<int> { hit.track };
+                project.setTracksLocked (targets, ! t->locked);
+            }
+            break;
+        case HitType::GlobalMute: project.clearAllMute(); break;
+        case HitType::GlobalSolo: project.clearAllSolo(); break;
+        case HitType::GlobalVisibility: showVisibilityMenu(); break;
         case HitType::HeaderMute:
             if (auto* t = project.findTrack (hit.track)) { t->live->mute = ! t->live->mute.load(); project.liveChanged(); }
             break;
@@ -1729,9 +1773,11 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
                 return;
             }
             primaryId = hit.clip;
+            if (project.trackLocked (hit.track)) { project.sendChangeMessage(); break; }   // traccia bloccata: il clip si seleziona ma non si modifica
 
             origins.clear();
             for (size_t ti = 0; ti < project.getSession().tracks.size(); ++ti)
+                if (! project.getSession().tracks[ti].locked)
                 for (auto& c : project.getSession().tracks[ti].clips)
                     if (project.selection.count (c.id) > 0 || c.id == primaryId)
                         origins.push_back ({ c.id, c.start, c.offset, c.length, c.fadeIn, c.fadeOut, (int) ti });
@@ -2295,6 +2341,32 @@ void TimelineView::drawGroupBars (juce::Graphics& g)
     }
 }
 
+void TimelineView::showVisibilityMenu()
+{
+    juce::PopupMenu m;
+    m.addItem (1, TRANS ("Mostra tutte le tracce"));
+    m.addItem (2, TRANS ("Nascondi le tracce vuote"));
+    m.addSeparator();
+    const auto& tracks = project.getSession().tracks;
+    for (size_t i = 0; i < tracks.size(); ++i)
+        m.addItem (100 + (int) i, juce::String ((int) i + 1) + "  " + tracks[i].name + (tracks[i].locked ? "  (Lock)" : ""), true, ! tracks[i].hidden);
+    juce::Component::SafePointer<TimelineView> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int r)
+    {
+        if (safe == nullptr || r == 0) return;
+        auto& p = safe->project;
+        if (r == 1) p.showAllTracks();
+        else if (r == 2) p.hideEmptyTracks();
+        else if (r >= 100 && r - 100 < (int) p.getSession().tracks.size())
+        {
+            const auto& t = p.getSession().tracks[(size_t) (r - 100)];
+            p.setTracksHidden ({ t.id }, ! t.hidden);
+        }
+        safe->updateScrollBars();
+        safe->repaint();
+    });
+}
+
 void TimelineView::showGroupMenu (int groupId)
 {
     const auto* grp = project.findGroup (groupId);
@@ -2421,6 +2493,8 @@ void TimelineView::showTrackMenu (int trackId)
             colours.addColouredItem (100 + i, "Colore " + juce::String (i + 1), trackPalette[i]);
         m.addSubMenu (TRANS ("Colore"), colours);
         m.addItem (2, TRANS ("Elimina traccia"));
+        m.addItem (13, TRANS ("Blocca la traccia (Lock)"), true, project.trackLocked (trackId));
+        m.addItem (14, TRANS ("Nascondi la traccia"));
         {
             juce::PopupMenu groups;
             const auto* tr = project.findTrack (trackId);
@@ -2460,6 +2534,8 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 4 && safe->onImportRequested) safe->onImportRequested();
         else if (r == 5) safe->fitTrackHeights();
         else if (r == 6) p.clearAutomation (trackId);
+        else if (r == 13) p.setTracksLocked (targets, ! p.trackLocked (trackId));
+        else if (r == 14) p.setTracksHidden (targets, true);
         else if (r == 399) p.setTracksGroup (targets, 0);
         else if (r == 398) safe->newGroupDialog (targets);
         else if (r == 397)

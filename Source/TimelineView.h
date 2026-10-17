@@ -77,7 +77,7 @@ private:
     enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, Trim, AutoSegment, TrackResize, VideoMove,
                       Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove };
     enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderInput, TrackResize,
-                         Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane, GroupBar };
+                         Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane, GroupBar, HeaderLock, GlobalMute, GlobalSolo, GlobalVisibility };
     struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; int group = 0, groupPart = 0; /* 0 barra, 1 muto, 2 solo */ };
     struct Origin { int64_t id, start, offset, length, fadeIn, fadeOut; int track; };
 
@@ -94,6 +94,9 @@ private:
     int64_t xToSample (double x) const noexcept { return (int64_t) std::llround (xToSampleD (x)); }
     float sampleToX (int64_t s) const noexcept { return (float) (headerW + ((double) s - scrollX) / spp); }
     juce::Rectangle<float> clipRect (int trackIdx, const Clip&) const;
+    juce::Rectangle<int> lockRect (int ti) const { return { headerW - knobW - 126, laneTop (ti) + 9, 26, 20 }; }
+    // pulsanti nell'angolo in alto a sinistra: togli tutti i mute, togli tutti i solo, visibilita' delle tracce
+    juce::Rectangle<int> globalRect (int part) const { return { headerW - 104 + part * 32, 7, 28, rulerH - 14 }; }
     juce::Rectangle<int> armRect (int ti) const { return { headerW - knobW - 98, laneTop (ti) + 9, 26, 20 }; }
     juce::Rectangle<int> muteRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 9, 26, 20 }; }
     juce::Rectangle<int> soloRect (int ti) const { return { headerW - knobW - 42, laneTop (ti) + 9, 26, 20 }; }
@@ -136,6 +139,7 @@ private:
     void beginDragEdit();
     void showTrackMenu (int trackId);
     void showGroupMenu (int groupId);
+    void showVisibilityMenu();
     void renameGroupDialog (int groupId);
     void newGroupDialog (std::vector<int> trackIds);
     void drawGroupBars (juce::Graphics&);

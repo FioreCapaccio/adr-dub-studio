@@ -147,6 +147,8 @@ private:
     std::unique_ptr<ChannelStrip> auxStrips[2];
     bool groupInUse (int k) const;   // un bus di gruppo si vede solo se serve: ha tracce, inserti o un fader/mute/solo cambiati
     int groupUseMask = 0;
+    unsigned hiddenSignature = 0;   // quali tracce sono nascoste: se cambia si rifa' il layout
+    unsigned computeHiddenSignature() const;
     std::unique_ptr<ChannelStrip> groupStrips[Session::kNumGroups];   // a destra delle tracce, nell'area scorrevole
     void makeAux (int k);
     void openEq (int trackId);

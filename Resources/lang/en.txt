@@ -803,3 +803,8 @@ language: English
 "Unisci i clip selezionati (JOIN)" = "Join the selected clips (JOIN)"
 "Seleziona almeno due clip sulla stessa traccia (i clip silenziati non si uniscono)." = "Select at least two clips on the same track (muted clips are not joined)."
 "L'unione e' troppo lunga." = "The join is too long."
+"Blocca la traccia (Lock)" = "Lock the track"
+"Nascondi la traccia" = "Hide the track"
+"Mostra tutte le tracce" = "Show all tracks"
+"Nascondi le tracce vuote" = "Hide empty tracks"
+"La traccia e' bloccata: sbloccala per modificare i suoi clip." = "The track is locked: unlock it to edit its clips."

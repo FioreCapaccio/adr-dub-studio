@@ -863,7 +863,11 @@ void MixerView::resized()
     for (int k = 1; k >= 0; --k) auxStrips[k]->setBounds (r.removeFromRight (stripW + 4).reduced (2));
     viewport.setBounds (r);
     const int h = r.getHeight() - viewport.getScrollBarThickness();
-    const int groupX = (int) strips.size() * stripW + 16;   // i bus di gruppo seguono le tracce, separati da uno spazio
+    const auto& allTracks = project.getSession().tracks;
+    int visibleStrips = 0;
+    for (size_t i = 0; i < strips.size(); ++i) if (! (i < allTracks.size() && allTracks[i].hidden)) ++visibleStrips;
+    hiddenSignature = computeHiddenSignature();
+    const int groupX = visibleStrips * stripW + 16;   // i bus di gruppo seguono le tracce, separati da uno spazio
     int shown = 0;
     groupUseMask = 0;
     for (int k = 0; k < Session::kNumGroups; ++k)
@@ -875,8 +879,23 @@ void MixerView::resized()
         groupStrips[k]->setBounds (groupX + shown++ * stripW, 0, stripW, h);
     }
     content.setSize (juce::jmax (r.getWidth(), groupX + shown * stripW + 8), h);
+    int sx = 4;
     for (size_t i = 0; i < strips.size(); ++i)
-        strips[i]->setBounds ((int) i * stripW + 4, 0, stripW, h);
+    {
+        const bool hide = i < allTracks.size() && allTracks[i].hidden;   // le tracce nascoste nella timeline sparisce anche dal mixer
+        strips[i]->setVisible (! hide);
+        if (hide) continue;
+        strips[i]->setBounds (sx, 0, stripW, h);
+        sx += stripW;
+    }
+}
+
+unsigned MixerView::computeHiddenSignature() const
+{
+    unsigned sig = 0;
+    const auto& t = project.getSession().tracks;
+    for (size_t i = 0; i < t.size(); ++i) if (t[i].hidden) sig = sig * 31u + (unsigned) i + 1u;
+    return sig;
 }
 
 bool MixerView::groupInUse (int k) const
@@ -913,6 +932,7 @@ void MixerView::changeListenerCallback (juce::ChangeBroadcaster*)
     for (size_t i = 0; same && i < tracks.size(); ++i)
         same = strips[i]->trackId == tracks[i].id && strips[i]->getLive() == tracks[i].live;
     if (! same) rebuild();
+    else if (computeHiddenSignature() != hiddenSignature) resized();
     eqWindows.erase (std::remove_if (eqWindows.begin(), eqWindows.end(), [&tracks] (auto& w)
     {
         for (auto& t : tracks) if (t.live == w.first) return false;

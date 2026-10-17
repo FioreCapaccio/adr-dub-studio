@@ -267,7 +267,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepPlayEnd(); stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepLockHide(); stepPlayEnd(); stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); });
         });
     }
 
@@ -1473,6 +1473,70 @@ private:
         probe->viewer->setVideo (probe->asset);
         probe->finished = [this, next] { delete probe; probe = nullptr; next(); };
         juce::Timer::callAfterDelay (2500, [this] { if (probe != nullptr) probe->startTimerHz (30); });   // il video si carica in modo asincrono
+    }
+
+    // blocco e visibilita' delle tracce, mute/solo globali
+    void stepLockHide()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "x"; a->audio.setSize (2, 48000); a->audio.clear(); a->buildPeaks();
+        fc::Clip c1, c2;
+        c1.id = 1; c1.asset = a; c1.start = 1000; c1.length = 40000;
+        c2 = c1; c2.id = 2;
+        p.edit().tracks[0].clips = { c1 };
+        p.edit().tracks[1].clips = { c2 };
+        const int t0 = p.getSession().tracks[0].id, t1 = p.getSession().tracks[1].id;
+        p.setTracksLocked ({ t0 }, true);
+        expect (p.trackLocked (t0) && ! p.trackLocked (t1), "Lock: la traccia si blocca");
+        p.moveClipTo (1, 0, 5000);
+        p.moveClipTo (2, 1, 5000);
+        expect (p.findClip (1)->start == 1000 && p.findClip (2)->start == 5000, "Lock: il clip della traccia bloccata non si sposta, l'altro si'");
+        p.moveClipTo (2, 0, 7000);   // verso la traccia bloccata
+        int ti = -1; p.findClip (2, &ti);
+        expect (ti == 1, "Lock: nessun clip si sposta su una traccia bloccata");
+        p.selection = { 1, 2 };
+        p.splitAt (20000);
+        expect (p.getSession().tracks[0].clips.size() == 1 && p.getSession().tracks[1].clips.size() == 2, "Lock: la lama salta la traccia bloccata");
+        p.setClipGain (1, 6.0f); p.normalizeClip (1);
+        expect (std::abs (p.findClip (1)->gainDb) < 1.0e-6f, "Lock: guadagno e normalizzazione non agiscono sulla traccia bloccata");
+        p.selection = { 1 };
+        p.deleteSelected();
+        expect (p.findClip (1) != nullptr, "Lock: Elimina non cancella i clip di una traccia bloccata");
+        p.duplicateSelected();
+        expect (p.getSession().tracks[0].clips.size() == 1, "Lock: Duplica non copia i clip di una traccia bloccata");
+        p.rippleDeleteSelected();
+        expect (p.findClip (1) != nullptr, "Lock: Ripple delete salta la traccia bloccata");
+        p.setTracksLocked ({ t0 }, false);
+        p.moveClipTo (1, 0, 3000);
+        expect (p.findClip (1)->start == 3000, "Lock: sbloccata, il clip si sposta di nuovo");
+
+        p.setTracksHidden ({ t1 }, true);
+        expect (p.getSession().tracks[1].hidden, "Visibilita': traccia nascosta");
+        p.hideEmptyTracks();
+        int hiddenCount = 0;
+        for (auto& t : p.getSession().tracks) hiddenCount += t.hidden ? 1 : 0;
+        expect (hiddenCount == (int) p.getSession().tracks.size() - 1, "Visibilita': nascondi le tracce vuote (restano solo quelle con clip)");
+        p.showAllTracks();
+        hiddenCount = 0;
+        for (auto& t : p.getSession().tracks) hiddenCount += t.hidden ? 1 : 0;
+        expect (hiddenCount == 0, "Visibilita': mostra tutte");
+
+        p.getSession().tracks[0].live->mute = true; p.getSession().tracks[1].live->mute = true; p.getSession().tracks[1].live->solo = true;
+        expect (p.anyTrackMuted() && p.anyTrackSoloed(), "mute/solo globali: ci sono tracce in mute e in solo");
+        p.clearAllMute();
+        expect (! p.anyTrackMuted() && p.anyTrackSoloed(), "mute/solo globali: tolti tutti i mute, i solo restano");
+        p.clearAllSolo();
+        expect (! p.anyTrackSoloed(), "mute/solo globali: tolti tutti i solo");
+
+        // blocco e nascondi si salvano nella sessione
+        p.setTracksLocked ({ t0 }, true);
+        p.setTracksHidden ({ t1 }, true);
+        const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_lock.adb");
+        juce::String err;
+        const bool saved = p.save (f, err);
+        const auto txt = f.loadFileAsString();
+        expect (saved && txt.contains ("\"locked\"") && txt.contains ("\"hidden\""), "Lock e visibilita' salvati nella sessione");
+        f.deleteFile();
     }
 
     // il motore continua a suonare oltre l'ultimo clip se c'e' un video o un cue piu' avanti
@@ -3008,7 +3072,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.13.1"; }
+    const juce::String getApplicationVersion() override { return "2.14.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

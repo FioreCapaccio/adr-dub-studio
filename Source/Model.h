@@ -216,6 +216,8 @@ struct Track
 {
     int id = 0;
     int groupId = 0;   // 0 = nessun gruppo
+    bool locked = false;   // traccia bloccata: i suoi clip non si modificano (come Lock di Nuendo)
+    bool hidden = false;   // traccia nascosta nella timeline e nel mixer (non nel mix)
     juce::String name;
     juce::Colour colour;
     std::shared_ptr<TrackLive> live = std::make_shared<TrackLive>();
@@ -442,6 +444,16 @@ public:
     const TrackGroup* findGroup (int groupId) const noexcept;
     void duplicateTrack (int id);
     void renameTrack (int id, const juce::String& name);
+    // blocco, visibilita', mute/solo globali: stato di lavoro, senza passo di undo
+    void setTracksLocked (const std::vector<int>& ids, bool locked);
+    void setTracksHidden (const std::vector<int>& ids, bool hidden);
+    void showAllTracks();
+    void hideEmptyTracks();
+    bool trackLocked (int trackId) const noexcept;
+    bool anyTrackMuted() const noexcept;
+    bool anyTrackSoloed() const noexcept;
+    void clearAllMute();    // "Annulla tutti i mute" di Nuendo
+    void clearAllSolo();    // "Disattiva tutti i solo"
     void setTrackColour (int id, juce::Colour c);
 
     // registrazione: un clip per ogni take, posizionato compensando la latenza

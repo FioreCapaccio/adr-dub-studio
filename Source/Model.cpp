@@ -959,12 +959,48 @@ void Project::clearVideo()
     changed();
 }
 
+bool Project::trackLocked (int trackId) const noexcept
+{
+    for (auto& t : session.tracks) if (t.id == trackId) return t.locked;
+    return false;
+}
+
+void Project::setTracksLocked (const std::vector<int>& ids, bool locked)
+{
+    for (auto& t : session.tracks) if (std::find (ids.begin(), ids.end(), t.id) != ids.end()) t.locked = locked;
+    markDirty();
+}
+
+void Project::setTracksHidden (const std::vector<int>& ids, bool hidden)
+{
+    for (auto& t : session.tracks) if (std::find (ids.begin(), ids.end(), t.id) != ids.end()) t.hidden = hidden;
+    markDirty();
+}
+
+void Project::showAllTracks()
+{
+    for (auto& t : session.tracks) t.hidden = false;
+    markDirty();
+}
+
+void Project::hideEmptyTracks()
+{
+    for (auto& t : session.tracks) if (t.clips.empty()) t.hidden = true;
+    markDirty();
+}
+
+bool Project::anyTrackMuted() const noexcept { for (auto& t : session.tracks) if (t.live->mute.load()) return true; return false; }
+bool Project::anyTrackSoloed() const noexcept { for (auto& t : session.tracks) if (t.live->solo.load()) return true; return false; }
+void Project::clearAllMute() { for (auto& t : session.tracks) t.live->mute = false; liveChanged(); }
+void Project::clearAllSolo() { for (auto& t : session.tracks) t.live->solo = false; liveChanged(); }
+
 void Project::moveClipTo (int64_t clipId, int trackIndex, int64_t start)
 {
     int ti = -1;
     auto* c = findClip (clipId, &ti);
-    if (c == nullptr) return;
+    if (c == nullptr || session.tracks[(size_t) ti].locked) return;
     trackIndex = juce::jlimit (0, (int) session.tracks.size() - 1, trackIndex);
+    if (session.tracks[(size_t) trackIndex].locked) trackIndex = ti;   // non si sposta su una traccia bloccata
     c->start = juce::jmax<int64_t> (0, start);
     if (ti != trackIndex)
     {
@@ -988,7 +1024,7 @@ void Project::splitAt (int64_t pos, bool allTracks)
 
     std::vector<std::pair<size_t, size_t>> targets;
     for (size_t ti = 0; ti < session.tracks.size(); ++ti)
-        for (size_t ci = 0; ci < session.tracks[ti].clips.size(); ++ci)
+        for (size_t ci = 0; ci < session.tracks[ti].clips.size() && ! session.tracks[ti].locked; ++ci)
         {
             auto& c = session.tracks[ti].clips[ci];
             if (contains (c) && (! onlySelected || selection.count (c.id) > 0)) targets.emplace_back (ti, ci);
@@ -1021,7 +1057,7 @@ void Project::splitClip (int64_t id, int64_t pos)
 {
     int ti = -1;
     auto* c = findClip (id, &ti);
-    if (c == nullptr || pos <= c->start + 16 || pos >= c->end() - 16) return;
+    if (c == nullptr || session.tracks[(size_t) ti].locked || pos <= c->start + 16 || pos >= c->end() - 16) return;
 
     beginEdit();
     auto& clips = session.tracks[(size_t) ti].clips;
@@ -1051,6 +1087,7 @@ void Project::rippleDeleteSelected()
     for (auto& t : session.tracks)
     {
         std::vector<std::pair<int64_t, int64_t>> removed;
+        if (t.locked) continue;
         for (auto& c : t.clips)
             if (selection.count (c.id) > 0) removed.emplace_back (c.start, c.end());
         if (removed.empty()) continue;
@@ -1077,7 +1114,7 @@ void Project::trimToPlayhead (bool trimStart, int64_t pos)
     bool any = false;
     for (auto& t : session.tracks)
         for (auto& c : t.clips)
-            if (inside (c) && (! onlySelected || selection.count (c.id) > 0))
+            if (! t.locked && inside (c) && (! onlySelected || selection.count (c.id) > 0))
             {
                 if (! any) { beginEdit(); any = true; }
                 if (trimStart)
@@ -1261,9 +1298,10 @@ void Project::deleteSelected()
     if (selection.empty()) return;
     beginEdit();
     for (auto& t : session.tracks)
-        t.clips.erase (std::remove_if (t.clips.begin(), t.clips.end(),
-                                       [this] (const Clip& c) { return selection.count (c.id) > 0; }),
-                       t.clips.end());
+        if (! t.locked)
+            t.clips.erase (std::remove_if (t.clips.begin(), t.clips.end(),
+                                           [this] (const Clip& c) { return selection.count (c.id) > 0; }),
+                           t.clips.end());
     selection.clear();
     changed();
 }
@@ -1283,7 +1321,7 @@ void Project::duplicateSelected()
     {
         std::vector<Clip> add;
         for (auto& c : t.clips)
-            if (selection.count (c.id))
+            if (selection.count (c.id) && ! t.locked)
             {
                 Clip n = c;
                 n.id = nextClipId++;
@@ -1307,8 +1345,9 @@ void Project::selectAll()
 
 void Project::normalizeClip (int64_t id)
 {
-    auto* c = findClip (id);
-    if (c == nullptr || c->asset == nullptr) return;
+    int nti = -1;
+    auto* c = findClip (id, &nti);
+    if (c == nullptr || c->asset == nullptr || session.tracks[(size_t) nti].locked) return;
     float peak = 0.0f;
     if (c->asset->offline) return;
     for (int ch = 0; ch < c->asset->numChannels(); ++ch)
@@ -1321,8 +1360,10 @@ void Project::normalizeClip (int64_t id)
 
 void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce::File& folder, std::function<void (juce::String)> done, int64_t newStart)
 {
-    auto* c = findClip (id);
+    int sti = -1;
+    auto* c = findClip (id, &sti);
     if (c == nullptr || c->asset == nullptr || c->length <= 0) { if (done) done ("Clip non valido."); return; }
+    if (session.tracks[(size_t) sti].locked) { if (done) done (TRANS ("La traccia e' bloccata: sbloccala per modificare i suoi clip.")); return; }
     if (c->asset->offline) { if (done) done (TRANS ("Il file di questo clip non e' stato trovato: ricollegalo con File > Ricollega i media.")); return; }
     ratio = juce::jlimit (0.25, 4.0, ratio);
     const auto src = c->asset;
@@ -1370,7 +1411,7 @@ int Project::joinableGroups (const std::set<int64_t>& ids) const
     for (auto& t : session.tracks)
     {
         int n = 0;
-        for (auto& c : t.clips) if (ids.count (c.id) > 0 && ! c.muted && c.asset != nullptr && ! c.asset->offline) ++n;
+        for (auto& c : t.clips) if (! t.locked && ids.count (c.id) > 0 && ! c.muted && c.asset != nullptr && ! c.asset->offline) ++n;
         if (n >= 2) ++groups;
     }
     return groups;
@@ -1385,6 +1426,7 @@ void Project::joinClips (const std::vector<int64_t>& ids, const juce::File& fold
     {
         Job j;
         j.trackId = t.id;
+        if (t.locked) continue;
         for (auto& c : t.clips)
             if (std::find (ids.begin(), ids.end(), c.id) != ids.end() && ! c.muted && c.asset != nullptr && ! c.asset->offline && c.length > 0) j.clips.push_back (c);
         if (j.clips.size() < 2) continue;
@@ -1482,7 +1524,8 @@ void Project::joinClips (const std::vector<int64_t>& ids, const juce::File& fold
 
 void Project::setClipGain (int64_t id, float db)
 {
-    if (auto* c = findClip (id))
+    int gti = -1;
+    if (auto* c = findClip (id, &gti); c != nullptr && ! session.tracks[(size_t) gti].locked)
     {
         beginEdit();
         c->gainDb = db;
@@ -1625,6 +1668,8 @@ juce::var Project::toVar() const
         auto* o = new juce::DynamicObject();
         o->setProperty ("name", t.name);
         o->setProperty ("group", t.groupId);
+        if (t.locked) o->setProperty ("locked", true);
+        if (t.hidden) o->setProperty ("hidden", true);
         o->setProperty ("colour", t.colour.toString());
         o->setProperty ("volumeDb", (double) t.live->volumeDb.load());
         o->setProperty ("pan", (double) t.live->pan.load());
@@ -2023,6 +2068,8 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     Track t;
                     t.name = tv.getProperty ("name", "Audio").toString();
                     t.groupId = (int) tv.getProperty ("group", 0);
+                    t.locked = (bool) tv.getProperty ("locked", false);
+                    t.hidden = (bool) tv.getProperty ("hidden", false);
                     t.colour = juce::Colour::fromString (tv.getProperty ("colour", "ffe5584c").toString());
                     t.live->volumeDb = (float) (double) tv.getProperty ("volumeDb", 0.0);
                     t.live->pan = (float) (double) tv.getProperty ("pan", 0.0);
