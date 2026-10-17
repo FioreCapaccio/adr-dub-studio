@@ -968,3 +968,6 @@ language: English
 "Scena" = "Scene"
 "Battuta" = "Line"
 "REGISTRAZIONE" = "RECORDING"
+"Registrazioni della sessione" = "Session recordings"
+" clip usano registrazioni salvate in Musica/ADR Dub Studio/Registrazioni. Le copio accanto alla sessione, nella cartella dei media, cosi' il progetto si sposta con i suoi file?" = " clips use recordings saved in Music/ADR Dub Studio/Registrazioni. Shall I copy them next to the session, in the media folder, so the project moves along with its files?"
+"Copia accanto alla sessione" = "Copy next to the session"

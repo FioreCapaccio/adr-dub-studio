@@ -87,6 +87,7 @@ private:
     void showAdrWindow();
     void importAdrDialog();
     void joinSelected();
+    void offerCollectRecordings();
     void silenceDialog();
     void exportPackageDialog (bool tracksOnly);
     void importTrackArchiveDialog();

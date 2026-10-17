@@ -44,9 +44,19 @@ juce::File autosaveFile() { return appDataFolder().getChildFile ("autosave.arost
 juce::File autosaveInfo() { return appDataFolder().getChildFile ("autosave.info"); }
 juce::File runningFlag() { return appDataFolder().getChildFile ("running.flag"); }
 
-juce::File recordingsFolder()
+/** Cartella di default delle registrazioni (sessione non ancora salvata). */
+juce::File defaultRecordingsFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Registrazioni");
+}
+
+/** Le registrazioni stanno accanto alla sessione (<nome>_media), cosi' si spostano e si archiviano insieme; senza file di sessione, in Musica. */
+juce::File recordingsFolder (const Project& p)
+{
+    if (p.getFile() == juce::File()) return defaultRecordingsFolder();
+    const auto folder = p.getFile().getParentDirectory().getChildFile (p.getFile().getFileNameWithoutExtension() + "_media");
+    folder.createDirectory();
+    return folder;
 }
 } // namespace
 
@@ -751,7 +761,7 @@ void MainComponent::startRecording()
     for (auto& t : project->getSession().tracks)
         if (t.live->armed.load())
             specs.push_back ({ t.id,
-                               recordingsFolder().getChildFile (juce::File::createLegalFileName (session + "_" + t.name + "_" + stamp) + ".wav"),
+                               recordingsFolder (*project).getChildFile (juce::File::createLegalFileName (session + "_" + t.name + "_" + stamp) + ".wav"),
                                t.live->inputMode.load() });
 
     const auto err = engine.startRecording (specs);
@@ -1036,6 +1046,22 @@ private:
     bool ok = false;
     juce::String error;
 };
+
+/** Dopo il primo salvataggio: se ci sono registrazioni nella cartella di default (sessione non ancora salvata) si propone di portarle accanto alla sessione. */
+void MainComponent::offerCollectRecordings()
+{
+    const auto def = defaultRecordingsFolder();
+    int n = 0;
+    for (auto& t : project->getSession().tracks)
+        for (auto& c : t.clips)
+            if (c.asset != nullptr && ! c.asset->offline && c.asset->file.isAChildOf (def)) ++n;
+    if (n == 0) return;
+    auto opts = juce::MessageBoxOptions::makeOptionsYesNo (juce::MessageBoxIconType::QuestionIcon, TRANS ("Registrazioni della sessione"),
+                                                           juce::String (n) + TRANS (" clip usano registrazioni salvate in Musica/ADR Dub Studio/Registrazioni. Le copio accanto alla sessione, nella cartella dei media, cosi' il progetto si sposta con i suoi file?"),
+                                                           TRANS ("Copia accanto alla sessione"), TRANS ("No"));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    juce::NativeMessageBox::showAsync (opts, [safe] (int r) { if (r == 0 && safe != nullptr) safe->collectMedia(); });   // 0 = primo pulsante
+}
 
 void MainComponent::collectMedia()
 {
@@ -1413,7 +1439,7 @@ void MainComponent::saveAs()
         if (safe == nullptr || f == juce::File()) return;
         juce::String err;
         if (! safe->project->save (f.withFileExtension ("adb"), err)) safe->showError (err);
-        else safe->addRecent (f.withFileExtension ("adb"));
+        else { safe->addRecent (f.withFileExtension ("adb")); safe->offerCollectRecordings(); }
     });
 }
 
@@ -2545,7 +2571,7 @@ void MainComponent::recordAdrCue (int cueId)
     const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
     const auto session = project->getFile() == juce::File() ? juce::String ("Sessione") : project->getFile().getFileNameWithoutExtension();
     const std::vector<TakeSpec> specs { { trackId,
-        recordingsFolder().getChildFile (juce::File::createLegalFileName (session + "_ADR" + juce::String (cue->number) + "_" + track->name + "_" + stamp) + ".wav"),
+        recordingsFolder (*project).getChildFile (juce::File::createLegalFileName (session + "_ADR" + juce::String (cue->number) + "_" + track->name + "_" + stamp) + ".wav"),
         track->live->inputMode.load() } };
 
     engine.setPosition (start);
