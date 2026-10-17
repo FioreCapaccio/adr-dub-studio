@@ -30,6 +30,35 @@ private:
     adr::ImportResult result;
 };
 
+/** Cinque stelle cliccabili (un secondo clic sulla stessa stella azzera). */
+class StarRating : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    std::function<void (int)> onChange;
+    void setValue (int v) { if (v != value) { value = v; repaint(); } }
+    int getValue() const noexcept { return value; }
+    void paint (juce::Graphics& g) override
+    {
+        const float w = (float) getWidth() / 5.0f;
+        for (int i = 0; i < 5; ++i)
+        {
+            juce::Path star;
+            star.addStar ({ w * ((float) i + 0.5f), (float) getHeight() * 0.5f }, 5, w * 0.16f, w * 0.42f);
+            g.setColour (i < value ? juce::Colour (0xffffc94d) : theme::dim.withAlpha (0.45f));
+            g.fillPath (star);
+        }
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const int s = juce::jlimit (1, 5, (int) (e.position.x / ((float) getWidth() / 5.0f)) + 1);
+        if (onChange) onChange (s == value ? 0 : s);
+    }
+    juce::MouseCursor getMouseCursor() override { return juce::MouseCursor::PointingHandCursor; }
+
+private:
+    int value = 0;
+};
+
 /** Pannello ADR: elenco dei cue, dettagli, take e registrazione. */
 class AdrPanel : public juce::Component,
                  private juce::TableListBoxModel,
@@ -75,7 +104,10 @@ private:
     juce::TextButton importBtn { TRANS ("IMPORTA...") }, addBtn { TRANS ("+ CUE") }, delBtn { "ELIMINA" }, settingsBtn { "IMPOSTAZIONI" },
                      csvBtn { TRANS ("ESPORTA CSV") }, ptBtn { TRANS ("ESPORTA PRO TOOLS") }, bwfBtn { TRANS ("ESPORTA TAKE (BWF)") },
                      recBtn { TRANS ("REGISTRA CUE") }, prevBtn { TRANS ("< CUE") }, nextBtn { TRANS ("CUE >") },
+                     keepBtn { TRANS ("TIENI QUESTO") }, rejectBtn { TRANS ("SCARTA") }, purgeBtn { TRANS ("ELIMINA SCARTATE") },
                      auditionBtn { "ASCOLTA" }, originalBtn { "ORIGINALE" }, activateBtn { "ATTIVA" }, deleteTakeBtn { TRANS ("ELIMINA TAKE") };
+    StarRating stars;
+    juce::Label lblRate;
     juce::Label lblChar, lblScene, lblReel, lblIn, lblOut, lblStatus, lblDialogue, lblNotes, lblTrack, lblTakes;
     juce::TextEditor edChar, edScene, edReel, edIn, edOut, edDialogue, edNotes;
     juce::ComboBox cbStatus, cbTrack, cbFilter;

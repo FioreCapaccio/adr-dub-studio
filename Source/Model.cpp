@@ -557,8 +557,18 @@ void Project::importTakes (std::vector<TakeFile> items, std::function<void (juce
             std::map<int, int> bestOf;   // cue -> numero della take indicata come BEST
             selection.clear();
             bool any = false;
-            for (size_t i = 0; i < items.size(); ++i)
+            // i take con il numero scritto nel nome si tengono; se due file reclamano lo stesso numero il secondo prende il primo libero, dopo tutti gli altri
+            std::vector<size_t> order, deferred;
             {
+                std::set<std::pair<int, int>> used;
+                for (auto& t : session.tracks) for (auto& oc : t.clips) if (oc.cueId != 0) used.insert ({ oc.cueId, oc.takeNo });
+                for (size_t i = 0; i < items.size(); ++i)
+                    if (used.insert ({ items[i].cueId, items[i].takeNo }).second) order.push_back (i); else deferred.push_back (i);
+                order.insert (order.end(), deferred.begin(), deferred.end());
+            }
+            for (size_t oi = 0; oi < order.size(); ++oi)
+            {
+                const size_t i = order[oi];
                 auto& asset = (*loaded)[i];
                 if (asset == nullptr || findTrack (items[i].trackId) == nullptr || findCue (items[i].cueId) == nullptr) continue;
                 if (! any) { beginEdit(); any = true; }
@@ -845,6 +855,8 @@ std::vector<int64_t> Project::takeClipIds (int cueId) const
     return ids;
 }
 
+namespace { int bestTake (const std::vector<Project::TakeInfo>& v, int excluding); }
+
 void Project::deleteTake (int cueId, int takeNo)
 {
     auto* cue = findCue (cueId);
@@ -854,13 +866,127 @@ void Project::deleteTake (int cueId, int takeNo)
         t.clips.erase (std::remove_if (t.clips.begin(), t.clips.end(), [cueId, takeNo] (const Clip& c) { return c.cueId == cueId && c.takeNo == takeNo; }), t.clips.end());
     if (cue->activeTake == takeNo)
     {
-        int best = 0;
-        for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId) best = juce::jmax (best, c.takeNo);
+        const int best = bestTake (takeInfos (cueId), takeNo);
         cue->activeTake = best;
-        for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId) c.muted = (c.takeNo != best);
+        for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId) c.muted = c.rejected || (c.takeNo != best);
         if (best == 0 && cue->status == 1) cue->status = 0;
     }
     changed();
+}
+
+std::vector<Project::TakeInfo> Project::takeInfos (int cueId) const
+{
+    std::vector<TakeInfo> out;
+    const auto* cue = findCue (cueId);
+    for (auto& t : session.tracks)
+        for (auto& c : t.clips)
+            if (c.cueId == cueId && cueId != 0)
+            {
+                TakeInfo i;
+                i.takeNo = c.takeNo; i.clipId = c.id; i.rating = c.rating; i.rejected = c.rejected;
+                i.active = cue != nullptr && cue->activeTake == c.takeNo;
+                i.seconds = (double) c.length / juce::jmax (1.0, sampleRate);
+                out.push_back (i);
+            }
+    std::sort (out.begin(), out.end(), [] (const TakeInfo& x, const TakeInfo& y) { return x.takeNo < y.takeNo; });
+    return out;
+}
+
+namespace
+{
+/** Il take da far suonare: il piu' valutato tra quelli non scartati (a parita' il piu' recente); 0 se non ce ne sono. */
+int bestTake (const std::vector<Project::TakeInfo>& v, int excluding)
+{
+    int best = 0, bestRating = -1;
+    for (auto& i : v)
+        if (! i.rejected && i.takeNo != excluding && i.rating >= bestRating) { best = i.takeNo; bestRating = i.rating; }
+    return best;
+}
+}
+
+void Project::setTakeRating (int cueId, int takeNo, int stars)
+{
+    bool found = false;
+    for (auto& t : session.tracks) for (auto& c : t.clips) found = found || (c.cueId == cueId && c.takeNo == takeNo);
+    if (! found) return;
+    beginEdit();
+    for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId && c.takeNo == takeNo) c.rating = juce::jlimit (0, 5, stars);
+    changed();
+}
+
+void Project::setTakeRejected (int cueId, int takeNo, bool rejected)
+{
+    auto* cue = findCue (cueId);
+    if (cue == nullptr) return;
+    beginEdit();
+    for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId && c.takeNo == takeNo) { c.rejected = rejected; if (rejected) c.muted = true; }
+    const auto infos = takeInfos (cueId);
+    if (rejected && cue->activeTake == takeNo)
+    {
+        const int best = bestTake (infos, takeNo);
+        cue->activeTake = best;
+        for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId) c.muted = c.rejected || c.takeNo != best;
+        if (best == 0 && cue->status == 1) cue->status = 0;
+    }
+    else if (! rejected && cue->activeTake == 0)   // un take ripristinato e' l'unico: suona
+    {
+        cue->activeTake = takeNo;
+        for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId) c.muted = c.rejected || c.takeNo != takeNo;
+        if (cue->status == 0 || cue->status == 3) cue->status = 1;
+    }
+    changed();
+}
+
+void Project::keepOnlyTake (int cueId, int takeNo)
+{
+    auto* cue = findCue (cueId);
+    if (cue == nullptr) return;
+    beginEdit();
+    for (auto& t : session.tracks)
+        for (auto& c : t.clips)
+            if (c.cueId == cueId) { c.rejected = c.takeNo != takeNo; c.muted = c.takeNo != takeNo; }
+    cue->activeTake = takeNo;
+    if (cue->status == 0 || cue->status == 3) cue->status = 1;
+    changed();
+}
+
+int Project::deleteRejectedTakes (int cueId)
+{
+    int n = 0;
+    for (auto& t : session.tracks)
+        for (auto& c : t.clips)
+            if (c.rejected && c.cueId != 0 && (cueId == 0 || c.cueId == cueId)) ++n;
+    if (n == 0) return 0;
+    beginEdit();
+    for (auto& t : session.tracks)
+        t.clips.erase (std::remove_if (t.clips.begin(), t.clips.end(), [cueId] (const Clip& c) { return c.rejected && c.cueId != 0 && (cueId == 0 || c.cueId == cueId); }), t.clips.end());
+    changed();
+    return n;
+}
+
+int Project::undecidedCues() const
+{
+    int n = 0;
+    for (auto& c : session.cues)
+    {
+        int alive = 0;
+        for (auto& i : takeInfos (c.id)) alive += i.rejected ? 0 : 1;
+        if (alive > 1) ++n;
+    }
+    return n;
+}
+
+int Project::cleanUpTrack (int trackId)
+{
+    auto* t = findTrack (trackId);
+    if (t == nullptr || t->editLocked()) return 0;
+    int n = 0;
+    for (auto& c : t->clips) if (c.muted) ++n;
+    if (n == 0) return 0;
+    beginEdit();
+    t->clips.erase (std::remove_if (t->clips.begin(), t->clips.end(), [] (const Clip& c) { return c.muted; }), t->clips.end());
+    changed();
+    return n;
 }
 
 int Project::takeCount (int cueId) const
@@ -884,7 +1010,7 @@ void Project::setActiveTake (int cueId, int takeNo)
     beginEdit();
     for (auto& t : session.tracks)
         for (auto& c : t.clips)
-            if (c.cueId == cueId) c.muted = (c.takeNo != takeNo);
+            if (c.cueId == cueId) { if (c.takeNo == takeNo) c.rejected = false; c.muted = (c.takeNo != takeNo); }
     cue->activeTake = takeNo;
     changed();
 }
@@ -1977,7 +2103,7 @@ juce::var Project::toVar() const
             co->setProperty ("gainDb", (double) c.gainDb);
             co->setProperty ("fadeIn", (juce::int64) c.fadeIn);
             co->setProperty ("fadeOut", (juce::int64) c.fadeOut);
-            if (c.cueId != 0) { co->setProperty ("cueId", c.cueId); co->setProperty ("takeNo", c.takeNo); co->setProperty ("muted", c.muted); }
+            if (c.cueId != 0) { co->setProperty ("cueId", c.cueId); co->setProperty ("takeNo", c.takeNo); co->setProperty ("muted", c.muted); if (c.rating > 0) co->setProperty ("rating", c.rating); if (c.rejected) co->setProperty ("rejected", true); }
             clips.add (juce::var (co));
         }
         o->setProperty ("clips", clips);
@@ -2412,6 +2538,8 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                             c.cueId = (int) cv.getProperty ("cueId", 0);
                             c.takeNo = (int) cv.getProperty ("takeNo", 0);
                             c.muted = (bool) cv.getProperty ("muted", false);
+                            c.rating = juce::jlimit (0, 5, (int) cv.getProperty ("rating", 0));
+                            c.rejected = (bool) cv.getProperty ("rejected", false);
                             if (c.asset->offline) c.asset->offlineLength = juce::jmax (c.asset->offlineLength, c.offset + c.length);   // la lunghezza minima che i clip richiedono
                             c.offset = juce::jlimit<int64_t> (0, c.asset->length(), c.offset);
                             c.length = juce::jlimit<int64_t> (0, c.asset->length() - c.offset, c.length);

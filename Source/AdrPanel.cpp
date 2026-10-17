@@ -137,7 +137,7 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     h.addColumn ("Dialogo", 9, 300, 120, 2000, juce::TableHeaderComponent::notSortable);
     addAndMakeVisible (table);
 
-    for (auto* b : { &importBtn, &addBtn, &delBtn, &settingsBtn, &csvBtn, &ptBtn, &bwfBtn, &recBtn, &prevBtn, &nextBtn, &auditionBtn, &originalBtn, &activateBtn, &deleteTakeBtn })
+    for (auto* b : { &importBtn, &addBtn, &delBtn, &settingsBtn, &csvBtn, &ptBtn, &bwfBtn, &recBtn, &prevBtn, &nextBtn, &auditionBtn, &originalBtn, &activateBtn, &deleteTakeBtn, &keepBtn, &rejectBtn, &purgeBtn })
     {
         b->setWantsKeyboardFocus (false);
         addAndMakeVisible (*b);
@@ -166,6 +166,30 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     {
         if (actions.isAuditioning && actions.isAuditioning()) { if (actions.stopAudition) actions.stopAudition(); }
         else if (shownCueId != 0 && actions.auditionOriginal) { auditionIsOriginal = true; actions.auditionOriginal (shownCueId); }
+    };
+    keepBtn.setTooltip (TRANS ("Tiene il take scelto: diventa quello attivo e tutti gli altri take del cue vengono scartati (si puo' annullare)"));
+    rejectBtn.setTooltip (TRANS ("Scarta il take scelto (non suona piu' e non conta) o lo ripristina. Non lo cancella dal disco"));
+    purgeBtn.setTooltip (TRANS ("Elimina per sempre i take scartati di questo cue. Con Maiusc di tutti i cue"));
+    lblRate.setText (TRANS ("VALUTAZIONE"), juce::dontSendNotification);
+    lblRate.setFont (font (10.5f, true));
+    lblRate.setColour (juce::Label::textColourId, dim);
+    addAndMakeVisible (lblRate);
+    addAndMakeVisible (stars);
+    stars.setTooltip (TRANS ("Valutazione del take scelto: da 1 a 5 stelle. Un secondo clic sulla stessa stella la toglie"));
+    stars.onChange = [this] (int v) { if (viewTake != 0 && shownCueId != 0) project.setTakeRating (shownCueId, viewTake, v); };
+    keepBtn.onClick = [this] { if (viewTake != 0 && shownCueId != 0) project.keepOnlyTake (shownCueId, viewTake); };
+    rejectBtn.onClick = [this]
+    {
+        if (viewTake == 0 || shownCueId == 0) return;
+        bool rej = false;
+        for (auto& i : project.takeInfos (shownCueId)) if (i.takeNo == viewTake) rej = i.rejected;
+        project.setTakeRejected (shownCueId, viewTake, ! rej);
+    };
+    purgeBtn.onClick = [this]
+    {
+        const bool all = juce::ModifierKeys::currentModifiers.isShiftDown();
+        const int n = project.deleteRejectedTakes (all ? 0 : shownCueId);
+        if (n == 0) juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Take scartati"), TRANS ("Non ci sono take scartati da eliminare."));
     };
     activateBtn.onClick = [this] { if (viewTake != 0 && shownCueId != 0) project.setActiveTake (shownCueId, viewTake); };
     deleteTakeBtn.onClick = [this] { if (viewTake != 0 && shownCueId != 0) project.deleteTake (shownCueId, viewTake); };
@@ -365,11 +389,14 @@ void AdrPanel::rebuildTakes()
     if (c != nullptr)
         for (int n : numbers)
         {
-            auto b = std::make_unique<juce::TextButton> ("T" + juce::String (n));
+            int rating = 0;
+            bool rejected = false;
+            for (auto& i : project.takeInfos (c->id)) if (i.takeNo == n) { rating = i.rating; rejected = i.rejected; }
+            auto b = std::make_unique<juce::TextButton> ("T" + juce::String (n) + (rejected ? juce::String (" x") : (rating > 0 ? " " + juce::String (rating) + juce::String (juce::CharPointer_UTF8 ("\xe2\x98\x85")) : juce::String())));
             const bool active = c->activeTake == n;
             b->setClickingTogglesState (false);
             b->setToggleState (n == viewTake, juce::dontSendNotification);
-            b->setColour (juce::TextButton::textColourOffId, active ? green : text);
+            b->setColour (juce::TextButton::textColourOffId, rejected ? dim : (active ? green : text));
             b->setWantsKeyboardFocus (false);
             b->setTooltip (TRANS ("Take ") + juce::String (n) + (active ? TRANS (" (attivo, in verde). ") : ". ") + TRANS ("Clic: sceglie il take e lo ascolta"));
             const int cueId = c->id;
@@ -391,6 +418,23 @@ void AdrPanel::rebuildTakes()
     originalBtn.setEnabled (c != nullptr && ! (playing && ! auditionIsOriginal));
     activateBtn.setEnabled (any && c != nullptr && c->activeTake != viewTake);
     deleteTakeBtn.setEnabled (any);
+    {
+        int rating = 0, alive = 0, rejectedCount = 0;
+        bool viewRejected = false;
+        if (c != nullptr)
+            for (auto& i : project.takeInfos (c->id))
+            {
+                if (i.takeNo == viewTake) { rating = i.rating; viewRejected = i.rejected; }
+                alive += i.rejected ? 0 : 1;
+                rejectedCount += i.rejected ? 1 : 0;
+            }
+        stars.setValue (rating);
+        stars.setEnabled (any);
+        keepBtn.setEnabled (any && (alive > 1 || viewRejected || (c != nullptr && c->activeTake != viewTake)));
+        rejectBtn.setEnabled (any);
+        rejectBtn.setButtonText (viewRejected ? TRANS ("RIPRISTINA") : TRANS ("SCARTA"));
+        purgeBtn.setEnabled (rejectedCount > 0 || true);
+    }
     resized();
 }
 
@@ -587,7 +631,7 @@ void AdrPanel::resized()
 
     auto takesRow = d.removeFromTop (30);
     lblTakes.setBounds (takesRow.removeFromLeft (44).withTrimmedTop (8));
-    for (auto& b : takeButtons) { b->setBounds (takesRow.removeFromLeft (46)); takesRow.removeFromLeft (4); }
+    for (auto& b : takeButtons) { b->setBounds (takesRow.removeFromLeft (juce::jmax (46, b->getButtonText().length() * 11 + 14))); takesRow.removeFromLeft (4); }
     deleteTakeBtn.setBounds (takesRow.removeFromRight (110));
     takesRow.removeFromRight (6);
     activateBtn.setBounds (takesRow.removeFromRight (80));
@@ -595,6 +639,16 @@ void AdrPanel::resized()
     auditionBtn.setBounds (takesRow.removeFromRight (90));
     takesRow.removeFromRight (6);
     originalBtn.setBounds (takesRow.removeFromRight (100));
+    d.removeFromTop (6);
+
+    auto rateRow = d.removeFromTop (30);
+    lblRate.setBounds (rateRow.removeFromLeft (92).withTrimmedTop (8));
+    stars.setBounds (rateRow.removeFromLeft (120).reduced (0, 3));
+    purgeBtn.setBounds (rateRow.removeFromRight (150));
+    rateRow.removeFromRight (6);
+    rejectBtn.setBounds (rateRow.removeFromRight (100));
+    rateRow.removeFromRight (6);
+    keepBtn.setBounds (rateRow.removeFromRight (130));
     d.removeFromTop (6);
 
     auto row3 = d.removeFromTop (34);

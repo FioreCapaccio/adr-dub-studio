@@ -19,7 +19,7 @@ struct Found
 bool parseName (const juce::String& fileNameWithoutExtension, Found& out);
 
 /** Cerca i file audio nella cartella e in quelle sotto (fino a 'maxDepth'). Se lo stesso cue/take c'e' piu' volte (esportazioni per programmi
-    diversi) tiene un solo file: prima quelli con la posizione incorporata, poi il percorso piu' corto. 'duplicates' conta gli scartati. */
+    diversi) tiene un solo file se hanno lo stesso nome (copie in altre cartelle): prima quelli con la posizione incorporata, poi il percorso piu' corto. Nomi diversi per lo stesso take sono registrazioni diverse e restano entrambe. 'duplicates' conta gli scartati. */
 std::vector<Found> scan (juce::AudioFormatManager&, const juce::File& folder, int& duplicates, int maxDepth = 4);
 
 struct Plan

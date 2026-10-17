@@ -268,7 +268,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); });
         });
     }
 
@@ -1650,6 +1650,56 @@ private:
         f.deleteFile();
     }
 
+    // piu' registrazioni dello stesso cue: valutare, scartare, tenere la migliore
+    void stepTakeChoice()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "t"; a->audio.setSize (2, 48000); a->audio.clear(); a->buildPeaks();
+        fc::AdrCue cue; cue.number = 1; cue.character = "Marco"; cue.inPos = 0; cue.outPos = 48000;
+        const int cid = p.addCue (cue);
+        fc::Clip c;
+        for (int n = 1; n <= 3; ++n)
+        {
+            c = {}; c.id = n; c.asset = a; c.length = 48000; c.cueId = cid; c.takeNo = n; c.muted = n != 3;
+            p.edit().tracks[0].clips.push_back (c);
+        }
+        p.edit().cues[0].activeTake = 3;
+        expect (p.undecidedCues() == 1, "Take: un cue con tre take e' ancora da decidere");
+        p.setTakeRating (cid, 1, 5);
+        p.setTakeRating (cid, 2, 3);
+        auto info = p.takeInfos (cid);
+        expect (info.size() == 3 && info[0].rating == 5 && info[1].rating == 3 && info[2].active, "Take: valutazioni a stelle e take attivo");
+        p.setTakeRejected (cid, 3, true);   // si scarta l'attivo: diventa attivo il piu' valutato tra gli altri
+        expect (p.findCue (cid)->activeTake == 1 && ! p.findClip (1)->muted && p.findClip (3)->rejected && p.findClip (3)->muted, "Take: scartando l'attivo suona il piu' valutato (T1, 5 stelle)");
+        p.setTakeRejected (cid, 3, false);
+        expect (! p.findClip (3)->rejected && p.findCue (cid)->activeTake == 1, "Take: ripristinando un take non cambia quello attivo");
+        p.keepOnlyTake (cid, 2);
+        expect (p.findCue (cid)->activeTake == 2 && p.findClip (1)->rejected && p.findClip (3)->rejected && ! p.findClip (2)->rejected && p.undecidedCues() == 0,
+                "Take: TIENI QUESTO attiva il take scelto e scarta gli altri");
+        // un take scartato non suona nemmeno se e' l'ascolto dell'originale
+        auto s = p.getSession().cloneDetached();
+        s.master->limiterOn = false;
+        fc::Mixer m;
+        juce::AudioBuffer<float> out (2, 64);
+        m.render (s, 0, out, 0, 64);
+        expect (std::abs (out.getSample (0, 0)) < 1.0e-6f, "Take: i take scartati non suonano");
+        const int removed = p.deleteRejectedTakes (cid);
+        expect (removed == 2 && p.takeCount (cid) == 1, "Take: ELIMINA SCARTATE toglie solo gli scartati");
+        p.undo();
+        expect (p.takeCount (cid) == 3, "Take: l'eliminazione degli scartati si annulla");
+        const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_take_scelta.adb");
+        juce::String err;
+        const bool saved = p.save (f, err);
+        expect (saved && f.loadFileAsString().contains ("\"rating\"") && f.loadFileAsString().contains ("\"rejected\""), "Take: valutazioni e scarti si salvano nella sessione");
+        f.deleteFile();
+        // clean up delle corsie: elimina i clip silenziati
+        fc::Project q (formats, 48000.0);
+        fc::Clip k1, k2;
+        k1.id = 1; k1.asset = a; k1.length = 48000; k2 = k1; k2.id = 2; k2.muted = true;
+        q.edit().tracks[0].clips = { k1, k2 };
+        expect (q.cleanUpTrack (q.getSession().tracks[0].id) == 1 && q.getSession().tracks[0].clips.size() == 1, "Clean up lanes: elimina i clip silenziati");
+    }
+
     // Freeze: la traccia congelata suona come prima (guadagno in ingresso ed EQ compresi), poi si scongela
     void stepFreeze (std::function<void()> next)
     {
@@ -1821,6 +1871,7 @@ private:
         makeWav (dir.getChildFile ("Audio/Cue001_Marco_Take2_BEST.wav"), 44100.0, 3.0);
         makeWav (dir.getChildFile ("Audio/Cue002_Anna_Take1.wav"), 44100.0, -1.0);
         makeWav (dir.getChildFile ("altro/giu/Cue002_Anna_Take1.wav"), 44100.0, -1.0);   // copia in un'altra cartella
+        makeWav (dir.getChildFile ("Audio/Cue001_Marco_Take1_alt.wav"), 44100.0, 4.0);   // un'altra registrazione dello stesso take (nome diverso)
         makeWav (dir.getChildFile ("Audio/Cue099_Zeno_Take1.wav"), 44100.0, 1.0);        // nessun cue 99
         makeWav (dir.getChildFile ("Audio/RoomTone.wav"), 44100.0, 1.0);
 
@@ -1834,18 +1885,18 @@ private:
         }
         int dups = 0;
         const auto found = fc::takes::scan (formats, dir, dups);
-        expect (found.size() == 4 && dups == 1, "take: " + juce::String ((int) found.size()) + " file riconosciuti, " + juce::String (dups) + " copie ignorate (attesi 4 e 1)");
-        expect (fc::takes::countMatches (*takesProject, found) == 3, "take: tre file hanno un cue nella sessione");
+        expect (found.size() == 5 && dups == 1, "take: " + juce::String ((int) found.size()) + " file riconosciuti, " + juce::String (dups) + " copie ignorate (attesi 5 e 1): un nome diverso e' un'altra registrazione");
+        expect (fc::takes::countMatches (*takesProject, found) == 4, "take: quattro file hanno un cue nella sessione");
         auto pl = std::make_shared<fc::takes::Plan> (fc::takes::plan (*takesProject, found));
-        expect (pl->items.size() == 3 && pl->cues == 2 && pl->notes.size() == 1 && takesProject->getSession().tracks.size() == 2, "take: piano con 3 take su 2 cue, un avviso per il cue 99, tracce Marco e Anna create");
+        expect (pl->items.size() == 4 && pl->cues == 2 && pl->notes.size() == 1 && takesProject->getSession().tracks.size() == 2, "take: piano con 4 take su 2 cue, un avviso per il cue 99, tracce Marco e Anna create");
         takesProject->importTakes (pl->items, [this, next, pl, dir] (juce::StringArray errs, int imported)
         {
             auto& s = takesProject->getSession();
-            expect (errs.isEmpty() && imported == 3, "take: importate " + juce::String (imported));
+            expect (errs.isEmpty() && imported == 4, "take: importate " + juce::String (imported));
             const auto* marco = takesProject->findTrack (fc::dub::trackForCue (*takesProject, s.cues[0]));
             const auto* anna = takesProject->findTrack (fc::dub::trackForCue (*takesProject, s.cues[1]));
-            expect (marco != nullptr && anna != nullptr && marco->clips.size() == 2 && anna->clips.size() == 1, "take: ogni take sulla traccia del suo personaggio");
-            if (marco != nullptr && marco->clips.size() == 2 && anna != nullptr && anna->clips.size() == 1)
+            expect (marco != nullptr && anna != nullptr && marco->clips.size() == 3 && anna->clips.size() == 1, "take: ogni take sulla traccia del suo personaggio (due registrazioni dello stesso take restano entrambe)");
+            if (marco != nullptr && marco->clips.size() == 3 && anna != nullptr && anna->clips.size() == 1)
             {
                 expect (marco->clips[0].takeNo == 1 && marco->clips[0].start == 2 * 48000 && marco->clips[1].takeNo == 2 && marco->clips[1].start == 3 * 48000,
                         "take: la posizione viene dal BWF (2 s e 3 s) anche se il file e' a 44,1 kHz");
@@ -3238,7 +3289,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.15.0"; }
+    const juce::String getApplicationVersion() override { return "2.16.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

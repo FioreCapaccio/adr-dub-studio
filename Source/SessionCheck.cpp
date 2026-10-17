@@ -41,6 +41,8 @@ std::vector<Issue> checkSession (const Project& p)
         else if (p.takeCount (c.id) == 0) { ++noTake; add (Issue::Warning, "Cue " + juce::String (c.number) + " segnato come registrato ma senza take.", c.id); }
         if (c.status == 1) ++recorded;
     }
+    if (const int undecided = p.undecidedCues(); undecided > 0)
+        add (Issue::Warning, juce::String (undecided) + TRANS (" cue hanno piu' di un take: scegli il migliore e scarta gli altri (finestra ADR > TIENI QUESTO)."));
     if (toRecord > 0)
         add (Issue::Warning, juce::String (toRecord) + TRANS (" cue ancora da registrare (il primo e' il ") + juce::String (firstToRecord->number) + ").", firstToRecord->id);
     if (recorded > 0) add (Issue::Info, juce::String (recorded) + TRANS (" cue registrati ma non ancora approvati."));

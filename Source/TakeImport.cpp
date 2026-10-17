@@ -65,10 +65,13 @@ std::vector<Found> scan (juce::AudioFormatManager& fm, const juce::File& folder,
     }
 
     auto pathDepth = [] (const Found& f) { return juce::StringArray::fromTokens (f.file.getFullPathName(), "/\\", "").size(); };
+    // stesso nome (senza BEST) = copia dello stesso file in un'altra cartella; nomi diversi = registrazioni diverse dello stesso take
+    auto key = [] (const Found& f) { return f.file.getFileNameWithoutExtension().toLowerCase().replace ("_best", "").replace ("-best", "").replace (" best", ""); };
     std::sort (all.begin(), all.end(), [&] (const Found& a, const Found& b)
     {
         if (a.cueNumber != b.cueNumber) return a.cueNumber < b.cueNumber;
         if (a.take != b.take) return a.take < b.take;
+        if (key (a) != key (b)) return key (a) < key (b);
         if ((a.refSeconds >= 0.0) != (b.refSeconds >= 0.0)) return a.refSeconds >= 0.0;
         if (pathDepth (a) != pathDepth (b)) return pathDepth (a) < pathDepth (b);
         return a.file.getFullPathName() < b.file.getFullPathName();
@@ -76,7 +79,7 @@ std::vector<Found> scan (juce::AudioFormatManager& fm, const juce::File& folder,
     std::vector<Found> out;
     for (auto& f : all)
     {
-        if (! out.empty() && out.back().cueNumber == f.cueNumber && out.back().take == f.take) { ++duplicates; out.back().best = out.back().best || f.best; continue; }
+        if (! out.empty() && out.back().cueNumber == f.cueNumber && out.back().take == f.take && key (out.back()) == key (f)) { ++duplicates; out.back().best = out.back().best || f.best; continue; }
         out.push_back (f);
     }
     return out;

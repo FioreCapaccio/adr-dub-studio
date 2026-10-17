@@ -64,6 +64,8 @@ struct Clip
     int cueId = 0;
     int takeNo = 0;
     bool muted = false;
+    int rating = 0;          // take ADR: valutazione 0..5 stelle
+    bool rejected = false;   // take ADR scartato: non suona mai e non conta; si puo' ripristinare o eliminare del tutto
     // crossfade automatico con i clip che si sovrappongono (calcolato da Session::computeCrossfades, non salvato)
     int64_t xfadeIn = 0, xfadeOut = 0;
     bool xLinear = false;      // stesso materiale continuo: dissolvenza a guadagno costante invece che a potenza costante
@@ -504,6 +506,15 @@ public:
     void setActiveTake (int cueId, int takeNo);
     std::vector<int64_t> takeClipIds (int cueId) const;
     void deleteTake (int cueId, int takeNo);
+    // piu' registrazioni dello stesso cue: si valutano, si sceglie la migliore e si scartano le altre
+    struct TakeInfo { int takeNo = 0; int64_t clipId = 0; int rating = 0; bool rejected = false, active = false; double seconds = 0.0; };
+    std::vector<TakeInfo> takeInfos (int cueId) const;                 // ordinati per numero di take
+    void setTakeRating (int cueId, int takeNo, int stars);
+    void setTakeRejected (int cueId, int takeNo, bool rejected);       // scartando l'attivo ne diventa attivo il migliore tra gli altri
+    void keepOnlyTake (int cueId, int takeNo);                         // attiva questo e scarta tutti gli altri (un solo passo di undo)
+    int deleteRejectedTakes (int cueId);                               // elimina per sempre i take scartati (cueId 0 = di tutti i cue); ritorna quanti
+    int undecidedCues() const;                                         // cue con piu' di un take non scartato: ne va scelto uno
+    int cleanUpTrack (int trackId);                                    // "Clean up lanes": elimina i clip silenziati della traccia (le parti non scelte del comping)
 
     // marker
     int addMarker (int64_t pos, const juce::String& name = {});

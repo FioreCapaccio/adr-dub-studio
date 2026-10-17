@@ -2834,6 +2834,21 @@ void MainComponent::newFromTemplate (int index)
     });
 }
 
+namespace
+{
+int activeRating (const Project& p, const AdrCue& c)
+{
+    for (auto& i : p.takeInfos (c.id)) if (i.takeNo == c.activeTake) return i.rating;
+    return 0;
+}
+int rejectedCount (const Project& p, int cueId)
+{
+    int n = 0;
+    for (auto& i : p.takeInfos (cueId)) n += i.rejected ? 1 : 0;
+    return n;
+}
+}
+
 void MainComponent::exportAdrCsv()
 {
     const auto base = (project->getFile() == juce::File() ? juce::String ("ADR") : project->getFile().getFileNameWithoutExtension()) + "_cue_sheet";
@@ -2846,11 +2861,11 @@ void MainComponent::exportAdrCsv()
         if (safe == nullptr || f == juce::File()) return;
         auto& p = *safe->project;
         const double rate = p.getSampleRate();
-        juce::String csv = TRANS ("Cue;Stato;Personaggio;Scena;Rullo;TC In;TC Out;Durata (s);Take attivo;Take totali;Dialogo;Note\n");
+        juce::String csv = TRANS ("Cue;Stato;Personaggio;Scena;Rullo;TC In;TC Out;Durata (s);Take attivo;Valutazione;Take totali;Take scartati;Dialogo;Note\n");
         for (auto& c : p.getSession().cues)
             csv << c.number << ";" << adrStatusName (c.status) << ";" << csvField (c.character) << ";" << csvField (c.scene) << ";" << csvField (c.reel) << ";"
                 << p.formatTc ((double) c.inPos / rate) << ";" << p.formatTc ((double) c.outPos / rate) << ";" << juce::String ((double) (c.outPos - c.inPos) / rate, 2) << ";"
-                << c.activeTake << ";" << p.takeCount (c.id) << ";" << csvField (c.dialogue) << ";" << csvField (c.notes) << "\n";
+                << c.activeTake << ";" << activeRating (p, c) << ";" << p.takeCount (c.id) << ";" << rejectedCount (p, c.id) << ";" << csvField (c.dialogue) << ";" << csvField (c.notes) << "\n";
         if (! f.withFileExtension ("csv").replaceWithText (csv)) safe->showError (TRANS ("Impossibile scrivere il file."));
     });
 }

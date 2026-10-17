@@ -170,7 +170,7 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
             }
             else if (audible)
                 for (auto& c : t.clips)
-                    if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! (auditionClip < 0 && c.cueId != 0))) && c.end() > cpos && c.start < cpos + chunk)
+                    if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! c.rejected && ! (auditionClip < 0 && c.cueId != 0))) && c.end() > cpos && c.start < cpos + chunk)
                         renderClip (c, cpos, chunk);
 
             if (audible)   // guadagno in ingresso (a rampa): alimenta EQ e compressore al livello giusto
