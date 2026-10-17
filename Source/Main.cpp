@@ -1787,9 +1787,10 @@ private:
             fc::Project m (formats, 48000.0);
             const int id = m.addCycleMarker (1000, 5000, "Scena 3");
             m.notes = "Appunti";
+            m.adrOverlay = 3;
             const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_cicli.adb");
             juce::String er;
-            expect (m.save (f, er) && f.loadFileAsString().contains ("\"end\"") && f.loadFileAsString().contains ("Appunti") && m.findMarker (id)->end == 5000, "Marker di ciclo e note: salvati con la sessione");
+            expect (m.save (f, er) && f.loadFileAsString().contains ("\"end\"") && f.loadFileAsString().contains ("Appunti") && f.loadFileAsString().contains ("adrOverlay") && m.findMarker (id)->end == 5000, "Marker di ciclo, note e sovrimpressione ADR: salvati con la sessione");
             f.deleteFile();
             expect (fc::numBatchPresets() >= 8 && fc::batchPresetOptions (1).norm == fc::ExportOptions::Norm::Lufs && std::abs (fc::batchPresetOptions (1).normTarget + 23.0) < 1.0e-9, "Batch: i preset dell'esportazione sono disponibili senza finestra (EBU R128 a -23 LUFS)");
         }
@@ -3574,7 +3575,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.18.0"; }
+    const juce::String getApplicationVersion() override { return "2.19.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

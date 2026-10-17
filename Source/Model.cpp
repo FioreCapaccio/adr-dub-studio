@@ -2466,6 +2466,7 @@ juce::var Project::toVar() const
     root->setProperty ("adrPostRoll", adrPostRoll);
     root->setProperty ("adrBeeps", adrBeeps);
     root->setProperty ("adrStreamer", adrStreamer);
+    root->setProperty ("adrOverlay", adrOverlay);
     root->setProperty ("adrDialogueSize", adrDialogueSize);
     root->setProperty ("adrNaming", adrNaming);
     root->setProperty ("exportIn", (juce::int64) exportIn);
@@ -2898,6 +2899,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
         const double pPre = (double) parsed.getProperty ("adrPreRoll", 3.0), pPost = (double) parsed.getProperty ("adrPostRoll", 1.0);
         const int pBeeps = (int) parsed.getProperty ("adrBeeps", 3);
         const bool pStreamer = (bool) parsed.getProperty ("adrStreamer", true);
+        const int pOverlay = (int) parsed.getProperty ("adrOverlay", 31);
         const int pDialogueSize = juce::jlimit (12, 120, (int) parsed.getProperty ("adrDialogueSize", 30));
         const juce::String pNaming = parsed.getProperty ("adrNaming", "{personaggio}_{scena}_{cue}_T{take}").toString();
         const int64_t pExportIn = (juce::int64) parsed.getProperty ("exportIn", -1), pExportOut = (juce::int64) parsed.getProperty ("exportOut", -1);
@@ -3170,7 +3172,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 tcFormat = juce::jlimit (0, numTcFormats - 1, ptcFormat);
                 tcStartSec = ptcStart;
                 rulerTimecode = prulerTc;
-                adrPreRoll = pPre; adrPostRoll = pPost; adrBeeps = pBeeps; adrStreamer = pStreamer; adrDialogueSize = pDialogueSize; adrNaming = pNaming; exportIn = pExportIn; exportOut = pExportOut;
+                adrPreRoll = pPre; adrPostRoll = pPost; adrBeeps = pBeeps; adrStreamer = pStreamer; adrOverlay = pOverlay; adrDialogueSize = pDialogueSize; adrNaming = pNaming; exportIn = pExportIn; exportOut = pExportOut;
                 missingVideoPath = lostVideoPath;
                 missingVideoOffset = lostVideoOffset;
                 publish();

@@ -939,6 +939,7 @@ void MainComponent::showSessionSettings()
         p.adrPostRoll = v.postRoll;
         p.adrBeeps = v.beeps;
         p.adrStreamer = v.streamer;
+        p.adrOverlay = v.overlay;
         p.adrDialogueSize = v.dialogueSize;
         p.adrNaming = v.naming;
         safe->adrViewerKey.clear();
@@ -946,7 +947,7 @@ void MainComponent::showSessionSettings()
         safe->repaint();
         safe->timeline->repaint();
     });
-    dlg->setSize (520, 580);
+    dlg->setSize (520, 640);
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (dlg);
     lo.dialogTitle = TRANS ("Impostazioni sessione: timecode e ADR");
@@ -2291,11 +2292,15 @@ void MainComponent::updateAdrViewer()
         info.streamer = project->adrStreamer;
         info.inSec = (double) c->inPos / rate;
         info.outSec = (double) c->outPos / rate;
-        info.title = TRANS ("ADR #") + juce::String (c->number) + "   " + c->character.toUpperCase()
-                   + (c->scene.isNotEmpty() ? "   Scena " + c->scene : juce::String())
-                   + "   " + project->formatTc (info.inSec) + " - " + project->formatTc (info.outSec)
-                   + (info.recording ? "   REGISTRAZIONE" : juce::String());
-        info.dialogue = c->dialogue;
+        const int ov = project->adrOverlay;   // cosa mostrare sopra il video (Impostazioni sessione)
+        juce::StringArray parts;
+        if (ov & 1) parts.add (TRANS ("ADR #") + juce::String (c->number));
+        if (ov & 2) parts.add (c->character.toUpperCase());
+        if ((ov & 4) && c->scene.isNotEmpty()) parts.add (TRANS ("Scena ") + c->scene);
+        if (ov & 8) parts.add (project->formatTc (info.inSec) + " - " + project->formatTc (info.outSec));
+        if (info.recording) parts.add (TRANS ("REGISTRAZIONE"));
+        info.title = parts.joinIntoString ("   ");
+        info.dialogue = (ov & 16) ? c->dialogue : juce::String();
         info.dialogueSize = project->adrDialogueSize;
     }
     const auto key = juce::String (info.active ? 1 : 0) + info.title + info.dialogue + juce::String (info.streamer ? 1 : 0) + juce::String (info.dialogueSize) + juce::String (info.inSec) + juce::String (info.outSec);

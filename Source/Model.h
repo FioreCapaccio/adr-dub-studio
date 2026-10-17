@@ -648,6 +648,7 @@ public:
     double adrPreRoll = 3.0, adrPostRoll = 1.0;   // secondi
     int adrBeeps = 3;              // numero di bip prima dell'ingresso (0 = nessuno)
     bool adrStreamer = true;       // streamer visivo sul video
+    int adrOverlay = 31;           // sovrimpressione ADR sul video (bit): 1 numero, 2 personaggio, 4 scena, 8 timecode, 16 battuta
 
     const TcFormat& tcFmt() const noexcept { return tcFormats()[juce::jlimit (0, numTcFormats - 1, tcFormat)]; }
     double frameRate() const noexcept { return tcFmt().fps; }

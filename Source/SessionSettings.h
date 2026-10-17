@@ -9,7 +9,7 @@ namespace fc
 class SessionSettingsDialog : public juce::Component
 {
 public:
-    struct Values { int tcFormat; double tcStart; bool rulerTc; double preRoll, postRoll; int beeps; bool streamer; int dialogueSize; juce::String naming; };
+    struct Values { int tcFormat; double tcStart; bool rulerTc; double preRoll, postRoll; int beeps; bool streamer; int overlay; int dialogueSize; juce::String naming; };
 
     SessionSettingsDialog (const Project&, std::function<void (const Values&)> onAccept);
     void paint (juce::Graphics& g) override { g.fillAll (theme::panel); }
@@ -25,6 +25,8 @@ private:
     juce::Slider dialogueSize { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::ComboBox tcFormat, beeps;
     juce::TextEditor start, preRoll, postRoll, naming;
+    juce::ToggleButton ovNumber { TRANS ("Numero") }, ovChar { TRANS ("Personaggio") }, ovScene { TRANS ("Scena") }, ovTc { TRANS ("Timecode") }, ovLine { TRANS ("Battuta") };
+    juce::Label ovLbl;
     juce::ToggleButton rulerTc { TRANS ("Il righello mostra il timecode") }, streamer { TRANS ("Streamer visivo sul video (ADR)") };
     juce::TextButton okBtn { TRANS ("OK") }, cancelBtn { "Annulla" };
 };

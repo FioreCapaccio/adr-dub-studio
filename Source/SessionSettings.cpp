@@ -37,6 +37,17 @@ SessionSettingsDialog::SessionSettingsDialog (const Project& p, std::function<vo
     rulerTc.setToggleState (project.rulerTimecode, juce::dontSendNotification);
     streamer.setToggleState (project.adrStreamer, juce::dontSendNotification);
 
+    ovLbl.setText (TRANS ("SOVRIMPRESSIONE ADR SUL VIDEO"), juce::dontSendNotification);
+    ovLbl.setFont (font (12.0f, true));
+    ovLbl.setColour (juce::Label::textColourId, dim);
+    int bit = 1;
+    for (auto* b : { &ovNumber, &ovChar, &ovScene, &ovTc, &ovLine })
+    {
+        b->setToggleState ((project.adrOverlay & bit) != 0, juce::dontSendNotification);
+        bit <<= 1;
+        addAndMakeVisible (*b);
+    }
+    addAndMakeVisible (ovLbl);
     for (auto* c : std::initializer_list<juce::Component*> { &tcFormat, &beeps, &start, &preRoll, &postRoll, &dialogueSize, &naming, &rulerTc, &streamer, &okBtn, &cancelBtn, &hint })
         addAndMakeVisible (*c);
 
@@ -62,6 +73,7 @@ void SessionSettingsDialog::close (bool ok)
     v.postRoll = juce::jlimit (0.0, 30.0, postRoll.getText().replaceCharacter (',', '.').getDoubleValue());
     v.beeps = beeps.getSelectedId() - 1;
     v.streamer = streamer.getToggleState();
+    v.overlay = (ovNumber.getToggleState() ? 1 : 0) | (ovChar.getToggleState() ? 2 : 0) | (ovScene.getToggleState() ? 4 : 0) | (ovTc.getToggleState() ? 8 : 0) | (ovLine.getToggleState() ? 16 : 0);
     v.dialogueSize = (int) dialogueSize.getValue();
     v.naming = naming.getText().trim().isEmpty() ? juce::String ("{personaggio}_{scena}_{cue}_T{take}") : naming.getText().trim();
     v.tcStart = project.tcStartSec;
@@ -102,6 +114,13 @@ void SessionSettingsDialog::resized()
     row (sizeLbl, dialogueSize);
     row (nameLbl, naming);
     streamer.setBounds (r.removeFromTop (24));
+    r.removeFromTop (4);
+    ovLbl.setBounds (r.removeFromTop (18));
+    {
+        auto ov = r.removeFromTop (24);
+        const int w = ov.getWidth() / 5;
+        for (auto* b : { &ovNumber, &ovChar, &ovScene, &ovTc, &ovLine }) b->setBounds (ov.removeFromLeft (w));
+    }
     r.removeFromTop (6);
     auto bottom = r.removeFromBottom (34);
     hint.setBounds (r);
