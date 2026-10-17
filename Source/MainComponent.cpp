@@ -4,6 +4,10 @@
 #include "CueSheet.h"
 #include "AudioAlign.h"
 #include "SampleEditor.h"
+#include "Pool.h"
+#include "LogicalEditor.h"
+#include "BatchRename.h"
+#include "DirectorMix.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
 #include "Relink.h"
@@ -375,6 +379,8 @@ MainComponent::~MainComponent()
     if (videoWindow != nullptr) { videoWindow->clearContentComponent(); videoWindow.reset(); }
     scriptWindow.reset();
     sampleWindow.reset();
+    poolWindow.reset();
+    directorWindow.reset();
     cueWindow.reset();
     mtcWindow.reset();
     mtcSync.reset();
@@ -619,6 +625,7 @@ void MainComponent::toggleVideoFullscreen()
 
 void MainComponent::timerCallback()
 {
+    engine.cue.custom = project->directorMix;
     const int64_t pos = engine.getPosition();
     if (pos != lastShownPos)
     {
@@ -1516,7 +1523,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime });
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1630,6 +1637,12 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAlignPhrases:  i.setInfo (TRANS ("Allinea alla guida frase per frase (Time Warp)..."), "", TRANS ("Modifica"), 0); break;
         case cmdToolWarp:      i.setInfo (TRANS ("Time Warp"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('o', 0); i.setTicked (timeline->getTool() == Tool::Warp); break;
         case cmdToolEnvelope:  i.setInfo (TRANS ("Inviluppo del clip"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('d', 0); i.setTicked (timeline->getTool() == Tool::Envelope); break;
+        case cmdDirectorMix:   i.setInfo (TRANS ("Mix del direttore per le cuffie (livelli per traccia)..."), "", TRANS ("ADR"), 0); i.setTicked (directorWindow != nullptr); break;
+        case cmdRefAB:         i.setInfo (TRANS ("Confronto A/B con il riferimento"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('`', 0); i.setTicked (engine.isReferenceMode()); break;
+        case cmdRefTrack:      i.setInfo (TRANS ("Traccia di riferimento (non suona, solo per il confronto A/B)"), "", TRANS ("Traccia"), 0); { const auto* t = project->findTrack (project->selectedTrackId); i.setActive (t != nullptr); i.setTicked (t != nullptr && t->reference); } break;
+        case cmdBatchRename:   i.setInfo (TRANS ("Rinomina in blocco..."), "", TRANS ("Modifica"), 0); break;
+        case cmdLogicalEditor: i.setInfo (TRANS ("Editor logico (seleziona o modifica i clip per condizione)..."), "", TRANS ("Modifica"), 0); break;
+        case cmdPool:          i.setInfo (TRANS ("Pool dei media..."), "", TRANS ("File"), 0); i.setTicked (poolWindow != nullptr); break;
         case cmdInsertTime:    i.setInfo (TRANS ("Inserisci silenzio (sposta tutto)..."), "", TRANS ("Modifica"), 0); break;
         case cmdRemoveTime:    i.setInfo (TRANS ("Rimuovi tempo (chiude il vuoto su tutto)..."), "", TRANS ("Modifica"), 0); break;
         case cmdSliceHits:     i.setInfo (TRANS ("Dividi sui punti di attacco (hitpoints)..."), "", TRANS ("Modifica"), 0); i.setActive (! project->selection.empty()); break;
@@ -1843,6 +1856,27 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdToolScrub:     timeline->setTool (Tool::Scrub); break;
         case cmdToolEnvelope:  timeline->setTool (Tool::Envelope); break;
         case cmdSliceHits:     sliceHitsDialog(); break;
+        case cmdPool:          togglePoolWindow(); break;
+        case cmdLogicalEditor: logicalEditorDialog(); break;
+        case cmdBatchRename:   batchRenameDialog(); break;
+        case cmdDirectorMix:   toggleDirectorWindow(); break;
+        case cmdRefAB:
+        {
+            bool any = false;
+            for (auto& t : project->getSession().tracks) any = any || t.reference;
+            if (! any && ! engine.isReferenceMode()) { showError (TRANS ("Nessuna traccia di riferimento: importa il mix di confronto su una traccia e segnala con Traccia > Traccia di riferimento.")); break; }
+            engine.setReferenceMode (! engine.isReferenceMode());
+            commandManager.commandStatusChanged();
+            timeline->repaint();
+            break;
+        }
+        case cmdRefTrack:
+        {
+            const auto targets = project->isTrackSelected (project->selectedTrackId) ? project->selectedTracks() : std::vector<int> { project->selectedTrackId };
+            const auto* t = project->findTrack (project->selectedTrackId);
+            if (t != nullptr) project->setTracksReference (targets, ! t->reference);
+            break;
+        }
         case cmdInsertTime:    timeEditDialog (false); break;
         case cmdRemoveTime:    timeEditDialog (true); break;
         case cmdSampleEditor:  if (const auto id = singleSelectedClip(); id != 0) openSampleEditor (id); break;
@@ -2078,6 +2112,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             if (id == 0) m.addSeparator(); else m.addCommandItem (&commandManager, id);
         }
     };
+    menuActions.clear();
     switch (index)
     {
         case 0:
@@ -2098,7 +2133,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             if (recent.getNumItems() > 0) { recent.addSeparator(); recent.addCommandItem (&commandManager, cmdClearRecent); }
             m.addSubMenu (TRANS ("Apri recente"), recent, recent.getNumItems() > 0);
             m.addSeparator();
-            add ({ cmdSave, cmdSaveAs, cmdSaveVersion, cmdVersions, 0, cmdCollectMedia, cmdRelink, cmdCheckSession, 0, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdBatchExport, cmdExportPackage, cmdExportVideo, 0, cmdAudioSettings,
+            add ({ cmdSave, cmdSaveAs, cmdSaveVersion, cmdVersions, 0, cmdCollectMedia, cmdRelink, cmdPool, cmdCheckSession, 0, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdBatchExport, cmdExportPackage, cmdExportVideo, 0, cmdAudioSettings,
 #if ! JUCE_MAC
                   0, cmdQuit
 #endif
@@ -2106,8 +2141,13 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
-        case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 2:
+            add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdRefTrack, cmdRefAB, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck });
+            m.addSeparator();
+            m.addSubMenu (TRANS ("Snapshot del mixer"), buildSnapshotMenu());
+            m.addSubMenu (TRANS ("Preset di traccia"), buildPresetMenu());
+            break;
         case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdToolWarp, cmdToolEnvelope, cmdToolScrub, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
         case 4:
         {
@@ -2118,7 +2158,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 m.addItem (1000 + (int) i, marks[i].name + "   " + project->formatTc ((double) marks[i].pos / project->getSampleRate()));
             break;
         }
-        case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrImportTakes, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, 0, cmdSessionSettings }); break;
+        case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrImportTakes, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, cmdDirectorMix, 0, cmdSessionSettings }); break;
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc }); break;
         case 8:
         {
@@ -2136,10 +2176,10 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         }
         case 7:
             add ({ cmdSnap, cmdFollow, cmdInfoLine, cmdNotes, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer });
-            menuActions.clear();
             m.addSeparator();
             m.addSubMenu (TRANS ("Tema"), buildThemeMenu());
             m.addSubMenu (TRANS ("Layout"), buildLayoutMenu());
+            m.addSubMenu (TRANS ("Preset di vista e visibilita' delle tracce"), buildViewMenu());
             break;
         default: break;
     }
@@ -3076,6 +3116,258 @@ void MainComponent::timeEditDialog (bool remove)
         if (err.isNotEmpty()) safe->showError (err);
         safe->timeline->repaint();
     }), true);
+}
+
+juce::PopupMenu MainComponent::buildViewMenu()
+{
+    juce::PopupMenu sub;
+    auto addAction = [this] (juce::PopupMenu& menu, const juce::String& label, bool enabled, std::function<void()> f)
+    {
+        menu.addItem (30000 + (int) menuActions.size(), label, enabled, false);
+        menuActions.push_back (std::move (f));
+    };
+    addAction (sub, TRANS ("Salva zoom e altezza delle tracce come preset..."), true, [this]
+    {
+        askName (TRANS ("Nuovo preset di vista"), "Vista " + juce::String ((int) project->viewPresets.size() + 1), [this] (juce::String n)
+        {
+            if (n.isEmpty()) return;
+            project->viewPresets.push_back ({ n, timeline->getSpp(), timeline->getTrackHeight() });
+            project->markDirty();
+        });
+    });
+    for (size_t i = 0; i < project->viewPresets.size(); ++i)
+        addAction (sub, project->viewPresets[i].name, true, [this, i]
+        {
+            if (i >= project->viewPresets.size()) return;
+            timeline->setAllTrackHeights (project->viewPresets[i].trackH);
+            timeline->setSpp (project->viewPresets[i].spp);
+        });
+    juce::PopupMenu delV;
+    for (size_t i = 0; i < project->viewPresets.size(); ++i)
+        addAction (delV, project->viewPresets[i].name, true, [this, i] { if (i < project->viewPresets.size()) { project->viewPresets.erase (project->viewPresets.begin() + (long) i); project->markDirty(); } });
+    sub.addSubMenu (TRANS ("Elimina un preset di vista"), delV, ! project->viewPresets.empty());
+    sub.addSeparator();
+    addAction (sub, TRANS ("Salva le tracce visibili come configurazione..."), true, [this]
+    {
+        askName (TRANS ("Nuova configurazione di visibilita'"), "Configurazione " + juce::String ((int) project->visConfigs.size() + 1), [this] (juce::String n) { if (n.isNotEmpty()) project->storeVisConfig (n); });
+    });
+    for (size_t i = 0; i < project->visConfigs.size(); ++i)
+        addAction (sub, project->visConfigs[i].name, true, [this, i] { project->recallVisConfig ((int) i); });
+    juce::PopupMenu delC;
+    for (size_t i = 0; i < project->visConfigs.size(); ++i)
+        addAction (delC, project->visConfigs[i].name, true, [this, i] { if (i < project->visConfigs.size()) { project->visConfigs.erase (project->visConfigs.begin() + (long) i); project->markDirty(); } });
+    sub.addSubMenu (TRANS ("Elimina una configurazione"), delC, ! project->visConfigs.empty());
+    return sub;
+}
+
+void MainComponent::askName (const juce::String& title, const juce::String& initial, std::function<void (juce::String)> done)
+{
+    auto* aw = new juce::AlertWindow (title, {}, juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("n", initial, TRANS ("Nome"));
+    aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([aw, done = std::move (done)] (int r)
+    {
+        if (r == 1 && done) done (aw->getTextEditorContents ("n").trim());
+    }), true);
+}
+
+juce::PopupMenu MainComponent::buildSnapshotMenu()
+{
+    juce::PopupMenu sub;
+    auto addAction = [this] (juce::PopupMenu& menu, const juce::String& label, bool enabled, std::function<void()> f)
+    {
+        menu.addItem (30000 + (int) menuActions.size(), label, enabled, false);
+        menuActions.push_back (std::move (f));
+    };
+    addAction (sub, TRANS ("Salva lo stato attuale del mixer..."), true, [this]
+    {
+        askName (TRANS ("Nuovo snapshot del mixer"), "Snapshot " + juce::String ((int) project->snapshots.size() + 1), [this] (juce::String n) { project->storeSnapshot (n); });
+    });
+    if (! project->snapshots.empty()) sub.addSeparator();
+    for (auto& s : project->snapshots)
+        addAction (sub, s.name, true, [this, id = s.id] { project->recallSnapshot (id); mixer->repaint(); timeline->repaint(); });
+    sub.addSeparator();
+    addAction (sub, TRANS ("Annulla l'ultimo richiamo"), project->canUndoRecall(), [this] { project->undoRecall(); mixer->repaint(); timeline->repaint(); });
+    juce::PopupMenu del;
+    for (auto& s : project->snapshots) addAction (del, s.name, true, [this, id = s.id] { project->deleteSnapshot (id); });
+    sub.addSubMenu (TRANS ("Elimina uno snapshot"), del, ! project->snapshots.empty());
+    return sub;
+}
+
+static juce::File presetsFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("ArotronStudio").getChildFile ("TrackPresets");
+}
+
+juce::PopupMenu MainComponent::buildPresetMenu()
+{
+    juce::PopupMenu sub;
+    auto addAction = [this] (juce::PopupMenu& menu, const juce::String& label, bool enabled, std::function<void()> f)
+    {
+        menu.addItem (30000 + (int) menuActions.size(), label, enabled, false);
+        menuActions.push_back (std::move (f));
+    };
+    const int sel = project->selectedTrackId;
+    addAction (sub, TRANS ("Salva la traccia selezionata come preset..."), project->findTrack (sel) != nullptr, [this, sel]
+    {
+        const auto* t = project->findTrack (sel);
+        if (t == nullptr) return;
+        askName (TRANS ("Nuovo preset di traccia"), t->name, [this, sel] (juce::String n)
+        {
+            if (n.isEmpty()) return;
+            const auto f = presetsFolder().getChildFile (juce::File::createLegalFileName (n) + ".trkpreset");
+            f.getParentDirectory().createDirectory();
+            auto v = project->trackPresetVar (sel);
+            if (auto* o = v.getDynamicObject()) o->setProperty ("name", n);
+            f.replaceWithText (juce::JSON::toString (v));
+        });
+    });
+    const auto files = presetsFolder().findChildFiles (juce::File::findFiles, false, "*.trkpreset");
+    if (! files.isEmpty()) sub.addSeparator();
+    for (auto& f : files)
+        addAction (sub, f.getFileNameWithoutExtension(), true, [this, f]
+        {
+            auto targets = project->isTrackSelected (project->selectedTrackId) ? project->selectedTracks() : std::vector<int> { project->selectedTrackId };
+            if (project->applyTrackPresetVar (targets, juce::JSON::parse (f)) == 0) showError (TRANS ("Seleziona una traccia a cui applicare il preset."));
+            mixer->repaint(); timeline->repaint();
+        });
+    juce::PopupMenu del;
+    for (auto& f : files) addAction (del, f.getFileNameWithoutExtension(), true, [f] { f.moveToTrash(); });
+    sub.addSubMenu (TRANS ("Elimina un preset"), del, ! files.isEmpty());
+    return sub;
+}
+
+void MainComponent::batchRenameDialog()
+{
+    auto* aw = new juce::AlertWindow (TRANS ("Rinomina in blocco"), TRANS ("Rinomina insieme i clip o le tracce selezionati (o tutti i marker). Nello schema: {n} numero progressivo, {nome} nome attuale, {traccia}, {personaggio}, {cue}. Trova/sostituisci agisce sul nome attuale prima dello schema. Annullabile."),
+                                      juce::MessageBoxIconType::NoIcon);
+    aw->addComboBox ("what", { TRANS ("Clip selezionati"), TRANS ("Tracce selezionate"), TRANS ("Tutti i marker") }, TRANS ("Cosa rinominare"));
+    aw->getComboBoxComponent ("what")->setSelectedItemIndex (project->selection.empty() && ! project->selectedTracks().empty() ? 1 : 0);
+    aw->addTextEditor ("pattern", "{nome}", TRANS ("Schema"));
+    aw->addTextEditor ("find", "", TRANS ("Trova (facoltativo)"));
+    aw->addTextEditor ("repl", "", TRANS ("Sostituisci con"));
+    aw->addTextEditor ("start", "1", TRANS ("Primo numero"));
+    aw->addTextEditor ("digits", "2", TRANS ("Cifre del numero"));
+    aw->addButton (TRANS ("Rinomina"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        auto& p = *safe->project;
+        const int what = aw->getComboBoxComponent ("what")->getSelectedItemIndex();
+        const auto pattern = aw->getTextEditorContents ("pattern"), find = aw->getTextEditorContents ("find"), repl = aw->getTextEditorContents ("repl");
+        rename::Context ctx;
+        ctx.index = aw->getTextEditorContents ("start").getIntValue();
+        ctx.digits = juce::jlimit (1, 6, aw->getTextEditorContents ("digits").getIntValue());
+        int n = 0;
+        if (what == 0)
+        {
+            std::vector<std::pair<int64_t, juce::String>> items;
+            for (auto& t : p.getSession().tracks)   // in ordine di traccia e di posizione
+            {
+                std::vector<const Clip*> cs;
+                for (auto& c : t.clips) if (p.selection.count (c.id) > 0) cs.push_back (&c);
+                std::sort (cs.begin(), cs.end(), [] (const Clip* a, const Clip* b) { return a->start < b->start; });
+                for (auto* c : cs)
+                {
+                    ctx.original = c->name.isNotEmpty() ? c->name : (c->asset != nullptr ? c->asset->name : juce::String());
+                    ctx.track = t.name;
+                    const auto* cue = c->cueId != 0 ? p.findCue (c->cueId) : nullptr;
+                    ctx.character = cue != nullptr ? cue->character : juce::String();
+                    ctx.cue = cue != nullptr ? cue->number : 0;
+                    items.emplace_back (c->id, rename::expand (pattern, ctx, find, repl));
+                    ++ctx.index;
+                }
+            }
+            n = p.renameClips (items);
+        }
+        else if (what == 1)
+        {
+            std::vector<std::pair<int, juce::String>> items;
+            for (auto& t : p.getSession().tracks)
+                if (p.isTrackSelected (t.id)) { ctx.original = t.name; ctx.track = t.name; items.emplace_back (t.id, rename::expand (pattern, ctx, find, repl)); ++ctx.index; }
+            n = p.renameTracks (items);
+        }
+        else
+        {
+            std::vector<std::pair<int, juce::String>> items;
+            for (auto& m : p.getSession().markers) { ctx.original = m.name; items.emplace_back (m.id, rename::expand (pattern, ctx, find, repl)); ++ctx.index; }
+            n = p.renameMarkers (items);
+        }
+        safe->timeline->repaint();
+        juce::AlertWindow::showMessageBoxAsync (n > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Rinomina in blocco"),
+                                                n > 0 ? juce::String (n) + TRANS (" nomi cambiati.") : TRANS ("Nessun nome cambiato: controlla la selezione e lo schema."));
+    }), true);
+}
+
+void MainComponent::logicalEditorDialog()
+{
+    auto* aw = new juce::AlertWindow (TRANS ("Editor logico"), TRANS ("Trova i clip che soddisfano le condizioni (tutte insieme) e applica un'azione. Per esempio: i clip di una traccia piu' corti di 0,5 s, da eliminare; o tutti i clip di un personaggio, da abbassare di 3 dB. Annullabile."),
+                                      juce::MessageBoxIconType::NoIcon);
+    auto fields = logic::fieldNames(), none = fields;
+    none.insert (0, TRANS ("(nessuna seconda condizione)"));
+    aw->addComboBox ("f1", fields, TRANS ("Condizione 1"));
+    aw->addComboBox ("o1", logic::opNames(), "");
+    aw->addTextEditor ("v1", "", TRANS ("valore"));
+    aw->addComboBox ("f2", none, TRANS ("Condizione 2"));
+    aw->addComboBox ("o2", logic::opNames(), "");
+    aw->addTextEditor ("v2", "", TRANS ("valore"));
+    aw->addComboBox ("act", logic::actionNames(), TRANS ("Azione"));
+    aw->addTextEditor ("par", "0", TRANS ("valore dell'azione (dB, ms o stelle)"));
+    for (auto* n : { "f1", "o1", "f2", "o2", "act" }) aw->getComboBoxComponent (n)->setSelectedItemIndex (0);
+    aw->addButton (TRANS ("Applica"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        std::vector<logic::Cond> conds;
+        conds.push_back ({ (logic::Field) aw->getComboBoxComponent ("f1")->getSelectedItemIndex(), (logic::Op) aw->getComboBoxComponent ("o1")->getSelectedItemIndex(), aw->getTextEditorContents ("v1") });
+        if (const int f2 = aw->getComboBoxComponent ("f2")->getSelectedItemIndex(); f2 > 0)
+            conds.push_back ({ (logic::Field) (f2 - 1), (logic::Op) aw->getComboBoxComponent ("o2")->getSelectedItemIndex(), aw->getTextEditorContents ("v2") });
+        auto& p = *safe->project;
+        const auto ids = logic::matching (p, conds);
+        const auto act = (logic::Action) aw->getComboBoxComponent ("act")->getSelectedItemIndex();
+        const int n = logic::apply (p, ids, act, aw->getTextEditorContents ("par").replaceCharacter (',', '.').getDoubleValue());
+        safe->timeline->repaint();
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Editor logico"),
+                                                juce::String ((int) ids.size()) + TRANS (" clip trovati, ") + juce::String (n) + TRANS (" modificati o selezionati."));
+    }), true);
+}
+
+void MainComponent::toggleDirectorWindow()
+{
+    if (directorWindow != nullptr) { directorWindow.reset(); commandManager.commandStatusChanged(); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    directorWindow = std::make_unique<BoothWindow> (TRANS ("Mix del direttore - ADR Dub Studio"), [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->directorWindow.reset(); safe->commandManager.commandStatusChanged(); } });
+    });
+    directorWindow->setContentOwned (new DirectorMixPanel (*project, engine), true);
+    directorWindow->setResizeLimits (360, 240, 1200, 2000);
+    directorWindow->addKeyListener (commandManager.getKeyMappings());
+    directorWindow->centreAroundComponent (this, 520, 420);
+    directorWindow->setVisible (true);
+    commandManager.commandStatusChanged();
+}
+
+void MainComponent::togglePoolWindow()
+{
+    if (poolWindow != nullptr) { poolWindow.reset(); commandManager.commandStatusChanged(); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    poolWindow = std::make_unique<BoothWindow> (TRANS ("Pool dei media - ADR Dub Studio"), [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->poolWindow.reset(); safe->commandManager.commandStatusChanged(); } });
+    });
+    poolWindow->setContentOwned (new PoolComponent (*project, [safe] { return safe != nullptr ? recordingsFolder (*safe->project) : juce::File(); },
+                                                    [safe] { if (safe != nullptr) safe->relinkMedia(); }, [safe] (juce::String m) { if (safe != nullptr) safe->showError (m); }), true);
+    poolWindow->setResizeLimits (640, 240, 4000, 2000);
+    poolWindow->addKeyListener (commandManager.getKeyMappings());
+    poolWindow->centreAroundComponent (this, 980, 380);
+    poolWindow->setVisible (true);
+    commandManager.commandStatusChanged();
 }
 
 void MainComponent::sliceHitsDialog()

@@ -13,6 +13,9 @@
 #include "CueSheet.h"
 #include "AudioAlign.h"
 #include "SampleEditor.h"
+#include "Pool.h"
+#include "LogicalEditor.h"
+#include "BatchRename.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
 #include "Relink.h"
@@ -276,7 +279,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepAdrBeeps(); stepEnvelope(); stepHitpoints(); stepTimeEdit(); stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepLoadProbe ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepAdrBeeps(); stepEnvelope(); stepHitpoints(); stepTimeEdit(); stepTrackDelay(); stepPool(); stepLogical(); stepRename(); stepSnapshots(); stepReference(); stepDirectorMix(); stepViews(); stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepLoadProbe ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); }); });
         });
     }
 
@@ -1704,6 +1707,215 @@ private:
     }
 
     // bip del conto alla rovescia ADR
+    // Preset di vista e configurazioni di visibilita'
+    void stepViews()
+    {
+        fc::Project p (formats, 48000.0);
+        p.edit().tracks[1].hidden = true;
+        const int c1 = p.storeVisConfig ("Solo dialoghi");
+        p.edit().tracks[1].hidden = false; p.edit().tracks[2].hidden = true; p.edit().tracks[3].hidden = true;
+        p.storeVisConfig ("Altre");
+        p.recallVisConfig (c1);
+        expect (! p.getSession().tracks[0].hidden && p.getSession().tracks[1].hidden && ! p.getSession().tracks[2].hidden && ! p.getSession().tracks[3].hidden, "visibilita': la configurazione ripristina quali tracce si vedono");
+        p.viewPresets.push_back ({ "Dettaglio", 12.5, 180 });
+        const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest-views.adb");
+        juce::String err;
+        p.save (file, err);
+        auto q = std::make_shared<fc::Project> (formats, 48000.0);
+        snapProject = q;
+        q->loadSession (file, [this, q, file] (juce::String e)
+        {
+            expect (e.isEmpty() && q->viewPresets.size() == 1 && q->viewPresets[0].name == "Dettaglio" && q->viewPresets[0].trackH == 180 && std::abs (q->viewPresets[0].spp - 12.5) < 1.0e-9
+                        && q->visConfigs.size() == 2 && q->visConfigs[0].name == "Solo dialoghi" && q->visConfigs[0].hidden.size() >= 2 && q->visConfigs[0].hidden[1],
+                    "vista: preset e configurazioni salvati e ricaricati con la sessione " + e);
+            file.deleteFile();
+        });
+    }
+
+    // Mix del direttore: somma per traccia con livello proprio
+    void stepDirectorMix()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "x"; a->audio.setSize (2, 48000);
+        for (int i = 0; i < 48000; ++i) { a->audio.setSample (0, i, 0.5f); a->audio.setSample (1, i, 0.5f); }
+        a->buildPeaks();
+        fc::Clip c1; c1.id = 1; c1.asset = a; c1.length = 48000;
+        fc::Clip c2 = c1; c2.id = 2;
+        p.edit().tracks[0].clips = { c1 };
+        p.edit().tracks[1].clips = { c2 };
+        p.getSession().tracks[0].live->cueDb = 0.0f;
+        p.getSession().tracks[1].live->cueDb = -80.0f;   // fuori dalle cuffie
+        p.getSession().tracks[0].live->volumeDb = -6.0f;
+        fc::Mixer m;
+        juce::AudioBuffer<float> out (2, 1000), cue (2, 1000);
+        cue.clear();
+        m.cueSum = &cue;
+        m.render (p.getSession(), 1000, out, 0, 1000);
+        const float mainLevel = out.getMagnitude (0, 0, 1000), cueLevel = cue.getMagnitude (0, 0, 1000);
+        expect (mainLevel > 0.4f && std::abs (cueLevel - 0.251f) < 0.02f, "mix del direttore: il master ha due tracce, le cuffie solo la prima dopo il fader (" + juce::String (mainLevel, 3) + " / " + juce::String (cueLevel, 3) + ")");
+        p.getSession().tracks[1].live->cueDb = -6.0f;
+        cue.clear();
+        fc::Mixer m2;
+        m2.cueSum = &cue;
+        m2.render (p.getSession(), 1000, out, 0, 1000);
+        expect (cue.getMagnitude (0, 0, 1000) > 0.3f, "mix del direttore: portando a -6 dB la seconda traccia entra nelle cuffie");
+    }
+
+    // Traccia di riferimento e confronto A/B
+    void stepReference()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "x"; a->audio.setSize (2, 48000);
+        for (int i = 0; i < 48000; ++i) { a->audio.setSample (0, i, 0.5f); a->audio.setSample (1, i, 0.5f); }
+        a->buildPeaks();
+        fc::Clip c1; c1.id = 1; c1.asset = a; c1.length = 48000;
+        fc::Clip c2 = c1; c2.id = 2;
+        p.edit().tracks[0].clips = { c1 };
+        p.edit().tracks[1].clips = { c2 };
+        p.setTracksReference ({ p.getSession().tracks[1].id }, true);
+        auto level = [&] (bool ref)
+        {
+            fc::Mixer m;
+            m.referenceMode = ref;
+            juce::AudioBuffer<float> out (2, 1000);
+            m.render (p.getSession(), 1000, out, 0, 1000);
+            return out.getMagnitude (0, 0, 1000);
+        };
+        p.getSession().tracks[0].live->volumeDb = -6.0f;
+        const float normal = level (false), ref = level (true);
+        expect (normal > 0.1f && ref > 0.1f && std::abs (normal / ref - 0.5f) < 0.02f, "riferimento: nel mix normale suona solo la traccia normale (" + juce::String (normal, 3) + "), in A/B solo il riferimento (" + juce::String (ref, 3) + ")");
+        p.undo();
+        expect (! p.getSession().tracks[1].reference, "riferimento: il flag si annulla con l'undo");
+    }
+
+    // Snapshot del mixer e preset di traccia
+    void stepSnapshots()
+    {
+        fc::Project p (formats, 48000.0);
+        auto& t0 = *p.getSession().tracks[0].live; auto& t1 = *p.getSession().tracks[1].live;
+        t0.volumeDb = -6.0f; t0.pan = -0.5f; t1.mute = true; p.getSession().master->volumeDb = -2.0f;
+        const int a = p.storeSnapshot ("Scena 1");
+        t0.volumeDb = 0.0f; t1.mute = false; t1.solo = true; p.getSession().master->volumeDb = 0.0f;
+        const int b = p.storeSnapshot ("Scena 2");
+        p.recallSnapshot (a);
+        expect (t0.volumeDb.load() == -6.0f && t0.pan.load() == -0.5f && t1.mute.load() && ! t1.solo.load() && p.getSession().master->volumeDb.load() == -2.0f, "snapshot: richiamo ripristina livelli, pan, mute, solo e master");
+        expect (p.undoRecall() && t0.volumeDb.load() == 0.0f && t1.solo.load() && ! p.undoRecall(), "snapshot: annulla l'ultimo richiamo (una volta sola)");
+        p.recallSnapshot (b);
+        expect (t0.volumeDb.load() == 0.0f && t1.solo.load(), "snapshot: se ne possono avere piu' d'uno");
+        // salvataggio e ricarica
+        const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest-snap.adb");
+        p.recallSnapshot (a);
+        juce::String err;
+        p.save (file, err);
+        auto q = std::make_shared<fc::Project> (formats, 48000.0);
+        snapProject = q;
+        q->loadSession (file, [this, q, file] (juce::String e)
+        {
+            expect (e.isEmpty() && q->snapshots.size() == 2 && q->snapshots[0].name == "Scena 1" && q->snapshots[0].tracks.size() == q->getSession().tracks.size(), "snapshot: salvati e ricaricati con la sessione " + e);
+            q->getSession().tracks[0].live->volumeDb = 5.0f;
+            q->recallSnapshot (q->snapshots[0].id);
+            expect (q->getSession().tracks[0].live->volumeDb.load() == -6.0f, "snapshot: dopo la ricarica il richiamo funziona sulle stesse tracce");
+            // preset di traccia
+            q->getSession().tracks[0].live->comp.ratio = 6.0f; q->getSession().tracks[0].live->eq.band[1].gainDb = 4.5f; q->getSession().tracks[0].live->trackType = fc::TrackDialogue;
+            const auto pv = q->trackPresetVar (q->getSession().tracks[0].id);
+            q->getSession().tracks[1].live->comp.ratio = 2.0f;
+            expect (q->applyTrackPresetVar ({ q->getSession().tracks[1].id }, juce::JSON::parse (juce::JSON::toString (pv))) == 1
+                        && q->getSession().tracks[1].live->comp.ratio.load() == 6.0f && std::abs (q->getSession().tracks[1].live->eq.band[1].gainDb.load() - 4.5f) < 1.0e-4f
+                        && q->getSession().tracks[1].live->volumeDb.load() == -6.0f && q->getSession().tracks[1].live->trackType.load() == fc::TrackDialogue,
+                    "preset di traccia: si applica a un'altra traccia (compressore, EQ, livello, tipo)");
+            file.deleteFile();
+        });
+    }
+    std::shared_ptr<fc::Project> snapProject;
+
+    // Rinomina in blocco
+    void stepRename()
+    {
+        fc::rename::Context c; c.index = 3; c.digits = 3; c.original = "voce Marco"; c.track = "Dialoghi"; c.character = "Marco"; c.cue = 12;
+        expect (fc::rename::expand ("{personaggio}_C{cue}_{n}", c) == "Marco_C12_003", "rinomina: schema con personaggio, cue e numero");
+        expect (fc::rename::expand ("{nome} - {traccia}", c, "Marco", "Lea") == "voce Lea - Dialoghi", "rinomina: trova e sostituisci prima dello schema");
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "file"; a->audio.setSize (1, 4800); a->buildPeaks();
+        fc::Clip c1; c1.id = 1; c1.asset = a; c1.length = 4800;
+        p.edit().tracks[0].clips = { c1 };
+        expect (p.renameClips ({ { 1, "Battuta 1" } }) == 1 && p.findClip (1)->name == "Battuta 1" && p.findClip (1)->asset->name == "file", "rinomina: il clip prende il nome, il file no");
+        p.undo();
+        expect (p.findClip (1)->name.isEmpty(), "rinomina: un solo undo");
+        expect (p.renameClips ({ { 1, "file" } }) == 0, "rinomina: lo stesso nome non cambia nulla");
+    }
+
+    // Editor logico
+    void stepLogical()
+    {
+        using namespace fc::logic;
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "Marco_take1"; a->audio.setSize (1, 48000); a->buildPeaks();
+        auto b = std::make_shared<fc::Asset>(); b->name = "Lea_take1"; b->audio.setSize (1, 48000); b->buildPeaks();
+        p.edit().tracks[0].name = "Dialoghi";
+        fc::Clip c1; c1.id = 1; c1.asset = a; c1.start = 0; c1.length = 12000;                      // 0,25 s
+        fc::Clip c2; c2.id = 2; c2.asset = b; c2.start = 48000; c2.length = 48000; c2.gainDb = -3.0f;  // 1 s
+        fc::Clip c3; c3.id = 3; c3.asset = a; c3.start = 120000; c3.length = 24000; c3.muted = true;   // 0,5 s
+        p.edit().tracks[0].clips = { c1, c2, c3 };
+        expect (matching (p, { { Field::Length, Op::Less, "0,4" } }) == std::vector<int64_t> { 1 }, "logica: durata minore di 0,4 s trova il clip corto");
+        expect (matching (p, { { Field::Name, Op::Contains, "marco" } }).size() == 2, "logica: il nome contiene (senza distinguere maiuscole)");
+        expect (matching (p, { { Field::Name, Op::Contains, "marco" }, { Field::Muted, Op::Equals, "1" } }) == std::vector<int64_t> { 3 }, "logica: due condizioni insieme");
+        expect (matching (p, { { Field::Track, Op::Equals, "Dialoghi" } }).size() == 3 && matching (p, {}).size() == 3, "logica: per traccia, e senza condizioni tutti i clip");
+        const auto ids = matching (p, { { Field::Name, Op::Contains, "marco" } });
+        expect (apply (p, ids, Action::AddGain, -3.0) == 2 && std::abs (p.findClip (1)->gainDb + 3.0f) < 1.0e-5f && std::abs (p.findClip (2)->gainDb + 3.0f) < 1.0e-5f, "logica: aggiunge il guadagno ai clip trovati");
+        p.undo();
+        expect (std::abs (p.findClip (1)->gainDb) < 1.0e-5f, "logica: un solo undo");
+        expect (apply (p, matching (p, { { Field::Length, Op::Less, "0.4" } }), Action::Delete, 0.0) == 1 && p.findClip (1) == nullptr && p.getSession().tracks[0].clips.size() == 2, "logica: elimina i clip trovati");
+        p.edit().tracks[0].locked = true;
+        expect (apply (p, { 2 }, Action::Mute, 0.0) == 0 && ! p.findClip (2)->muted, "logica: una traccia bloccata non si tocca");
+    }
+
+    // Pool dei media
+    void stepPool()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "a"; a->audio.setSize (1, 4800); a->audio.clear(); a->buildPeaks();
+        auto b = std::make_shared<fc::Asset>(); b->name = "b"; b->audio.setSize (1, 4800); b->audio.clear(); b->buildPeaks();
+        fc::Clip c1; c1.id = 1; c1.asset = a; c1.length = 4800;
+        fc::Clip c2 = c1; c2.id = 2; c2.start = 5000;
+        fc::Clip c3 = c1; c3.id = 3; c3.asset = b; c3.start = 10000;
+        p.edit().tracks[0].clips = { c1, c2, c3 };
+        const auto es = fc::pool::collect (p.getSession());
+        expect (es.size() == 2 && es[0].clips == 2 && es[1].clips == 1 && es[0].clipIds.size() == 2, "pool: file unici con il numero di clip che li usano");
+        const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("arotron-pool-test");
+        folder.deleteRecursively();
+        folder.createDirectory();
+        juce::String err;
+        auto conv = fc::pool::convertToWav24 (formats, *a, 48000.0, folder, err);
+        a->file = folder.getChildFile ("usato.wav");
+        folder.getChildFile ("orfano.wav").replaceWithText ("x");
+        folder.getChildFile ("usato.wav").replaceWithText ("x");
+        folder.getChildFile ("note.txt").replaceWithText ("x");
+        const auto un = fc::pool::unusedFiles (p.getSession(), folder);
+        bool hasOrphan = false, hasUsed = false;
+        for (auto& f : un) { hasOrphan |= f.getFileName() == "orfano.wav"; hasUsed |= f.getFileName() == "usato.wav"; }
+        expect (conv != nullptr && conv->audio.getNumSamples() == 4800 && err.isEmpty() && conv->file.existsAsFile(), "pool: conversione in WAV 24 bit " + err);
+        expect (hasOrphan && ! hasUsed, "pool: i file non usati si trovano, quelli usati e gli altri formati no");
+        folder.deleteRecursively();
+    }
+
+    // Track Delay
+    void stepTrackDelay()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "dc"; a->audio.setSize (2, 48000);
+        for (int i = 0; i < 48000; ++i) { a->audio.setSample (0, i, 0.5f); a->audio.setSample (1, i, 0.5f); }
+        a->buildPeaks();
+        fc::Clip c; c.id = 1; c.asset = a; c.start = 1000; c.length = 40000;
+        p.edit().tracks[0].clips = { c };
+        p.getSession().tracks[0].live->delayMs = 10.0f;   // 480 campioni a 48 kHz
+        fc::Mixer m;
+        juce::AudioBuffer<float> out (2, 2000);
+        m.render (p.getSession(), 0, out, 0, 2000);
+        int first = -1;
+        for (int i = 0; i < 2000; ++i) if (std::abs (out.getSample (0, i)) > 1.0e-4f) { first = i; break; }
+        expect (first >= 1000 + 480 - 2 && first <= 1000 + 480 + 2, "Track Delay: il suono parte 10 ms dopo (campione " + juce::String (first) + ")");
+    }
+
     // Insert Silence / Remove Time
     void stepTimeEdit()
     {
@@ -3856,7 +4068,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.20.0"; }
+    const juce::String getApplicationVersion() override { return "2.21.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

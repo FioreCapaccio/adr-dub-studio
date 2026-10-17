@@ -36,6 +36,9 @@ public:
     /** > 0: suona solo il clip con questo id (anche se silenziato), ignorando mute e solo delle tracce: ascolto dei take ADR.
         -1: l'originale, cioe' tutto tranne i take ADR (mute e solo restano validi). 0: normale. */
     int64_t auditionClip = 0;
+    juce::AudioBuffer<float>* cueSum = nullptr;   // se non nullo: somma delle tracce per il mix delle cuffie (post-fader, con cueDb di ogni traccia), stessa disposizione di 'out'
+    std::vector<float> lastCue;
+    bool referenceMode = false;   // confronto A/B: suonano solo le tracce di riferimento
 
     /** Compensazione di latenza dei plug-in: le tracce con meno latenza vengono ritardate fino alla piu' lenta. */
     void setPdcEnabled (bool on) noexcept { pdcEnabled = on; }
@@ -163,6 +166,8 @@ public:
     juce::String startRecording (const std::vector<TakeSpec>&);
     /** Ascolto di un solo clip (0 = normale): vale per la riproduzione, non per l'esportazione. */
     void setAuditionClip (int64_t clipId) { auditionClip = clipId; }
+    void setReferenceMode (bool on) { referenceMode = on; }
+    bool isReferenceMode() const noexcept { return referenceMode.load(); }
     int64_t getAuditionClip() const noexcept { return auditionClip.load(); }
     /** Chiude i file e restituisce le registrazioni fatte. */
     std::vector<TakeResult> stopRecording();
@@ -186,6 +191,7 @@ public:
     struct CueMix
     {
         std::atomic<bool> enabled { false };
+        std::atomic<bool> custom { false };        // mix personalizzato del direttore (livelli per traccia) invece del master
         std::atomic<int> pair { 1 };               // coppia di uscite: 1 = uscite 3-4, 2 = 5-6...
         std::atomic<float> mixDb { 0.0f }, beepDb { 0.0f }, talkDb { 0.0f };
         std::atomic<float> mixDuckDb { -12.0f };   // di quanto si abbassa il mix mentre il direttore parla
@@ -223,7 +229,7 @@ private:
     void processChunk (int n, const float* const* in, int numIn, int inOffset);
     void processChunkMain (int n, const float* const* in, int numIn, int inOffset);
     void finishCue (int n, const float* const* in, int numIn, int inOffset);
-    juce::AudioBuffer<float> cueBuf { 2, Mixer::kChunk };
+    juce::AudioBuffer<float> cueBuf { 2, Mixer::kChunk }, cueSumBuf { 2, Mixer::kChunk };
     bool cueReady = false;
     std::atomic<int> numOutputs { 2 };
 
@@ -233,6 +239,7 @@ private:
 
     static constexpr int kMaxBeeps = 8;
     std::atomic<int64_t> auditionClip { 0 };
+    std::atomic<bool> referenceMode { false };
     std::atomic<int64_t> punchIn { -1 }, punchOut { -1 };
     std::atomic<int64_t> beepPos[kMaxBeeps];
     std::atomic<int> beepCount { 0 };

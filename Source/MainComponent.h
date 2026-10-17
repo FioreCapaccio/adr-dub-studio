@@ -200,6 +200,16 @@ private:
     void toggleScriptWindow();
     void openSampleEditor (int64_t clipId);
     void sliceHitsDialog();
+    void togglePoolWindow();
+    void logicalEditorDialog();
+    void batchRenameDialog();
+    void toggleDirectorWindow();
+    std::unique_ptr<class BoothWindow> directorWindow;
+    juce::PopupMenu buildSnapshotMenu();
+    juce::PopupMenu buildPresetMenu();
+    juce::PopupMenu buildViewMenu();
+    void askName (const juce::String& title, const juce::String& initial, std::function<void (juce::String)> done);
+    std::unique_ptr<class BoothWindow> poolWindow;
     void timeEditDialog (bool remove);
     std::unique_ptr<class BoothWindow> sampleWindow;
     void toggleCueWindow();

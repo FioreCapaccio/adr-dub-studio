@@ -520,7 +520,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         if (shows (CtlMute)) right = juce::jmin (right, muteRect (ti).getX() - 4);
         if (shows (CtlRec)) right = juce::jmin (right, armRect (ti).getX() - 4);
         if (shows (CtlLock)) right = juce::jmin (right, lockRect (ti).getX() - 4);
-        g.drawText (t.name, 42, y + 9, juce::jmax (30, right - 42), 20, juce::Justification::centredLeft, true);
+        g.drawText ((t.reference ? juce::String ("[RIF] ") : juce::String()) + t.name, 42, y + 9, juce::jmax (30, right - 42), 20, juce::Justification::centredLeft, true);
         if (t.versions.size() > 1)   // Track Versions: la versione attiva sotto il nome
         {
             juce::String vn;
@@ -858,7 +858,7 @@ void TimelineView::drawClip (juce::Graphics& g, const Track& t, int ti, const Cl
     g.fillRect (head);
     g.setColour (juce::Colours::black.withAlpha (0.82f));
     g.setFont (font (11.0f, true));
-    const juce::String label = (c.cueId != 0 ? "T" + juce::String (c.takeNo) + "  " : juce::String()) + c.asset->name + (std::abs (c.gainDb) > 0.05f ? "   " + juce::String (c.gainDb, 1) + " dB" : juce::String())
+    const juce::String label = (c.cueId != 0 ? "T" + juce::String (c.takeNo) + "  " : juce::String()) + (c.name.isNotEmpty() ? c.name : c.asset->name) + (std::abs (c.gainDb) > 0.05f ? "   " + juce::String (c.gainDb, 1) + " dB" : juce::String())
                              + (c.id == warpClipId ? "     " + TRANS ("WARP: Invio = applica, Esc = annulla, Alt + clic su un punto = elimina") : juce::String())
                              + (preview ? "     STRETCH " + juce::String (100.0 * (double) stretchLen / (double) juce::jmax<int64_t> (1, stretchOrigLen), 1) + " %   " + juce::String ((double) stretchLen / project.getSampleRate(), 2) + " s" : juce::String());
     auto labelBox = head.toNearestInt().withTrimmedLeft (7).withTrimmedRight (4);
@@ -982,6 +982,18 @@ void TimelineView::drawClip (juce::Graphics& g, const Track& t, int ti, const Cl
 }
 
 void TimelineView::paint (juce::Graphics& g)
+{
+    paintBody (g);
+    if (engine.isReferenceMode())   // confronto A/B attivo: cornice ambra
+    {
+        g.setColour (yellow.withAlpha (0.9f));
+        g.drawRect (getLocalBounds().withTrimmedBottom (sbSize), 3);
+        g.setFont (font (12.0f, true));
+        g.drawText (TRANS ("A/B: RIFERIMENTO"), getLocalBounds().withTrimmedLeft (headerW).withTrimmedTop (rulerH + 4).withTrimmedRight (20), juce::Justification::topRight);
+    }
+}
+
+void TimelineView::paintBody (juce::Graphics& g)
 {
     g.fillAll (bg);
     const auto& s = project.getSession();
@@ -2912,6 +2924,28 @@ void TimelineView::showMarkerMenu (int markerId)
     });
 }
 
+void TimelineView::trackDelayDialog (int trackId)
+{
+    const auto* t = project.findTrack (trackId);
+    if (t == nullptr) return;
+    auto* aw = new juce::AlertWindow (TRANS ("Ritardo della traccia"), TRANS ("Ritarda tutta la traccia di qualche millisecondo (da 0 a 500), per esempio per allineare un microfono lontano o compensare un plug-in esterno. Vale anche nell'esportazione."),
+                                      juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("ms", juce::String (t->live->delayMs.load(), 1), TRANS ("Millisecondi"));
+    aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<TimelineView> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, trackId] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        if (auto* tr = safe->project.findTrack (trackId))
+        {
+            tr->live->delayMs = juce::jlimit (0.0f, 500.0f, (float) aw->getTextEditorContents ("ms").replaceCharacter (',', '.').getDoubleValue());
+            safe->project.liveChanged();
+            safe->repaint();
+        }
+    }), true);
+}
+
 void TimelineView::showTrackMenu (int trackId)
 {
     juce::PopupMenu m;
@@ -2925,6 +2959,7 @@ void TimelineView::showTrackMenu (int trackId)
         m.addItem (2, TRANS ("Elimina traccia"));
         m.addItem (13, TRANS ("Blocca la traccia (Lock)"), true, project.trackLocked (trackId));
         m.addItem (14, TRANS ("Nascondi la traccia"));
+        m.addItem (380, TRANS ("Ritardo della traccia (Track Delay)..."));
         {
             juce::PopupMenu vers;
             if (const auto* tr = project.findTrack (trackId); tr != nullptr)
@@ -2985,6 +3020,7 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 6) p.clearAutomation (trackId);
         else if (r == 13) p.setTracksLocked (targets, ! p.trackLocked (trackId));
         else if (r == 14) p.setTracksHidden (targets, true);
+        else if (r == 380) safe->trackDelayDialog (trackId);
         else if (r >= 500) p.switchVersion (trackId, r - 500);
         else if (r == 490 || r == 491) safe->versionNameDialog (trackId, r == 491);
         else if (r == 492) { if (const auto* tr = p.findTrack (trackId)) safe->versionRenameDialog (trackId, tr->activeVersion); }

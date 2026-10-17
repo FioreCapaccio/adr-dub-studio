@@ -59,6 +59,7 @@ public:
     void cancelWarp();
 
     void renameTrackDialog (int trackId);
+    void trackDelayDialog (int trackId);
     void renameMarkerDialog (int markerId);
 
     // Component
@@ -149,6 +150,7 @@ private:
     double rulerStep() const;
 
     // pittura
+    void paintBody (juce::Graphics&);
     void drawRuler (juce::Graphics&);
     void drawVideoLane (juce::Graphics&);
     void drawHeader (juce::Graphics&, int trackIdx);

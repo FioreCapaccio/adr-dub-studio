@@ -160,7 +160,8 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
         {
             const auto& t = s.tracks[ti];
             auto& live = *t.live;
-            const bool audible = auditionClip > 0 || (! live.mute.load() && (! anySolo || live.solo.load()));
+            const bool audible = auditionClip > 0 || (referenceMode ? (t.reference && ! live.mute.load())
+                                                                      : (! t.reference && ! live.mute.load() && (! anySolo || live.solo.load())));
 
             scratch.clear (0, chunk);
             scratch.clear (1, 0, chunk);
@@ -196,7 +197,8 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
             if (audible && ! frozen) runInserts (live, scratch, chunk, midi);   // plug-in pre-fader
 
             // compensazione di latenza: ritarda la traccia fino alla latenza della piu' lenta
-            const int delay = audible && pdcEnabled ? juce::jmin (trackMax - latencies[ti], TrackLive::kPdcCap - 1) : 0;
+            const int manual = (int) (live.delayMs.load() * 0.001 * s.sampleRate);   // Track Delay
+            const int delay = audible ? juce::jmin ((pdcEnabled ? trackMax - latencies[ti] : 0) + manual, TrackLive::kPdcCap - 1) : 0;
             if (delay > 0)
                 for (int c = 0; c < 2; ++c)
                 {
@@ -263,6 +265,20 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
                     auxBuf[k].addFromWithRamp (1, 0, scratch.getReadPointer (1), chunk, last, tgt);
                 }
                 last = tgt;
+            }
+
+            if (cueSum != nullptr)   // mix del direttore: la traccia entra nelle cuffie col suo livello
+            {
+                if (lastCue.size() < s.tracks.size()) lastCue.resize (s.tracks.size(), -1.0f);
+                const float cg = audible && live.cueDb.load() > -79.5f ? dbToGain (live.cueDb.load()) : 0.0f;
+                float& lc = lastCue[ti];
+                if (lc < 0.0f) lc = cg;
+                if (lc != 0.0f || cg != 0.0f)
+                {
+                    cueSum->addFromWithRamp (0, outStart + done, scratch.getReadPointer (0), chunk, lc, cg);
+                    cueSum->addFromWithRamp (1, outStart + done, scratch.getReadPointer (1), chunk, lc, cg);
+                }
+                lc = cg;
             }
 
             const int bus = live.outBus.load();
@@ -761,6 +777,7 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
     const int64_t ls = loopStart.load(), le = loopEnd.load();
     const int64_t chunkPos = pos;
 
+    if (cue.enabled.load() && cue.custom.load()) cueSumBuf.clear (0, n);
     int remaining = n, outPos = 0;
     while (remaining > 0)
     {
@@ -768,6 +785,8 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
         int seg = remaining;
         if (looping && pos < le) seg = (int) juce::jmin<int64_t> (seg, le - pos);
         mixer.auditionClip = auditionClip.load();
+        mixer.referenceMode = referenceMode.load();
+        mixer.cueSum = (cue.enabled.load() && cue.custom.load()) ? &cueSumBuf : nullptr;
         mixer.render (*current, pos, master, outPos, seg);
         pos += seg;
         outPos += seg;
@@ -816,7 +835,7 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
         if (cue.talkOn.load()) g *= dbToGain (cue.mixDuckDb.load());
         for (int c = 0; c < 2; ++c)
         {
-            juce::FloatVectorOperations::copy (cueBuf.getWritePointer (c), master.getReadPointer (c), n);
+            juce::FloatVectorOperations::copy (cueBuf.getWritePointer (c), (cue.custom.load() ? cueSumBuf : master).getReadPointer (c), n);
             cueBuf.applyGain (c, 0, n, g);
         }
         cueReady = true;

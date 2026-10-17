@@ -1143,6 +1143,13 @@ void Project::setTracksLocked (const std::vector<int>& ids, bool locked)
     markDirty();
 }
 
+void Project::setTracksReference (const std::vector<int>& ids, bool reference)
+{
+    beginEdit();
+    for (auto& t : session.tracks) if (std::find (ids.begin(), ids.end(), t.id) != ids.end()) t.reference = reference;
+    changed();
+}
+
 void Project::setTracksHidden (const std::vector<int>& ids, bool hidden)
 {
     for (auto& t : session.tracks) if (std::find (ids.begin(), ids.end(), t.id) != ids.end()) t.hidden = hidden;
@@ -2283,6 +2290,42 @@ void Project::normalizeClip (int64_t id)
     changed();
 }
 
+int Project::renameClips (const std::vector<std::pair<int64_t, juce::String>>& items)
+{
+    std::vector<std::pair<int64_t, juce::String>> todo;
+    for (auto& it : items)
+    {
+        int ti = -1;
+        const auto* c = findClip (it.first, &ti);
+        if (c != nullptr && ! session.tracks[(size_t) ti].editLocked() && it.second != (c->name.isNotEmpty() ? c->name : (c->asset != nullptr ? c->asset->name : juce::String()))) todo.push_back (it);
+    }
+    if (todo.empty()) return 0;
+    beginEdit();
+    for (auto& it : todo) findClip (it.first)->name = it.second;
+    changed();
+    return (int) todo.size();
+}
+
+int Project::renameTracks (const std::vector<std::pair<int, juce::String>>& items)
+{
+    std::vector<std::pair<int, juce::String>> todo;
+    for (auto& it : items) if (const auto* t = findTrack (it.first); t != nullptr && t->name != it.second) todo.push_back (it);
+    if (todo.empty()) return 0;
+    beginEdit();
+    for (auto& it : todo) findTrack (it.first)->name = it.second;
+    changed();
+    return (int) todo.size();
+}
+
+int Project::renameMarkers (const std::vector<std::pair<int, juce::String>>& items)
+{
+    int n = 0;
+    beginEdit();
+    for (auto& it : items) for (auto& m : session.markers) if (m.id == it.first && m.name != it.second) { m.name = it.second; ++n; }
+    if (n > 0) changed();
+    return n;
+}
+
 void Project::stretchClip (int64_t id, double ratio, bool keepPitch, const juce::File& folder, std::function<void (juce::String)> done, int64_t newStart)
 {
     int sti = -1;
@@ -2767,6 +2810,202 @@ void insertsFromVar (const juce::var& v, TrackLive& live)
 }
 } // namespace
 
+namespace
+{
+MixValues readMix (const TrackLive& l)
+{
+    MixValues v;
+    v.vol = l.volumeDb.load(); v.pan = l.pan.load(); v.trim = l.trimDb.load(); v.send0 = l.sendDb[0].load(); v.send1 = l.sendDb[1].load();
+    v.delay = l.delayMs.load(); v.mute = l.mute.load(); v.solo = l.solo.load(); v.outBus = l.outBus.load();
+    return v;
+}
+
+void writeMix (TrackLive& l, const MixValues& v)
+{
+    l.volumeDb = v.vol; l.pan = v.pan; l.trimDb = v.trim; l.sendDb[0] = v.send0; l.sendDb[1] = v.send1;
+    l.delayMs = v.delay; l.mute = v.mute; l.solo = v.solo; l.outBus = v.outBus;
+}
+
+juce::var mixToVar (const MixValues& v)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("vol", v.vol); o->setProperty ("pan", v.pan); o->setProperty ("trim", v.trim); o->setProperty ("s0", v.send0); o->setProperty ("s1", v.send1);
+    o->setProperty ("delay", v.delay); o->setProperty ("mute", v.mute); o->setProperty ("solo", v.solo); o->setProperty ("out", v.outBus);
+    return juce::var (o);
+}
+
+MixValues mixFromVar (const juce::var& o)
+{
+    MixValues v;
+    v.vol = (float) (double) o.getProperty ("vol", 0.0); v.pan = (float) (double) o.getProperty ("pan", 0.0); v.trim = (float) (double) o.getProperty ("trim", 0.0);
+    v.send0 = (float) (double) o.getProperty ("s0", -80.0); v.send1 = (float) (double) o.getProperty ("s1", -80.0); v.delay = (float) (double) o.getProperty ("delay", 0.0);
+    v.mute = (bool) o.getProperty ("mute", false); v.solo = (bool) o.getProperty ("solo", false); v.outBus = (int) o.getProperty ("out", 0);
+    return v;
+}
+} // namespace
+
+int Project::storeVisConfig (const juce::String& name)
+{
+    VisConfig c;
+    c.name = name.trim().isEmpty() ? "Configurazione " + juce::String ((int) visConfigs.size() + 1) : name.trim();
+    for (auto& t : session.tracks) c.hidden.push_back (t.hidden);
+    visConfigs.push_back (c);
+    markDirty();
+    return (int) visConfigs.size() - 1;
+}
+
+void Project::recallVisConfig (int index)
+{
+    if (index < 0 || index >= (int) visConfigs.size()) return;
+    beginEdit();
+    const auto& c = visConfigs[(size_t) index];
+    for (size_t i = 0; i < session.tracks.size(); ++i) session.tracks[i].hidden = i < c.hidden.size() ? (bool) c.hidden[i] : false;   // tracce nate dopo il salvataggio restano visibili
+    changed();
+}
+
+int Project::storeSnapshot (const juce::String& name)
+{
+    MixSnapshot s;
+    s.id = snapshots.empty() ? 1 : snapshots.back().id + 1;
+    s.name = name.trim().isEmpty() ? "Snapshot " + juce::String (s.id) : name.trim();
+    for (auto& t : session.tracks) s.tracks[t.id] = readMix (*t.live);
+    s.master = readMix (*session.master);
+    for (int k = 0; k < 2; ++k) s.aux[k] = readMix (*session.aux[k]);
+    for (int k = 0; k < Session::kNumGroups; ++k) s.group[k] = readMix (*session.group[k]);
+    snapshots.push_back (s);
+    markDirty();
+    return s.id;
+}
+
+bool Project::recallSnapshot (int id)
+{
+    const auto it = std::find_if (snapshots.begin(), snapshots.end(), [id] (const MixSnapshot& s) { return s.id == id; });
+    if (it == snapshots.end()) return false;
+    const auto& s = *it;
+    beforeRecall = {};
+    for (auto& t : session.tracks) beforeRecall.tracks[t.id] = readMix (*t.live);
+    beforeRecall.master = readMix (*session.master);
+    for (int k = 0; k < 2; ++k) beforeRecall.aux[k] = readMix (*session.aux[k]);
+    for (int k = 0; k < Session::kNumGroups; ++k) beforeRecall.group[k] = readMix (*session.group[k]);
+    haveBeforeRecall = true;
+    for (auto& t : session.tracks) if (const auto f = s.tracks.find (t.id); f != s.tracks.end()) writeMix (*t.live, f->second);
+    writeMix (*session.master, s.master);
+    for (int k = 0; k < 2; ++k) writeMix (*session.aux[k], s.aux[k]);
+    for (int k = 0; k < Session::kNumGroups; ++k) writeMix (*session.group[k], s.group[k]);
+    liveChanged();
+    return true;
+}
+
+bool Project::undoRecall()
+{
+    if (! haveBeforeRecall) return false;
+    const auto& s = beforeRecall;
+    for (auto& t : session.tracks) if (const auto f = s.tracks.find (t.id); f != s.tracks.end()) writeMix (*t.live, f->second);
+    writeMix (*session.master, s.master);
+    for (int k = 0; k < 2; ++k) writeMix (*session.aux[k], s.aux[k]);
+    for (int k = 0; k < Session::kNumGroups; ++k) writeMix (*session.group[k], s.group[k]);
+    haveBeforeRecall = false;
+    liveChanged();
+    return true;
+}
+
+void Project::deleteSnapshot (int id)
+{
+    snapshots.erase (std::remove_if (snapshots.begin(), snapshots.end(), [id] (const MixSnapshot& s) { return s.id == id; }), snapshots.end());
+    markDirty();
+}
+
+juce::var Project::trackPresetVar (int trackId) const
+{
+    const Track* t = nullptr;
+    for (auto& x : session.tracks) if (x.id == trackId) t = &x;
+    if (t == nullptr) return {};
+    auto* o = new juce::DynamicObject();
+    const auto& l = *t->live;
+    o->setProperty ("name", t->name);
+    o->setProperty ("volumeDb", (double) l.volumeDb.load()); o->setProperty ("pan", (double) l.pan.load()); o->setProperty ("trim", (double) l.trimDb.load());
+    o->setProperty ("delayMs", (double) l.delayMs.load()); o->setProperty ("invert", l.invert.load()); o->setProperty ("outBus", l.outBus.load());
+    o->setProperty ("trackType", l.trackType.load()); o->setProperty ("sendA", (double) l.sendDb[0].load()); o->setProperty ("sendB", (double) l.sendDb[1].load());
+    o->setProperty ("limiter", l.limiterOn.load()); o->setProperty ("ceiling", (double) l.ceilingDb.load());
+    {
+        auto* c = new juce::DynamicObject();
+        const auto& k = l.comp;
+        c->setProperty ("on", k.enabled.load()); c->setProperty ("thr", (double) k.thresholdDb.load()); c->setProperty ("ratio", (double) k.ratio.load());
+        c->setProperty ("atk", (double) k.attackMs.load()); c->setProperty ("rel", (double) k.releaseMs.load());
+        c->setProperty ("knee", (double) k.kneeDb.load()); c->setProperty ("makeup", (double) k.makeupDb.load());
+        o->setProperty ("comp", juce::var (c));
+    }
+    {
+        auto* e = new juce::DynamicObject();
+        e->setProperty ("on", l.eq.enabled.load());
+        juce::Array<juce::var> bands;
+        for (auto& b : l.eq.band)
+        {
+            auto* bo = new juce::DynamicObject();
+            bo->setProperty ("type", b.type.load()); bo->setProperty ("freq", (double) b.freq.load()); bo->setProperty ("gain", (double) b.gainDb.load());
+            bo->setProperty ("q", (double) b.q.load()); bo->setProperty ("on", b.on.load());
+            bands.add (juce::var (bo));
+        }
+        e->setProperty ("bands", bands);
+        o->setProperty ("eq", juce::var (e));
+    }
+    return juce::var (o);
+}
+
+int Project::applyTrackPresetVar (const std::vector<int>& trackIds, const juce::var& p)
+{
+    if (! p.isObject()) return 0;
+    int n = 0;
+    for (int id : trackIds)
+    {
+        auto* t = findTrack (id);
+        if (t == nullptr) continue;
+        auto& l = *t->live;
+        l.volumeDb = (float) (double) p.getProperty ("volumeDb", 0.0);
+        l.pan = juce::jlimit (-1.0f, 1.0f, (float) (double) p.getProperty ("pan", 0.0));
+        l.trimDb = juce::jlimit (-24.0f, 24.0f, (float) (double) p.getProperty ("trim", 0.0));
+        l.delayMs = juce::jlimit (0.0f, 500.0f, (float) (double) p.getProperty ("delayMs", 0.0));
+        l.invert = (bool) p.getProperty ("invert", false);
+        l.outBus = juce::jlimit (0, Session::kNumGroups, (int) p.getProperty ("outBus", 0));
+        l.trackType = juce::jlimit (0, (int) kNumTrackTypes - 1, (int) p.getProperty ("trackType", 0));
+        l.sendDb[0] = (float) (double) p.getProperty ("sendA", -80.0);
+        l.sendDb[1] = (float) (double) p.getProperty ("sendB", -80.0);
+        l.limiterOn = (bool) p.getProperty ("limiter", false);
+        l.ceilingDb = juce::jlimit (-24.0f, 0.0f, (float) (double) p.getProperty ("ceiling", -1.0));
+        if (p.hasProperty ("comp"))
+        {
+            const auto cv = p.getProperty ("comp", {});
+            auto& k = l.comp;
+            k.enabled = (bool) cv.getProperty ("on", false);
+            k.thresholdDb = juce::jlimit (-60.0f, 0.0f, (float) (double) cv.getProperty ("thr", -18.0));
+            k.ratio = juce::jlimit (1.0f, 20.0f, (float) (double) cv.getProperty ("ratio", 3.0));
+            k.attackMs = juce::jlimit (0.1f, 200.0f, (float) (double) cv.getProperty ("atk", 10.0));
+            k.releaseMs = juce::jlimit (5.0f, 2000.0f, (float) (double) cv.getProperty ("rel", 120.0));
+            k.kneeDb = juce::jlimit (0.0f, 24.0f, (float) (double) cv.getProperty ("knee", 6.0));
+            k.makeupDb = juce::jlimit (-12.0f, 24.0f, (float) (double) cv.getProperty ("makeup", 0.0));
+        }
+        if (p.hasProperty ("eq"))
+        {
+            const auto ev = p.getProperty ("eq", {});
+            l.eq.enabled = (bool) ev.getProperty ("on", false);
+            if (auto* ba = ev.getProperty ("bands", {}).getArray())
+                for (int bi = 0; bi < ParamEq::kBands && bi < ba->size(); ++bi)
+                {
+                    const auto& bv = (*ba)[bi];
+                    auto& b = l.eq.band[bi];
+                    b.type = juce::jlimit (0, (int) ParamEq::kNumTypes - 1, (int) bv.getProperty ("type", 0));
+                    b.freq = juce::jlimit (20.0f, 20000.0f, (float) (double) bv.getProperty ("freq", 1000.0));
+                    b.gainDb = juce::jlimit (-24.0f, 24.0f, (float) (double) bv.getProperty ("gain", 0.0));
+                    b.q = juce::jlimit (0.1f, 20.0f, (float) (double) bv.getProperty ("q", 1.0));
+                    b.on = (bool) bv.getProperty ("on", true);
+                }
+        }
+        ++n;
+    }
+    if (n > 0) liveChanged();
+    return n;
+}
+
 juce::var Project::toVar() const
 {
     auto* root = new juce::DynamicObject();
@@ -2844,6 +3083,47 @@ juce::var Project::toVar() const
         }
         root->setProperty ("markers", marks);
         if (notes.isNotEmpty()) root->setProperty ("notes", notes);
+        if (directorMix) root->setProperty ("directorMix", true);
+        if (! viewPresets.empty())
+        {
+            juce::Array<juce::var> vs;
+            for (auto& v : viewPresets) { auto* o = new juce::DynamicObject(); o->setProperty ("name", v.name); o->setProperty ("spp", v.spp); o->setProperty ("h", v.trackH); vs.add (juce::var (o)); }
+            root->setProperty ("viewPresets", vs);
+        }
+        if (! visConfigs.empty())
+        {
+            juce::Array<juce::var> vs;
+            for (auto& c : visConfigs)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("name", c.name);
+                juce::String bits;
+                for (bool h : c.hidden) bits << (h ? '1' : '0');
+                o->setProperty ("hidden", bits);
+                vs.add (juce::var (o));
+            }
+            root->setProperty ("visConfigs", vs);
+        }
+        if (! snapshots.empty())
+        {
+            juce::Array<juce::var> snaps;
+            for (auto& s : snapshots)
+            {
+                auto* so = new juce::DynamicObject();
+                so->setProperty ("name", s.name);
+                juce::Array<juce::var> trs;
+                for (auto& t : session.tracks) { const auto f = s.tracks.find (t.id); trs.add (f != s.tracks.end() ? mixToVar (f->second) : juce::var()); }   // per posizione: gli id si riassegnano al caricamento
+                so->setProperty ("tracks", trs);
+                so->setProperty ("master", mixToVar (s.master));
+                juce::Array<juce::var> ax, gr;
+                for (auto& a : s.aux) ax.add (mixToVar (a));
+                for (auto& g : s.group) gr.add (mixToVar (g));
+                so->setProperty ("aux", ax);
+                so->setProperty ("groups", gr);
+                snaps.add (juce::var (so));
+            }
+            root->setProperty ("snapshots", snaps);
+        }
     }
     if (session.video != nullptr)
     {
@@ -2869,6 +3149,7 @@ juce::var Project::toVar() const
             co->setProperty ("gainDb", (double) c.gainDb);
             co->setProperty ("fadeIn", (juce::int64) c.fadeIn);
             co->setProperty ("fadeOut", (juce::int64) c.fadeOut);
+            if (c.name.isNotEmpty()) co->setProperty ("name", c.name);
             if (c.muted) co->setProperty ("muted", true);
             if (c.invert) co->setProperty ("invert", true);
             if (c.syncPoint >= 0) co->setProperty ("sync", (juce::int64) c.syncPoint);
@@ -2893,6 +3174,7 @@ juce::var Project::toVar() const
         if (t.locked) o->setProperty ("locked", true);
         if (t.frozen != nullptr) o->setProperty ("frozenFile", t.frozen->file.getFullPathName());
         if (t.hidden) o->setProperty ("hidden", true);
+        if (t.reference) o->setProperty ("reference", true);
         if (t.showLanes) o->setProperty ("lanes", true);
         o->setProperty ("colour", t.colour.toString());
         o->setProperty ("volumeDb", (double) t.live->volumeDb.load());
@@ -2906,6 +3188,8 @@ juce::var Project::toVar() const
         o->setProperty ("invert", t.live->invert.load());
         o->setProperty ("outBus", t.live->outBus.load());
         o->setProperty ("trim", (double) t.live->trimDb.load());
+        if (t.live->delayMs.load() != 0.0f) o->setProperty ("delayMs", (double) t.live->delayMs.load());
+        if (t.live->cueDb.load() != 0.0f) o->setProperty ("cueDb", (double) t.live->cueDb.load());
         o->setProperty ("trackType", t.live->trackType.load());
         {
             auto* c = new juce::DynamicObject();
@@ -3215,6 +3499,9 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
         auto result = std::make_shared<Session>();
         const int loudStd = (int) parsed.getProperty ("loudnessStandard", 1);
         const juce::String pNotes = parsed.getProperty ("notes", "").toString();
+        const juce::var pSnaps = parsed.getProperty ("snapshots", {});
+        const bool pDirector = (bool) parsed.getProperty ("directorMix", false);
+        const juce::var pViews = parsed.getProperty ("viewPresets", {}), pVis = parsed.getProperty ("visConfigs", {});
         const int ptcFormat = (int) parsed.getProperty ("tcFormat", 2);
         const double ptcStart = (double) parsed.getProperty ("tcStart", 0.0);
         const bool prulerTc = (bool) parsed.getProperty ("rulerTimecode", true);
@@ -3329,6 +3616,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                             c.cueId = (int) cv.getProperty ("cueId", 0);
                             c.takeNo = (int) cv.getProperty ("takeNo", 0);
                             c.muted = (bool) cv.getProperty ("muted", false);
+                            c.name = cv.getProperty ("name", {}).toString();
                             c.rating = juce::jlimit (0, 5, (int) cv.getProperty ("rating", 0));
                             c.rejected = (bool) cv.getProperty ("rejected", false);
                             c.invert = (bool) cv.getProperty ("invert", false);
@@ -3358,6 +3646,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                         if (t.frozen == nullptr) errors += (errors.isEmpty() ? "" : "\n") + juce::String (TRANS ("File del Freeze non trovato (la traccia torna in tempo reale): ")) + ff;
                     }
                     t.hidden = (bool) tv.getProperty ("hidden", false);
+                    t.reference = (bool) tv.getProperty ("reference", false);
                     t.showLanes = (bool) tv.getProperty ("lanes", false);
                     t.colour = juce::Colour::fromString (tv.getProperty ("colour", "ffe5584c").toString());
                     t.live->volumeDb = (float) (double) tv.getProperty ("volumeDb", 0.0);
@@ -3370,6 +3659,8 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     t.live->autoMode = (int) tv.getProperty ("autoMode", 0);
                     t.live->invert = (bool) tv.getProperty ("invert", false);
                     t.live->trimDb = juce::jlimit (-24.0f, 24.0f, (float) (double) tv.getProperty ("trim", 0.0));
+                    t.live->delayMs = juce::jlimit (0.0f, 500.0f, (float) (double) tv.getProperty ("delayMs", 0.0));
+                    t.live->cueDb = juce::jlimit (-80.0f, 6.0f, (float) (double) tv.getProperty ("cueDb", 0.0));
                     t.live->trackType = juce::jlimit (0, (int) kNumTrackTypes - 1, (int) tv.getProperty ("trackType", 0));
                     if (tv.hasProperty ("comp"))
                     {
@@ -3496,6 +3787,35 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 sessionFile = f;
                 loudnessStandard = loudStd;
                 notes = pNotes;
+                directorMix = pDirector;
+                viewPresets.clear();
+                visConfigs.clear();
+                if (auto* va = pViews.getArray())
+                    for (auto& v : *va) viewPresets.push_back ({ v.getProperty ("name", "").toString(), (double) v.getProperty ("spp", 480.0), (int) v.getProperty ("h", 96) });
+                if (auto* ca = pVis.getArray())
+                    for (auto& v : *ca)
+                    {
+                        VisConfig c;
+                        c.name = v.getProperty ("name", "").toString();
+                        for (auto ch : v.getProperty ("hidden", "").toString()) c.hidden.push_back (ch == '1');
+                        visConfigs.push_back (std::move (c));
+                    }
+                snapshots.clear();
+                haveBeforeRecall = false;
+                if (auto* sa = pSnaps.getArray())
+                    for (auto& sv : *sa)
+                    {
+                        MixSnapshot s;
+                        s.id = (int) snapshots.size() + 1;
+                        s.name = sv.getProperty ("name", "").toString();
+                        if (auto* trs = sv.getProperty ("tracks", {}).getArray())
+                            for (int i = 0; i < trs->size() && i < (int) session.tracks.size(); ++i)
+                                if ((*trs)[i].isObject()) s.tracks[session.tracks[(size_t) i].id] = mixFromVar ((*trs)[i]);
+                        s.master = mixFromVar (sv.getProperty ("master", {}));
+                        if (auto* ax = sv.getProperty ("aux", {}).getArray()) for (int k = 0; k < 2 && k < ax->size(); ++k) s.aux[k] = mixFromVar ((*ax)[k]);
+                        if (auto* gr = sv.getProperty ("groups", {}).getArray()) for (int k = 0; k < 4 && k < gr->size(); ++k) s.group[k] = mixFromVar ((*gr)[k]);
+                        snapshots.push_back (std::move (s));
+                    }
                 tcFormat = juce::jlimit (0, numTcFormats - 1, ptcFormat);
                 tcStartSec = ptcStart;
                 rulerTimecode = prulerTc;

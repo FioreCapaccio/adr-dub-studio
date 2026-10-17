@@ -133,6 +133,7 @@ struct Clip
     bool invert = false;     // polarita' invertita (DOP)
     int xShape = 0;          // forma del crossfade che finisce su questo clip: 0 automatica, 1 lineare, 2 a potenza costante
     int lane = 0;            // corsia (calcolata da Session::computeLanes, non salvata)
+    juce::String name;            // nome mostrato sul clip (vuoto = nome del file)
     std::vector<GainPoint> env;   // inviluppo di guadagno del clip (vuoto = nessuno), ordinato per posizione
     int64_t syncPoint = -1;  // punto di sincronia: posizione nel file (campioni dell'asset) che si aggancia al cue / al cursore; -1 = nessuno
     int rating = 0;          // take ADR: valutazione 0..5 stelle
@@ -195,6 +196,9 @@ struct TrackLive
     std::atomic<int> autoParam { 0 };      // parametro mostrato e modificato sulla timeline (AutoParam)
     std::atomic<int> height { 96 };        // altezza della traccia nella timeline (pixel, non soggetta a undo)
 
+    std::atomic<float> cueDb { 0.0f };     // livello della traccia nel mix delle cuffie dell'attore (solo con il mix personalizzato del direttore); -80 = fuori
+    std::atomic<float> delayMs { 0.0f };   // ritardo manuale della traccia (Track Delay), 0..500 ms, si somma alla compensazione di latenza
+
     // linea di ritardo per la compensazione di latenza (PDC): la usa solo il thread audio / l'esportazione
     static constexpr int kPdcCap = 32768;
     std::vector<float> pdcBuf[2];
@@ -247,10 +251,27 @@ struct TrackLive
         volumeDb = o.volumeDb.load(); pan = o.pan.load();
         mute = o.mute.load(); solo = o.solo.load();
         armed = o.armed.load(); inputMode = o.inputMode.load(); height = o.height.load(); autoMode = o.autoMode.load(); autoParam = o.autoParam.load(); invert = o.invert.load(); outBus = o.outBus.load();
-        trimDb = o.trimDb.load(); eq.copyFrom (o.eq); comp.copyFrom (o.comp); trackType = o.trackType.load();
+        cueDb = o.cueDb.load(); delayMs = o.delayMs.load(); trimDb = o.trimDb.load(); eq.copyFrom (o.eq); comp.copyFrom (o.comp); trackType = o.trackType.load();
         limiterOn = o.limiterOn.load(); ceilingDb = o.ceilingDb.load();
         sendDb[0] = o.sendDb[0].load(); sendDb[1] = o.sendDb[1].load();
     }
+};
+
+/** Valori di mixer di una traccia o di un bus, per gli snapshot. */
+struct MixValues
+{
+    float vol = 0.0f, pan = 0.0f, trim = 0.0f, send0 = -80.0f, send1 = -80.0f, delay = 0.0f;
+    bool mute = false, solo = false;
+    int outBus = 0;
+};
+
+/** Stato del mixer salvato con un nome (Snapshot): livelli, pan, mute, solo, send, guadagno in ingresso, ritardo e uscita di ogni traccia, piu' master, ritorni FX e bus. */
+struct MixSnapshot
+{
+    int id = 0;
+    juce::String name;
+    std::map<int, MixValues> tracks;   // per id di traccia
+    MixValues master, aux[2], group[4];
 };
 
 /** Punto dell'automazione del volume (interpolazione lineare in dB). */
@@ -304,6 +325,7 @@ struct Track
     bool editLocked() const noexcept { return locked || frozen != nullptr; }   // bloccata a mano, oppure congelata
     bool locked = false;   // traccia bloccata: i suoi clip non si modificano (come Lock di Nuendo)
     bool showLanes = false;   // Show Lanes: i clip che si sovrappongono (take) stanno su corsie separate
+    bool reference = false;   // traccia di riferimento (mix di confronto): non suona ne si esporta, a meno che sia attivo il confronto A/B
     bool hidden = false;   // traccia nascosta nella timeline e nel mixer (non nel mix)
     juce::String name;
     juce::Colour colour;
@@ -565,9 +587,14 @@ public:
     const TrackGroup* findGroup (int groupId) const noexcept;
     void duplicateTrack (int id);
     void renameTrack (int id, const juce::String& name);
+    /** Rinomina in blocco: ogni elemento e' (id, nuovo nome); un solo passo di undo. Ritorna quanti nomi sono cambiati. */
+    int renameClips (const std::vector<std::pair<int64_t, juce::String>>&);
+    int renameTracks (const std::vector<std::pair<int, juce::String>>&);
+    int renameMarkers (const std::vector<std::pair<int, juce::String>>&);
     // blocco, visibilita', mute/solo globali: stato di lavoro, senza passo di undo
     void setTracksLocked (const std::vector<int>& ids, bool locked);
     void setTracksHidden (const std::vector<int>& ids, bool hidden);
+    void setTracksReference (const std::vector<int>& ids, bool reference);
     /** Freeze: l'audio della traccia (con EQ, compressore, plug-in e guadagno in ingresso) si rende in un file e suona al posto dei clip; si annulla con unfreeze. */
     void freezeTrack (int trackId, const juce::File& folder, std::function<void (juce::String)> done);
     void unfreezeTrack (int trackId);
@@ -739,6 +766,24 @@ public:
     int64_t contentEnd() const noexcept { return session.endSample(); }
 
     // timecode della sessione (come in Pro Tools) e impostazioni ADR; non soggetti a undo
+    // Snapshot del mixer (salvati con la sessione, senza undo; si possono annullare con undoRecall)
+    // preset di vista (zoom e altezza delle tracce) e configurazioni di visibilita' delle tracce (quali tracce si vedono), salvati con la sessione
+    struct ViewPreset { juce::String name; double spp = 480.0; int trackH = 96; };
+    std::vector<ViewPreset> viewPresets;
+    struct VisConfig { juce::String name; std::vector<bool> hidden; };   // per posizione di traccia
+    std::vector<VisConfig> visConfigs;
+    int storeVisConfig (const juce::String& name);
+    void recallVisConfig (int index);
+    bool directorMix = false;      // le cuffie dell'attore ricevono il mix personalizzato del direttore (livelli per traccia) invece del master
+    std::vector<MixSnapshot> snapshots;
+    int storeSnapshot (const juce::String& name);
+    bool recallSnapshot (int id);
+    bool undoRecall();
+    void deleteSnapshot (int id);
+    bool canUndoRecall() const noexcept { return haveBeforeRecall; }
+    // preset di traccia salvabili (livello, pan, guadagno in ingresso, EQ, compressore, limiter, send, ritardo, tipo e uscita; non i plug-in)
+    juce::var trackPresetVar (int trackId) const;
+    int applyTrackPresetVar (const std::vector<int>& trackIds, const juce::var& preset);
     int tcFormat = 2;              // indice in tcFormats()
     double tcStartSec = 0.0;       // timecode della posizione 0 della timeline, in secondi (es. 3600 = 01:00:00:00)
     bool rulerTimecode = true;     // il righello mostra il timecode invece dei minuti:secondi
@@ -764,6 +809,8 @@ public:
     int adrDialogueSize = 30;      // dimensione (px) del dialogo mostrato sotto il video
     /** Schema dei nomi dei take registrati: {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}. */
     juce::String adrNaming = "{personaggio}_{scena}_{cue}_T{take}";
+    MixSnapshot beforeRecall;
+    bool haveBeforeRecall = false;
     juce::String notes;            // Notepad: appunti di sessione (salvati con la sessione, senza undo)
     int selectedCueId = 0;         // cue ADR selezionato (stato dell'interfaccia)
     int adrTrackId = -1;           // traccia su cui si registra l'ADR (-1 = la traccia selezionata)
