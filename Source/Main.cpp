@@ -469,6 +469,55 @@ private:
 
     void stepAdrImport()
     {
+        // formati di altri programmi: Nuendo (EDL e marker CSV), Fairlight, report ADR, sottotitoli
+        {
+            const juce::String edl = "TITLE: Anello 4\nFCM: NON-DROP FRAME\n"
+                "001  AX       A2/V     C        00:00:01:22 00:00:05:06 00:00:01:22 00:00:05:06\n* FROM CLIP NAME: Cue 1 - Prof.steeve\n* COMMENT: molti insegnanti di cinema pensano mainstream.1\n"
+                "007  AX       A2/V     C        00:00:26:08 00:00:27:03 00:00:26:08 00:00:27:03\n* FROM CLIP NAME: Cue 7 - Claire\n* COMMENT: Scusate.\n"
+                "018  AX       A2/V     C        00:01:22:24 00:01:30:01 00:01:22:24 00:01:30:01\n* FROM CLIP NAME: Cue 18 - Wilson\n* COMMENT: Ho la sensazione che il tuo copione non abbia funzionato, tipo:\n";
+            auto r = fc::adr::parse (edl);
+            expect (r.cues.size() == 3 && r.cues[0].character == "Prof.steeve" && r.cues[1].character == "Claire" && r.cues[2].character == "Wilson" && r.cues[1].number == "7"
+                        && r.cues[1].dialogue == "Scusate." && r.cues[2].tcOut == "00:01:30:01",
+                    "EDL di Nuendo: personaggio e numero dal nome del clip (Cue N - Personaggio), battuta dal commento");
+
+            const juce::String mk = "Timecode In,Timecode Out,Name,Description,Audio File,Type\n"
+                "00:00:01:22,00:00:05:06,\"Cue 1 - Prof.steeve\",\"molti insegnanti, di cinema\",\"/x/Cue001.wav\",Marker\n"
+                "00:00:26:08,00:00:27:03,\"Cue 7 - Claire\",\"Scusate.\",\"\",Marker\n";
+            r = fc::adr::parse (mk);
+            expect (r.cues.size() == 2 && r.cues[0].character == "Prof.steeve" && r.cues[1].character == "Claire" && r.cues[0].dialogue == "molti insegnanti, di cinema" && r.cues[1].number == "7",
+                    "marker CSV di Nuendo: un personaggio (non 'Cue N - ...') e la battuta dalla Description");
+
+            const juce::String fl = "Cue,TC Start,TC End,Character,Dialogue\n1,00:00:01:22,00:00:05:06,\"Prof.steeve\",\"Ciao\"\n2,00:00:06:17,00:00:08:21,\"Claire\",\"Ok\"\n";
+            r = fc::adr::parse (fl);
+            expect (r.cues.size() == 2 && r.cues[1].character == "Claire" && r.cues[1].tcOut == "00:00:08:21" && r.cues[1].number == "2", "marker CSV di Fairlight: colonne TC Start / TC End / Character");
+
+            const juce::String ad = "Cue#,In TC,Out TC,Actor,Text,Selected Take,Take Rating,Take Notes,Status\n1,\"00:00:01:28\",\"00:00:05:08\",\"Prof.steeve\",\"Testo\",1,0,\"\",\"\"\n";
+            r = fc::adr::parse (ad);
+            expect (r.cues.size() == 1 && r.cues[0].character == "Prof.steeve" && r.cues[0].dialogue == "Testo" && r.cues[0].number == "1", "report ADR (Cue#, In TC, Actor, Text)");
+
+            const juce::String srt = "1\n00:00:01,000 --> 00:00:03,500\nMARCO: Ciao a tutti\n\n2\n00:00:05,250 --> 00:00:06,000\n<i>Senza nome</i>\nsu due righe\n";
+            r = fc::adr::parse (srt);
+            fc::Project sp (formats, 48000.0);
+            juce::StringArray sw;
+            const auto sc = fc::adr::toCues (r, sp, 48000.0, 4.0, sw);
+            expect (r.cues.size() == 2 && r.cues[0].character == "MARCO" && r.cues[0].dialogue == "Ciao a tutti" && r.cues[1].dialogue == "Senza nome su due righe" && sc.size() == 2
+                        && sc[0].inPos == 48000 && sc[0].outPos == 168000 && sc[1].inPos == (int64_t) (5.25 * 48000) && sc[1].outPos == 6 * 48000,
+                    "sottotitoli SRT: tempi in secondi, personaggio da 'NOME:', tag rimossi, righe unite");
+
+            // file reali (facoltativi): ADR_TEST_FILES="a.csv|b.edl" stampa cue e personaggi riconosciuti
+            if (const char* env = std::getenv ("ADR_TEST_FILES"))
+                for (auto& path : juce::StringArray::fromTokens (juce::String (env), "|", ""))
+                {
+                    const auto rr = fc::adr::parse (juce::File (path).loadFileAsString());
+                    std::set<juce::String> who;
+                    for (auto& c : rr.cues) who.insert (c.character);
+                    std::cout << "     " << juce::File (path).getFileName() << ": " << rr.format << ", " << (int) rr.cues.size() << " cue, " << (int) who.size() << " personaggi";
+                    if (! rr.cues.empty()) std::cout << " (primo: " << rr.cues[0].number << " / " << rr.cues[0].character << " / " << rr.cues[0].tcIn << "-" << rr.cues[0].tcOut << " / " << rr.cues[0].dialogue.substring (0, 30) << ")";
+                    std::cout << std::endl;
+                }
+            expect (! fc::adr::parse ("Nome,Altro\nuno,due\n").cues.size() && fc::adr::parse ("").cues.empty(), "file non riconosciuto: nessun cue");
+        }
+
         // 1. elenco marker di Pro Tools ("Export Session Info as Text")
         const juce::String pt =
             "SESSION NAME:\tFilm ADR\r\n"
@@ -2700,7 +2749,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.10.1"; }
+    const juce::String getApplicationVersion() override { return "2.11.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

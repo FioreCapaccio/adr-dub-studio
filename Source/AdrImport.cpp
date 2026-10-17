@@ -25,6 +25,31 @@ int frameFieldOf (const juce::String& s, bool* dropMark = nullptr)
     return parts[3].getIntValue();
 }
 
+/** Nomi del tipo "Cue 12 - Marco", "12_Marco", "#12: Marco" (Nuendo, Fairlight, Resolve...): numero e personaggio. */
+bool splitCueName (const juce::String& name, juce::String& number, juce::String& character)
+{
+    auto s = name.trim();
+    if (s.startsWithIgnoreCase ("cue")) s = s.substring (3).trimStart();
+    if (s.startsWithChar ('#')) s = s.substring (1).trimStart();
+    int i = 0;
+    while (i < s.length() && juce::CharacterFunctions::isDigit (s[i])) ++i;
+    if (i == 0) return false;
+    const auto rest = s.substring (i).trimStart();
+    if (rest.isEmpty()) return false;
+    const auto sep = rest[0];
+    if (! (juce::String ("-:_.)").containsChar (sep) || sep == 0x2013 || sep == 0x2014)) return false;
+    number = s.substring (0, i);
+    character = rest.substring (1).trim();
+    return character.isNotEmpty();
+}
+
+/** Completa numero e personaggio di un cue dal suo nome, se questo ha la forma "Cue N - Personaggio". */
+void fillFromName (ImportedCue& c)
+{
+    juce::String num, chr;
+    if (c.character.isEmpty() && splitCueName (c.name, num, chr)) { c.character = chr; c.number = num; }   // il numero scritto nel nome e' quello del cue (in un EDL il primo e' il numero d'evento)
+}
+
 juce::String norm (const juce::String& s)
 {
     return s.toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz0123456789#");
@@ -157,6 +182,7 @@ static ImportResult parseProTools (const juce::StringArray& lines)
         if (c.tcIn.isEmpty() && c.samplesIn < 0.0) continue;
         if (cName >= 0 && cName < f.size()) c.name = f[cName];
         if (cCom >= 0 && cCom < f.size()) parseCommentFields (f[cCom], c);
+        fillFromName (c);
         if (c.character.isEmpty()) c.character = c.name;
         r.cues.push_back (c);
     }
@@ -170,13 +196,13 @@ static ImportResult parseEdl (const juce::StringArray& lines)
     r.format = "EDL (CMX3600)";
     for (auto& l : lines)
         if (l.toUpperCase().startsWith ("FCM:"))
-            r.tcFormatIndex = l.toUpperCase().contains ("NON") ? 3 : (l.toUpperCase().contains ("DROP") ? 4 : -1);
+            r.tcFormatIndex = l.toUpperCase().contains ("NON") ? -1 : (l.toUpperCase().contains ("DROP") ? 4 : -1);   // "NON-DROP" non dice se 24, 25 o 30: lo dicono i fotogrammi del file
 
     ImportedCue cur;
     bool open = false;
     auto flush = [&]
     {
-        if (open && (cur.tcIn.isNotEmpty())) r.cues.push_back (cur);
+        if (open && (cur.tcIn.isNotEmpty())) { fillFromName (cur); r.cues.push_back (cur); }
         cur = {};
         open = false;
     };
@@ -203,6 +229,7 @@ static ImportResult parseEdl (const juce::StringArray& lines)
                     c.tcIn = toks[0];
                     c.name = toks.size() > 2 ? toks.joinIntoString (" ", 2) : juce::String();
                     parseCommentFields (c.name, c);
+                    fillFromName (c);
                     if (c.character.isEmpty()) c.character = c.name.upToFirstOccurrenceOf ("-", false, false).trim();
                     r.cues.push_back (c);
                 }
@@ -250,7 +277,7 @@ static ImportResult parseTable (const juce::StringArray& lines)
     if (hl.retainCharacters (";").length() > best) delim = ';';
 
     const auto cols = splitFields (hl, delim);
-    int cNum = -1, cChar = -1, cScene = -1, cReel = -1, cIn = -1, cOut = -1, cDial = -1, cNotes = -1, cName = -1;
+    int cNum = -1, cChar = -1, cScene = -1, cReel = -1, cIn = -1, cOut = -1, cDial = -1, cNotes = -1, cName = -1, cDesc = -1;
     for (int i = 0; i < cols.size(); ++i)
     {
         const auto n = norm (cols[i]);
@@ -258,16 +285,20 @@ static ImportResult parseTable (const juce::StringArray& lines)
         auto has = [&n] (std::initializer_list<const char*> words) { for (auto w : words) if (n.contains (w)) return true; return false; };
         auto is = [&n] (std::initializer_list<const char*> words) { for (auto w : words) if (n == w) return true; return false; };
 
-        if (cIn < 0 && (is ({ "in", "tcin", "timecodein", "start", "starttc", "inizio", "ingresso", "cuein", "entrata", "intc" }) || has ({ "tcin", "timecodein", "cuein" }))) cIn = i;
-        else if (cOut < 0 && (is ({ "out", "tcout", "timecodeout", "end", "endtc", "fine", "uscita", "cueout", "outtc" }) || has ({ "tcout", "timecodeout", "cueout" }))) cOut = i;
+        if (cIn < 0 && (is ({ "in", "tcin", "timecodein", "start", "starttc", "inizio", "ingresso", "cuein", "entrata", "intc", "timecode", "tc", "position", "time", "recin", "recordin" })
+                              || has ({ "tcin", "timecodein", "cuein", "tcstart", "timecodestart", "recordin", "inpoint", "starttime" }))) cIn = i;
+        else if (cOut < 0 && (is ({ "out", "tcout", "timecodeout", "end", "endtc", "fine", "uscita", "cueout", "outtc", "recout", "recordout" })
+                               || has ({ "tcout", "timecodeout", "cueout", "tcend", "timecodeend", "recordout", "outpoint", "endtime" }))) cOut = i;
         else if (cDial < 0 && has ({ "dialog", "dialogo", "battuta", "line", "text", "testo" })) cDial = i;
         else if (cChar < 0 && has ({ "char", "personag", "actor", "attore", "ruolo", "role" })) cChar = i;
         else if (cScene < 0 && has ({ "scene", "scena" })) cScene = i;
         else if (cReel < 0 && has ({ "reel", "rullo", "rullino" })) cReel = i;
+        else if (cDesc < 0 && has ({ "descri" })) cDesc = i;   // "Description" dei marker Nuendo / Resolve: e' la battuta
         else if (cNotes < 0 && has ({ "note", "comment", "commento" })) cNotes = i;
         else if (cNum < 0 && (is ({ "#", "n", "no", "num", "number", "numero", "cue", "cuenumber", "cuen", "id" }) || has ({ "cue#", "cuen" }))) cNum = i;
-        else if (cName < 0 && is ({ "name", "nome", "title", "titolo" })) cName = i;
+        else if (cName < 0 && (is ({ "name", "nome", "title", "titolo" }) || has ({ "markername", "cuename" }))) cName = i;
     }
+    if (cDial < 0) cDial = cDesc;
     if (cIn < 0) return r;
 
     for (int i = h + 1; i < lines.size(); ++i)
@@ -286,14 +317,79 @@ static ImportResult parseTable (const juce::StringArray& lines)
         c.dialogue = get (cDial);
         c.notes = get (cNotes);
         c.name = get (cName);
-        if (c.character.isEmpty()) c.character = c.name;
+        fillFromName (c);
+        if (c.character.isEmpty() && c.name.isNotEmpty()) c.character = c.name;
         r.cues.push_back (c);
     }
     return r;
 }
 
 //==============================================================================
+static ImportResult parseSubtitles (const juce::StringArray& lines);
 static ImportResult parseFormats (const juce::String& text);
+
+/** "hh:mm:ss,mmm" / "hh:mm:ss.mmm" / "mm:ss.mmm" -> secondi (-1 se non e' un tempo). */
+static double subtitleTime (const juce::String& t)
+{
+    auto parts = juce::StringArray::fromTokens (t.trim().replaceCharacter (',', '.'), ":", "");
+    if (parts.size() < 2 || parts.size() > 3) return -1.0;
+    double h = 0.0;
+    int k = 0;
+    if (parts.size() == 3) h = parts[k++].getDoubleValue();
+    for (auto& p : parts) if (! p.containsOnly ("0123456789.")) return -1.0;
+    return h * 3600.0 + parts[k].getDoubleValue() * 60.0 + parts[k + 1].getDoubleValue();
+}
+
+/** Sottotitoli SRT e WebVTT: un cue per blocco di testo; i tempi sono in secondi dall'inizio del video (campioni a 1000 Hz). */
+static ImportResult parseSubtitles (const juce::StringArray& lines)
+{
+    ImportResult r;
+    r.format = "Sottotitoli (SRT / WebVTT)";
+    r.sampleRate = 1000.0;
+    for (int i = 0; i < lines.size(); ++i)
+    {
+        const int arrow = lines[i].indexOf ("-->");
+        if (arrow < 0) continue;
+        const double t0 = subtitleTime (lines[i].substring (0, arrow)), t1 = subtitleTime (lines[i].substring (arrow + 3).trim().upToFirstOccurrenceOf (" ", false, false));
+        if (t0 < 0.0 || t1 < 0.0) continue;
+
+        juce::StringArray text;
+        int j = i + 1;
+        for (; j < lines.size() && lines[j].trim().isNotEmpty(); ++j) text.add (lines[j].trim());
+        auto body = text.joinIntoString (" ");
+        for (int guard = 0; guard < 64 && body.contains ("<") && body.contains (">"); ++guard)   // <i>, <font ...>
+            body = body.upToFirstOccurrenceOf ("<", false, false) + body.fromFirstOccurrenceOf (">", false, false);
+        for (int guard = 0; guard < 64 && body.contains ("{") && body.contains ("}"); ++guard)   // {\an8}
+            body = body.upToFirstOccurrenceOf ("{", false, false) + body.fromFirstOccurrenceOf ("}", false, false);
+        body = body.trim();
+        if (body.startsWith ("- ")) body = body.substring (2).trim();
+
+        ImportedCue c;
+        if (i > 0 && lines[i - 1].trim().containsOnly ("0123456789") && lines[i - 1].trim().isNotEmpty()) c.number = lines[i - 1].trim();
+        else c.number = juce::String ((int) r.cues.size() + 1);
+        // "MARCO: battuta" o "[Marco] battuta": il personaggio, se il file lo scrive
+        const int colon = body.indexOfChar (':');
+        if (colon > 0 && colon <= 24 && body.substring (0, colon).containsAnyOf ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+            && ! body.substring (0, colon).containsAnyOf ("0123456789,.!?") && juce::StringArray::fromTokens (body.substring (0, colon).trim(), " ", "").size() <= 3)
+        {
+            c.character = body.substring (0, colon).trim();
+            body = body.substring (colon + 1).trim();
+        }
+        else if (body.startsWithChar ('[') && body.indexOfChar (']') > 1 && body.indexOfChar (']') <= 25)
+        {
+            c.character = body.substring (1, body.indexOfChar (']')).trim();
+            body = body.substring (body.indexOfChar (']') + 1).trim();
+        }
+        c.dialogue = body;
+        c.samplesIn = t0 * 1000.0;
+        c.samplesOut = t1 * 1000.0;
+        r.cues.push_back (c);
+        i = j;
+    }
+    if (! r.cues.empty() && std::none_of (r.cues.begin(), r.cues.end(), [] (const ImportedCue& c) { return c.character.isNotEmpty(); }))
+        r.warnings.add ("I sottotitoli non indicano il personaggio: i cue restano senza personaggio.");
+    return r;
+}
 
 ImportResult parse (const juce::String& text)
 {
@@ -324,6 +420,10 @@ static ImportResult parseFormats (const juce::String& text)
 
     for (auto& l : lines)
         if (norm (l).contains ("markerslisting")) return parseProTools (lines);
+
+    // sottotitoli: righe "00:00:01,000 --> 00:00:03,500"
+    for (auto& l : lines)
+        if (l.contains ("-->") && subtitleTime (l.upToFirstOccurrenceOf ("-->", false, false)) >= 0.0) return parseSubtitles (lines);
 
     // EDL: ci sono righe di evento con quattro timecode
     int eventLines = 0;
@@ -367,6 +467,7 @@ std::vector<AdrCue> toCues (const ImportResult& r, const Project& project, doubl
             haveOut = project.parseTc (ic.tcOut, tlOut);
             if (! haveOut) { if (badOut++ == 0) firstBadOut = label + " (" + ic.tcOut + ")"; }   // un solo avviso per tutti: i cue sono spesso centinaia
         }
+        if (! haveOut && ic.samplesOut >= 0.0) { tlOut = ic.samplesOut / (r.sampleRate > 0.0 ? r.sampleRate : rate); haveOut = true; }
         if (! haveOut || tlOut <= tlIn) tlOut = tlIn + defaultDur;
 
         AdrCue c;

@@ -2006,7 +2006,7 @@ void MainComponent::addAdrCue()
 
 void MainComponent::importAdrDialog()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Importa cue ADR (Pro Tools, EDL, CSV/TSV)", juce::File(), "*.txt;*.csv;*.tsv;*.edl;*.tab");
+    chooser = std::make_unique<juce::FileChooser> ("Importa cue ADR (Pro Tools, EDL, CSV/TSV, SRT)", juce::File(), "*.txt;*.csv;*.tsv;*.edl;*.tab;*.srt;*.vtt");
     juce::Component::SafePointer<MainComponent> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe] (const juce::FileChooser& fc)
     {
@@ -2015,8 +2015,8 @@ void MainComponent::importAdrDialog()
         const auto result = adr::parse (f.loadFileAsString());
         if (result.cues.empty())
         {
-            safe->showError (TRANS ("Non ho trovato cue in questo file.\n\nFormati letti: testo Session Info di Pro Tools (elenco marker), EDL CMX3600 con locatori o commenti, "
-                             "tabelle CSV/TSV con una colonna di timecode."));
+            safe->showError (TRANS ("Non ho trovato cue in questo file.\n\nFormati letti: testo Session Info di Pro Tools (elenco marker), EDL CMX3600 con locatori o commenti (anche Nuendo), "
+                             "tabelle CSV/TSV con una colonna di timecode (Nuendo, Fairlight, Resolve, report ADR) e sottotitoli SRT / WebVTT."));
             return;
         }
         auto* dlg = new AdrImportDialog (*safe->project, result, [safe, result] (const AdrImportDialog::Values& v)
