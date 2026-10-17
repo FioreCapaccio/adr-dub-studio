@@ -85,6 +85,8 @@ private:
     void exportMarkersCsv();
     void showAdrWindow();
     void importAdrDialog();
+    void importTakesDialog();
+    void importTakesFrom (const juce::File& folder, bool askFirst, const juce::String& introMessage);
     void addAdrCue();
     void goToAdrCue (int cueId);
     void recordAdrCue (int cueId);

@@ -439,6 +439,10 @@ public:
     struct RecItem { int trackId; juce::File file; int64_t startPos; int64_t latency; int cueId = 0; juce::String takeName; };
     void addRecordings (std::vector<RecItem> items, std::function<void (juce::StringArray)> done);
 
+    // take gia' registrate (importate da file): ognuna al suo cue e numero; 'best' = e' quella scelta, altrimenti suona la piu' alta
+    struct TakeFile { int trackId = -1; juce::File file; int64_t startPos = 0; int cueId = 0; int takeNo = 1; bool best = false; };
+    void importTakes (std::vector<TakeFile> items, std::function<void (juce::StringArray, int imported)> done);
+
     // automazione: le prime quattro lavorano sulla curva scelta della traccia (TrackLive::autoParam)
     int nextAutoPointId() noexcept { return nextAutoId++; }   // per chi scrive curve in blocco (ducking)
     /** Aggiunge in un solo passo di undo i marker (posizione, nome), per esempio dal rilevamento dei tagli del video. */

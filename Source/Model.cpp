@@ -507,6 +507,77 @@ void Project::addRecordings (std::vector<RecItem> items, std::function<void (juc
     });
 }
 
+void Project::importTakes (std::vector<TakeFile> items, std::function<void (juce::StringArray, int)> done)
+{
+    const double rate = sampleRate;
+    auto* fm = &formats;
+
+    runAsync ([=, this]() -> std::function<void()>
+    {
+        auto loaded = std::make_shared<std::vector<AssetPtr>>();
+        juce::StringArray errors;
+        int n = 0;
+        for (auto& it : items)
+        {
+            setTask (TRANS ("Importo le take registrate"), (float) n++ / (float) juce::jmax<size_t> (1, items.size()));
+            juce::String err;
+            auto a = loadAsset (*fm, it.file, rate, err);
+            if (a == nullptr) errors.add (err);
+            loaded->push_back (a);
+        }
+        setTask ({}, -1.0f);
+
+        return [=, this]
+        {
+            auto errs = errors;
+            int imported = 0;
+            std::set<int> touched;
+            std::map<int, int> bestOf;   // cue -> numero della take indicata come BEST
+            selection.clear();
+            bool any = false;
+            for (size_t i = 0; i < items.size(); ++i)
+            {
+                auto& asset = (*loaded)[i];
+                if (asset == nullptr || findTrack (items[i].trackId) == nullptr || findCue (items[i].cueId) == nullptr) continue;
+                if (! any) { beginEdit(); any = true; }
+                int64_t start = items[i].startPos, offset = 0;
+                if (start < 0) { offset = -start; start = 0; }
+                if (offset >= asset->length()) continue;
+
+                Clip c;
+                c.id = nextClipId++;
+                c.asset = asset;
+                c.start = start;
+                c.offset = offset;
+                c.length = asset->length() - offset;
+                c.cueId = items[i].cueId;
+                c.takeNo = items[i].takeNo;
+                for (auto& t : session.tracks) for (auto& oc : t.clips) if (oc.cueId == c.cueId && oc.takeNo == c.takeNo) { c.takeNo = nextTakeNumber (c.cueId); break; }   // numero gia' preso da un'altra take
+                c.muted = true;
+                findTrack (items[i].trackId)->clips.push_back (c);
+                touched.insert (c.cueId);
+                if (items[i].best) bestOf[c.cueId] = c.takeNo;
+                ++imported;
+            }
+            for (int cueId : touched)
+            {
+                auto* cue = findCue (cueId);
+                int active = bestOf.count (cueId) > 0 ? bestOf[cueId] : 0;
+                if (active == 0)
+                {
+                    active = cue->activeTake;   // niente BEST: resta quella attiva, se c'e', altrimenti la piu' alta
+                    for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId && cue->activeTake == 0) active = juce::jmax (active, c.takeNo);
+                }
+                for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId) c.muted = (c.takeNo != active);
+                cue->activeTake = active;
+                if (cue->status == 0 || cue->status == 3) cue->status = 1;
+            }
+            if (any) changed();
+            if (done) done (errs, imported);
+        };
+    });
+}
+
 void Project::setVideo (const juce::File& f, std::function<void (juce::String)> done)
 {
     const double rate = sampleRate;

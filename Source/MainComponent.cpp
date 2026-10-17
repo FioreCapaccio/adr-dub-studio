@@ -17,6 +17,7 @@
 #include "Settings.h"
 #include "SessionSettings.h"
 #include "AdrImport.h"
+#include "TakeImport.h"
 
 namespace fc
 {
@@ -1348,7 +1349,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor });
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1413,6 +1414,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdTimeStretch:   i.setInfo (TRANS ("Time-stretch dei clip selezionati..."), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('t', cmd | juce::ModifierKeys::altModifier); i.setActive (hasSel); break;
         case cmdAdrWindow:     i.setInfo (TRANS ("Finestra ADR"), "", TRANS ("ADR"), 0); i.addDefaultKeypress ('a', cmd | shift); i.setTicked (adrWindow != nullptr); break;
         case cmdAdrImport:     i.setInfo (TRANS ("Importa cue da Pro Tools / EDL / tabella..."), "", TRANS ("ADR"), 0); break;
+        case cmdAdrImportTakes: i.setInfo (TRANS ("Importa take registrate da una cartella..."), "", TRANS ("ADR"), 0); break;
         case cmdAdrAddCue:     i.setInfo (TRANS ("Nuovo cue dalla regione di loop o dalla testina"), "", TRANS ("ADR"), 0); break;
         case cmdAdrRecord:     i.setInfo (adrRecCue != 0 ? TRANS ("Ferma la registrazione del cue") : TRANS ("Registra il cue selezionato"), "", TRANS ("ADR"), 0);
                                i.addDefaultKeypress ('r', cmd | shift); i.setActive (adrRecCue != 0 || project->findCue (project->selectedCueId) != nullptr); break;
@@ -1526,6 +1528,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdTimeStretch:   timeStretchSelected (false); break;
         case cmdAdrWindow:     if (adrWindow != nullptr) { adrWindow.reset(); adrPanel = nullptr; } else showAdrWindow(); break;
         case cmdAdrImport:     importAdrDialog(); break;
+        case cmdAdrImportTakes: importTakesDialog(); break;
         case cmdAdrAddCue:     addAdrCue(); break;
         case cmdAdrRecord:     if (adrRecCue != 0) finishRecording(); else recordAdrCue (project->selectedCueId); break;
         case cmdAdrNextCue: case cmdAdrPrevCue:
@@ -1799,7 +1802,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 m.addItem (1000 + (int) i, marks[i].name + "   " + project->formatTc ((double) marks[i].pos / project->getSampleRate()));
             break;
         }
-        case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, 0, cmdSessionSettings }); break;
+        case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrImportTakes, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, 0, cmdSessionSettings }); break;
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc }); break;
         case 8:
         {
@@ -2019,7 +2022,7 @@ void MainComponent::importAdrDialog()
                              "tabelle CSV/TSV con una colonna di timecode (Nuendo, Fairlight, Resolve, report ADR) e sottotitoli SRT / WebVTT."));
             return;
         }
-        auto* dlg = new AdrImportDialog (*safe->project, result, [safe, result] (const AdrImportDialog::Values& v)
+        auto* dlg = new AdrImportDialog (*safe->project, result, [safe, result, folder = f.getParentDirectory()] (const AdrImportDialog::Values& v)
         {
             if (safe == nullptr) return;
             auto& p = *safe->project;
@@ -2036,7 +2039,7 @@ void MainComponent::importAdrDialog()
             safe->showAdrWindow();
             juce::String msg = "Importati " + juce::String ((int) cues.size()) + " cue.";
             if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
-            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Importazione ADR"), msg);
+            safe->importTakesFrom (folder, true, msg);   // se vicino al file ci sono take registrate, si propone di importarle
         });
         dlg->setSize (560, 500);
         juce::DialogWindow::LaunchOptions lo;
@@ -2049,6 +2052,61 @@ void MainComponent::importAdrDialog()
         lo.resizable = false;
         lo.launchAsync();
     });
+}
+
+void MainComponent::importTakesDialog()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Cartella con le take registrate", juce::File(), "");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe] (const juce::FileChooser& fc)
+    {
+        auto d = fc.getResult();
+        if (safe != nullptr && d.isDirectory()) safe->importTakesFrom (d, false, {});
+    });
+}
+
+/** Cerca le take registrate (file "Cue012_Marco_Take2_BEST.wav" e simili) nella cartella e sotto, e le importa sui cue della sessione. */
+void MainComponent::importTakesFrom (const juce::File& folder, bool askFirst, const juce::String& intro)
+{
+    int dups = 0;
+    const auto found = takes::scan (project->getFormats(), folder, dups);
+    const int matching = takes::countMatches (*project, found);
+    auto info = [this] (const juce::String& text)
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Importazione ADR"), text);
+    };
+    if (matching == 0)
+    {
+        if (! askFirst) info (TRANS ("Non ho trovato take registrate per i cue della sessione in ") + folder.getFullPathName()
+                              + TRANS (".\n\nCerco file audio con il numero del cue nel nome, per esempio Cue012_Marco_Take2_BEST.wav o 12_Marco_T2.wav."));
+        else if (intro.isNotEmpty()) info (intro);
+        return;
+    }
+
+    auto run = [safe = juce::Component::SafePointer<MainComponent> (this), found, dups, intro, folder]
+    {
+        if (safe == nullptr) return;
+        auto& p = *safe->project;
+        auto pl = std::make_shared<takes::Plan> (takes::plan (p, found));
+        p.importTakes (pl->items, [safe, pl, dups, intro] (juce::StringArray errors, int imported)
+        {
+            if (safe == nullptr) return;
+            juce::String msg = intro.isNotEmpty() ? intro + "\n\n" : juce::String();
+            msg << imported << TRANS (" take importate su ") << pl->cues << TRANS (" cue. Le take indicate come BEST sono quelle attive.");
+            if (dups > 0) msg << "\n" << dups << TRANS (" file uguali in altre cartelle sono stati ignorati.");
+            for (auto& n : pl->notes) msg << "\n" << n;
+            for (auto& e : errors) msg << "\n" << e;
+            safe->showAdrWindow();
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Importazione ADR"), msg);
+        });
+    };
+
+    if (! askFirst) { run(); return; }
+    juce::String q = intro.isNotEmpty() ? intro + "\n\n" : juce::String();
+    q << TRANS ("Ho trovato ") << matching << TRANS (" take registrate per questi cue in ") << folder.getFileName() << TRANS (". Le importo?");
+    juce::NativeMessageBox::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle (TRANS ("Importazione ADR"))
+                                           .withMessage (q).withButton (TRANS ("Importa le take")).withButton (TRANS ("No")),
+                                       [run] (int r) { if (r == 0) run(); });   // 0 = primo pulsante
 }
 
 void MainComponent::recordAdrCue (int cueId)

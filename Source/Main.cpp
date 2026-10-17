@@ -2,6 +2,7 @@
 #include <iostream>
 #include "VideoSupport.h"
 #include "AdrImport.h"
+#include "TakeImport.h"
 #include "TimeStretch.h"
 #include "ExportEngine.h"
 #include "BuiltinFx.h"
@@ -105,6 +106,8 @@ private:
     }
 
     std::function<void (int)> finishCb;
+    std::unique_ptr<fc::Project> takesProject, realProject;
+    int dupsDummy = 0;
 
     void check (const juce::StringArray& errs)
     {
@@ -263,7 +266,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepRecording(); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepRecording(); }); }); }); });
         });
     }
 
@@ -503,6 +506,16 @@ private:
             expect (r.cues.size() == 2 && r.cues[0].character == "MARCO" && r.cues[0].dialogue == "Ciao a tutti" && r.cues[1].dialogue == "Senza nome su due righe" && sc.size() == 2
                         && sc[0].inPos == 48000 && sc[0].outPos == 168000 && sc[1].inPos == (int64_t) (5.25 * 48000) && sc[1].outPos == 6 * 48000,
                     "sottotitoli SRT: tempi in secondi, personaggio da 'NOME:', tag rimossi, righe unite");
+
+            // nomi dei file delle take
+            {
+                fc::takes::Found t;
+                expect (fc::takes::parseName ("Cue021_Claire_Take1_BEST", t) && t.cueNumber == 21 && t.character == "Claire" && t.take == 1 && t.best, "take: Cue021_Claire_Take1_BEST");
+                expect (fc::takes::parseName ("Cue006_Prof_steeve_Take2_BEST", t) && t.cueNumber == 6 && t.character == "Prof steeve" && t.take == 2 && t.best, "take: personaggio con underscore e Take2");
+                expect (fc::takes::parseName ("12_Marco_sc3_T2", t) && t.cueNumber == 12 && t.character == "Marco" && t.take == 2 && ! t.best, "take: nome dell'esportazione dell'app (numero_personaggio_scena_Tn)");
+                expect (fc::takes::parseName ("Cue 7 - Stud 1 take 3", t) && t.cueNumber == 7 && t.take == 3, "take: nome con spazi");
+                expect (! fc::takes::parseName ("RoomTone", t) && ! fc::takes::parseName ("Goodbye Petrushka Anello 4_Mix", t), "take: un file senza numero di cue non e' una take");
+            }
 
             // file reali (facoltativi): ADR_TEST_FILES="a.csv|b.edl" stampa cue e personaggi riconosciuti
             if (const char* env = std::getenv ("ADR_TEST_FILES"))
@@ -1410,6 +1423,92 @@ private:
     }
 
     // sessioni affidabili: media mancanti non distruttivi, ricollegamento, versioni, controllo, flusso
+    // take registrate importate da una cartella (nomi tipo Cue001_Marco_Take2_BEST.wav, posizione dal BWF)
+    void stepTakeImport (std::function<void()> next)
+    {
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_take");
+        dir.deleteRecursively();
+        auto makeWav = [this] (const juce::File& f, double rate, double refSec)
+        {
+            f.getParentDirectory().createDirectory();
+            juce::WavAudioFormat wav;
+            juce::StringPairArray meta;
+            if (refSec >= 0.0) meta.set (juce::WavAudioFormat::bwavTimeReference, juce::String ((juce::int64) std::llround (refSec * rate)));
+            std::unique_ptr<juce::FileOutputStream> os (f.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), rate, 1, 16, meta, 0));
+            if (w == nullptr) return;
+            os.release();
+            juce::AudioBuffer<float> b (1, (int) rate);   // 1 s
+            for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, 0.3f * std::sin (0.05f * (float) i));
+            w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+        };
+        makeWav (dir.getChildFile ("Audio/Cue001_Marco_Take1.wav"), 44100.0, 2.0);
+        makeWav (dir.getChildFile ("Audio/Cue001_Marco_Take2_BEST.wav"), 44100.0, 3.0);
+        makeWav (dir.getChildFile ("Audio/Cue002_Anna_Take1.wav"), 44100.0, -1.0);
+        makeWav (dir.getChildFile ("altro/giu/Cue002_Anna_Take1.wav"), 44100.0, -1.0);   // copia in un'altra cartella
+        makeWav (dir.getChildFile ("Audio/Cue099_Zeno_Take1.wav"), 44100.0, 1.0);        // nessun cue 99
+        makeWav (dir.getChildFile ("Audio/RoomTone.wav"), 44100.0, 1.0);
+
+        takesProject = std::make_unique<fc::Project> (formats, 48000.0);
+        takesProject->newSession (false);
+        {
+            fc::AdrCue c1, c2;
+            c1.number = 1; c1.character = "Marco"; c1.inPos = 48000; c1.outPos = 96000;
+            c2.number = 2; c2.character = "Anna"; c2.inPos = 7 * 48000; c2.outPos = 8 * 48000;
+            takesProject->addCues ({ c1, c2 }, true);
+        }
+        int dups = 0;
+        const auto found = fc::takes::scan (formats, dir, dups);
+        expect (found.size() == 4 && dups == 1, "take: " + juce::String ((int) found.size()) + " file riconosciuti, " + juce::String (dups) + " copie ignorate (attesi 4 e 1)");
+        expect (fc::takes::countMatches (*takesProject, found) == 3, "take: tre file hanno un cue nella sessione");
+        auto pl = std::make_shared<fc::takes::Plan> (fc::takes::plan (*takesProject, found));
+        expect (pl->items.size() == 3 && pl->cues == 2 && pl->notes.size() == 1 && takesProject->getSession().tracks.size() == 2, "take: piano con 3 take su 2 cue, un avviso per il cue 99, tracce Marco e Anna create");
+        takesProject->importTakes (pl->items, [this, next, pl, dir] (juce::StringArray errs, int imported)
+        {
+            auto& s = takesProject->getSession();
+            expect (errs.isEmpty() && imported == 3, "take: importate " + juce::String (imported));
+            const auto* marco = takesProject->findTrack (fc::dub::trackForCue (*takesProject, s.cues[0]));
+            const auto* anna = takesProject->findTrack (fc::dub::trackForCue (*takesProject, s.cues[1]));
+            expect (marco != nullptr && anna != nullptr && marco->clips.size() == 2 && anna->clips.size() == 1, "take: ogni take sulla traccia del suo personaggio");
+            if (marco != nullptr && marco->clips.size() == 2 && anna != nullptr && anna->clips.size() == 1)
+            {
+                expect (marco->clips[0].takeNo == 1 && marco->clips[0].start == 2 * 48000 && marco->clips[1].takeNo == 2 && marco->clips[1].start == 3 * 48000,
+                        "take: la posizione viene dal BWF (2 s e 3 s) anche se il file e' a 44,1 kHz");
+                expect (anna->clips[0].start == 7 * 48000, "take: senza posizione nel file va all'ingresso del cue");
+                expect (s.cues[0].activeTake == 2 && marco->clips[0].muted && ! marco->clips[1].muted && s.cues[0].status == 1, "take: la BEST e' attiva, l'altra muta, cue registrato");
+                expect (s.cues[1].activeTake == 1 && ! anna->clips[0].muted, "take: senza BEST resta attiva l'unica take");
+            }
+            // un secondo import non duplica
+            auto again = fc::takes::plan (*takesProject, fc::takes::scan (formats, dir, const_cast<int&> (dupsDummy)));
+            expect (again.items.empty(), "take: reimportando la stessa cartella non si duplica nulla");
+            dir.deleteRecursively();
+            // cartella reale (facoltativa): ADR_TEST_TAKES="cartella|file dei cue"
+            if (const char* env = std::getenv ("ADR_TEST_TAKES"))
+            {
+                const auto parts = juce::StringArray::fromTokens (juce::String (env), "|", "");
+                if (parts.size() == 2)
+                {
+                    realProject = std::make_unique<fc::Project> (formats, 48000.0);
+                    realProject->newSession (false);
+                    juce::StringArray w;
+                    realProject->tcFormat = 2;
+                    auto cues = fc::adr::toCues (fc::adr::parse (juce::File (parts[1]).loadFileAsString()), *realProject, 48000.0, 4.0, w);
+                    realProject->addCues (cues, true);
+                    int d2 = 0;
+                    const auto fnd = fc::takes::scan (formats, juce::File (parts[0]), d2);
+                    auto rp = std::make_shared<fc::takes::Plan> (fc::takes::plan (*realProject, fnd));
+                    std::cout << "     cartella reale: " << (int) cues.size() << " cue, " << (int) fnd.size() << " file take, " << d2 << " copie ignorate, " << (int) rp->items.size() << " da importare su " << rp->cues << " cue" << std::endl;
+                    for (auto& n : rp->notes) std::cout << "       " << n << std::endl;
+                    for (size_t i = 0; i < juce::jmin<size_t> (3, rp->items.size()); ++i)
+                        std::cout << "       " << rp->items[i].file.getFileName() << " cue " << rp->items[i].cueId << " take " << rp->items[i].takeNo << (rp->items[i].best ? " BEST" : "") << " pos " << (double) rp->items[i].startPos / 48000.0 << " s" << std::endl;
+                    realProject->importTakes (rp->items, [this, next, rp] (juce::StringArray e, int n) { std::cout << "     importate " << n << " take, errori: " << e.joinIntoString ("; ") << std::endl; next(); });
+                    return;
+                }
+            }
+            next();
+        });
+    }
+
     void stepReliability (std::function<void()> next)
     {
         const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("arotron_reliab");
@@ -2763,7 +2862,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.11.1"; }
+    const juce::String getApplicationVersion() override { return "2.12.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
