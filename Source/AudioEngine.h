@@ -148,7 +148,12 @@ public:
     Loudness::Meter loudness;
 
     // ingressi e registrazione
-    bool ensureInput();   // apre l'ingresso predefinito se non ce n'e' uno attivo (thread messaggi)
+    bool ensureInput();   // apre l'ingresso (quello preferito, altrimenti della stessa scheda o predefinito) se non ce n'e' uno attivo (thread messaggi)
+    /** Chiude l'ingresso (si riapre alla prossima registrazione): un ingresso che non risponde blocca anche la riproduzione. Ritorna il nome chiuso. */
+    juce::String dropInput();
+    juce::String getInputName() const { return deviceManager.getAudioDeviceSetup().inputDeviceName; }
+    /** Scrive nello stato salvato l'ingresso preferito (all'avvio nessun ingresso e' aperto). */
+    void storePreferredInput (juce::XmlElement& state) const;
     int getNumInputChannels() const noexcept { return numInputs.load(); }
     void setNumInputChannelsForTest (int n) { numInputs = n; }
     /** Prepara una registrazione per traccia e poi chiamare play(). Ritorna un messaggio d'errore, o stringa vuota. */
@@ -233,6 +238,7 @@ private:
     std::atomic<bool> recording { false };
     std::atomic<int64_t> recStart { -1 };
     std::atomic<int> numInputs { 0 }, dropped { 0 };
+    juce::String preferredInput, badInput;   // ingresso scelto dall'utente (da riaprire alla registrazione) e ingresso che si e' bloccato in questa sessione
     juce::TimeSliceThread writerThread { "Arotron registrazione" };
 
     juce::SpinLock snapLock;

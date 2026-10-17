@@ -324,6 +324,7 @@ MainComponent::~MainComponent()
 
     if (auto xml = engine.deviceManager.createStateXml())
     {
+        engine.storePreferredInput (*xml);
         auto f = settingsFile();
         f.getParentDirectory().createDirectory();
         xml->writeTo (f);
@@ -569,6 +570,14 @@ void MainComponent::timerCallback()
     viewer.sync ((double) (pos - (playing ? engine.getPdcLatency() : 0)) / project->getSampleRate(), playing);   // il video segue cio' che si sente
     inMeter.setLevels (engine.inPeakL.exchange (0.0f), engine.inPeakR.exchange (0.0f));
 
+    // un ingresso audio che non risponde (di un'altra scheda o un driver virtuale) ferma il tempo del motore: la testina resta ferma mentre il play e' acceso
+    if (playing && ! engine.isRecording() && engine.getNumInputChannels() > 0)
+    {
+        if (pos == stallPos) { if (++stallTicks == 45) onInputStalled(); }
+        else { stallPos = pos; stallTicks = 0; }
+    }
+    else stallTicks = 0;
+
     if (engine.isRecording() && ! playing) { finishRecording(); return; }
     if (adrRecCue != 0 && engine.isRecording() && pos >= adrRecStop) { finishRecording(); return; }
     if (engine.getAuditionClip() != 0 && (! playing || pos >= auditionStop)) endAudition();
@@ -648,6 +657,13 @@ void MainComponent::toggleTransport()
     startedFromPlay = true;
     mixer->resetPeaks();
     engine.play();
+}
+
+void MainComponent::onInputStalled()
+{
+    const auto name = engine.dropInput();
+    if (name.isEmpty()) return;
+    showError (TRANS ("L'ingresso audio \"") + name + TRANS ("\" non risponde e ferma la riproduzione: l'ho disattivato. Si riapre da solo quando registri; se serve un altro ingresso sceglilo in File > Impostazioni audio."));
 }
 
 void MainComponent::stopPlayback()

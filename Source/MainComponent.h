@@ -86,6 +86,7 @@ private:
     void showAdrWindow();
     void importAdrDialog();
     void joinSelected();
+    void onInputStalled();
     void importAdrFile (const juce::File&);
     void importTakesDialog();
     void importTakesFrom (const juce::File& folder, bool askFirst, const juce::String& introMessage);
@@ -145,6 +146,8 @@ private:
                       stopBtn   { theme::IconButton::Icon::Stop, theme::blue },
                       recBtn    { theme::IconButton::Icon::Record, theme::accent };
     juce::TextButton exitBtn { TRANS ("ESCI") };
+    int64_t stallPos = -1;
+    int stallTicks = 0;
     int64_t playStartPos = 0;          // dove e' partita l'ultima riproduzione
     bool returnToStart = true, startedFromPlay = false;   // allo stop la testina torna al punto di partenza
     void stopPlayback();

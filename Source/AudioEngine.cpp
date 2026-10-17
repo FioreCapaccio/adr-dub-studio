@@ -410,8 +410,9 @@ bool AudioEngine::ensureInput()
     if (setup.inputDeviceName.isEmpty())
     {
         const auto names = type->getDeviceNames (true);
-        // preferisci l'ingresso con lo stesso nome dell'uscita (stessa scheda audio), altrimenti il predefinito
-        int idx = names.indexOf (setup.outputDeviceName);
+        // preferisci l'ingresso scelto dall'utente, poi quello con lo stesso nome dell'uscita (stessa scheda audio), altrimenti il predefinito
+        int idx = preferredInput.isNotEmpty() && preferredInput != badInput ? names.indexOf (preferredInput) : -1;
+        if (idx < 0) idx = names.indexOf (setup.outputDeviceName);
         if (idx < 0) idx = type->getDefaultDeviceIndex (true);
         if (idx < 0 || idx >= names.size()) return false;
         setup.inputDeviceName = names[idx];
@@ -498,11 +499,41 @@ std::vector<TakeResult> AudioEngine::stopRecording()
 
 AudioEngine::~AudioEngine() { shutdown(); }
 
+juce::String AudioEngine::dropInput()
+{
+    auto setup = deviceManager.getAudioDeviceSetup();
+    const auto name = setup.inputDeviceName;
+    if (name.isEmpty()) return {};
+    badInput = name;
+    setup.inputDeviceName = {};
+    setup.useDefaultInputChannels = false;
+    setup.inputChannels.clear();
+    deviceManager.setAudioDeviceSetup (setup, true);
+    return name;
+}
+
+void AudioEngine::storePreferredInput (juce::XmlElement& state) const
+{
+    const auto now = deviceManager.getAudioDeviceSetup().inputDeviceName;
+    const auto keep = now.isNotEmpty() ? now : preferredInput;
+    if (keep.isNotEmpty() && keep != badInput) state.setAttribute ("preferredInput", keep);
+}
+
 bool AudioEngine::initialise (const juce::XmlElement* savedState)
 {
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     setup.sampleRate = 48000.0;
-    const auto err = deviceManager.initialise (0, 2, savedState, true, {}, &setup);  // gli ingressi si aprono alla prima registrazione
+    // all'avvio non si apre nessun ingresso: con un ingresso di un'altra scheda (o un driver virtuale) che non risponde la riproduzione si
+    // blocca. L'ingresso scelto dall'utente si ricorda e si apre alla prima registrazione.
+    std::unique_ptr<juce::XmlElement> cleaned;
+    if (savedState != nullptr)
+    {
+        cleaned = std::make_unique<juce::XmlElement> (*savedState);
+        preferredInput = cleaned->getStringAttribute ("preferredInput", cleaned->getStringAttribute ("audioInputDeviceName"));
+        cleaned->removeAttribute ("audioInputDeviceName");
+        cleaned->removeAttribute ("audioDeviceInChans");
+    }
+    const auto err = deviceManager.initialise (0, 2, cleaned.get(), true, {}, &setup);  // gli ingressi si aprono alla prima registrazione
     deviceManager.addAudioCallback (this);
     return err.isEmpty();
 }

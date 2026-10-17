@@ -36,6 +36,8 @@ public:
 
     /** Da chiamare a ~30 Hz con la posizione dell'audio (timeline) in secondi. */
     void sync (double timeSeconds, bool playing);
+    int getSeekCount() const noexcept { return seekCount; }   // quante volte il video e' stato riposizionato mentre suonava (diagnostica)
+    double getVideoPosition() const { return video.getPlayPosition(); }
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -50,6 +52,7 @@ private:
     double curT = 0.0;
     double startLead = 0.09, displayLead = 0.0, lastSpeed = 1.0;   // anticipo alla partenza (si impara), e velocita' corrente
     bool measuredStart = false;
+    int seekCount = 0;
     juce::TextLayout dialogueLayout;   // dialogo gia' impaginato (si ricalcola solo se cambiano testo, dimensione o spazio)
     juce::String dialogueKey;
     juce::Rectangle<int> adrStrip() const { return getLocalBounds().withTrimmedBottom (bottomH).removeFromBottom (adrH()); }

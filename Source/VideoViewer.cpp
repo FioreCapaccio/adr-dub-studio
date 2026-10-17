@@ -195,6 +195,7 @@ void VideoViewer::sync (double t, bool playing)
             if (! measuredStart) { measuredStart = true; startLead = juce::jlimit (0.0, 0.5, startLead - 0.7 * err); }
             if (std::abs (err) > 0.6)
             {
+                ++seekCount;
                 video.setPlayPosition (tc + startLead);
                 holdoffUntil = now + 0.8;
                 lastSpeed = 1.0;

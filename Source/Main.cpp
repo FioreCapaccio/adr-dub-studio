@@ -3,6 +3,7 @@
 #include "VideoSupport.h"
 #include "AdrImport.h"
 #include "TakeImport.h"
+#include "VideoViewer.h"
 #include "TimeStretch.h"
 #include "ExportEngine.h"
 #include "BuiltinFx.h"
@@ -266,7 +267,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepRecording(); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepPlayEnd(); stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); });
         });
     }
 
@@ -1423,6 +1424,91 @@ private:
     }
 
     // sessioni affidabili: media mancanti non distruttivi, ricollegamento, versioni, controllo, flusso
+    // diagnostica (facoltativa): ADR_TEST_VIDEO_PLAY="file.mp4" simula la riproduzione per 6 s e conta i riposizionamenti del video
+    struct VideoPlayProbe : public juce::Timer
+    {
+        std::unique_ptr<fc::VideoViewer> viewer;
+        std::unique_ptr<juce::DocumentWindow> win;
+        std::function<void()> finished;
+        double t0 = 0.0;
+        std::shared_ptr<fc::VideoAsset> asset;
+        int ticks = 0;
+        std::vector<std::pair<double, double>> samples;
+        void timerCallback() override
+        {
+            const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+            if (t0 == 0.0) t0 = now;
+            const double t = now - t0;
+            viewer->sync (t, true);
+            if (++ticks % 15 == 0) samples.emplace_back (t, viewer->getVideoPosition());
+            if (t > 6.0)
+            {
+                stopTimer();
+                std::cout << "     video: riposizionamenti in 6 s di riproduzione: " << viewer->getSeekCount() << " (posizione del video a campione: ";
+                for (auto& s : samples) std::cout << juce::String (s.first, 1) << "->" << juce::String (s.second, 2) << " ";
+                std::cout << ")" << std::endl;
+                viewer->sync (0.0, false);
+                win.reset();
+                auto f = finished;
+                juce::MessageManager::callAsync ([f] { if (f) f(); });
+            }
+        }
+    };
+    VideoPlayProbe* probe = nullptr;
+    void stepVideoPlayProbe (std::function<void()> next)
+    {
+        const char* env = std::getenv ("ADR_TEST_VIDEO_PLAY");
+        if (env == nullptr) { next(); return; }
+        const juce::File f (env);
+        auto info = fc::video::probe (f);
+        if (! info.ok) { std::cout << "     video: non leggibile " << info.error << std::endl; next(); return; }
+        probe = new VideoPlayProbe();
+        probe->asset = std::make_shared<fc::VideoAsset>();
+        probe->asset->file = f; probe->asset->duration = info.duration; probe->asset->fps = info.fps; probe->asset->width = info.width; probe->asset->height = info.height;
+        probe->viewer = std::make_unique<fc::VideoViewer>();
+        probe->viewer->setSize (640, 480);
+        probe->win = std::make_unique<juce::DocumentWindow> ("probe", juce::Colours::black, juce::DocumentWindow::allButtons);
+        probe->win->setContentNonOwned (probe->viewer.get(), true);
+        probe->win->setVisible (true);
+        probe->viewer->setVideo (probe->asset);
+        probe->finished = [this, next] { delete probe; probe = nullptr; next(); };
+        juce::Timer::callAfterDelay (2500, [this] { if (probe != nullptr) probe->startTimerHz (30); });   // il video si carica in modo asincrono
+    }
+
+    // il motore continua a suonare oltre l'ultimo clip se c'e' un video o un cue piu' avanti
+    void stepPlayEnd()
+    {
+        constexpr int block = 256;
+        auto play = [&] (const fc::Session& sess, double seconds, int64_t startPos, bool& stillPlaying, int64_t& endPos)
+        {
+            fc::AudioEngine eng;
+            eng.publish (std::make_shared<const fc::Session> (sess));
+            eng.setPosition (startPos);
+            eng.play();
+            std::vector<float> l ((size_t) block), r ((size_t) block);
+            float* outs[2] = { l.data(), r.data() };
+            const int blocks = (int) (seconds * 48000.0 / block);
+            for (int b = 0; b < blocks; ++b) eng.audioDeviceIOCallbackWithContext (nullptr, 0, outs, 2, block, juce::AudioIODeviceCallbackContext());
+            stillPlaying = eng.isPlaying();
+            endPos = eng.getPosition();
+        };
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "breve"; a->audio.setSize (2, 24000); a->audio.clear(); a->buildPeaks();
+        fc::Clip c; c.id = 1; c.asset = a; c.length = 24000;
+        p.edit().tracks[0].clips = { c };
+        bool playing = false; int64_t pos = 0;
+        play (p.getSession(), 4.0, 0, playing, pos);
+        expect (! playing && pos < 3 * 48000, "riproduzione: senza video ne' cue si ferma poco dopo l'ultimo clip (pos " + juce::String ((double) pos / 48000.0, 2) + " s)");
+
+        auto v = std::make_shared<fc::VideoAsset>();
+        v->duration = 100.0; v->fps = 24.0;
+        p.edit().video = v;
+        play (p.getSession(), 4.0, 0, playing, pos);
+        expect (playing && pos > 3 * 48000 + 48000 / 2, "riproduzione: con un video di 100 s la testina continua ad avanzare oltre l'ultimo clip (pos " + juce::String ((double) pos / 48000.0, 2) + " s, in play: " + juce::String ((int) playing) + ")");
+        play (p.getSession(), 2.0, 40 * 48000, playing, pos);
+        expect (playing && pos > 41 * 48000, "riproduzione: si puo' partire da un punto lontano dall'audio, dentro il video (pos " + juce::String ((double) pos / 48000.0, 2) + " s)");
+    }
+
     // JOIN dei clip di una traccia, fine della riproduzione, file di cue trascinabili
     void stepJoin (std::function<void()> next)
     {
@@ -2922,7 +3008,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.13.0"; }
+    const juce::String getApplicationVersion() override { return "2.13.1"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
