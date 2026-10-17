@@ -112,6 +112,7 @@ private:
     Loudness::Meter& meter;
     juce::ComboBox standard;
     juce::TextButton resetBtn { TRANS ("AZZERA") };
+    juce::TextButton gateBtn { TRANS ("SOLO PARLATO") };   // misura dialogue-gated
     float mom = -100.0f, st = -100.0f, integ = -100.0f, lra = 0.0f, tpDb = -100.0f;
     juce::Rectangle<int> bigBox, barBox;
 };

@@ -5,6 +5,26 @@
 
 namespace fc
 {
+/** Preset dell'esportazione (tutti tranne "Personalizzato") usabili senza finestra: per l'esportazione in batch. */
+int numBatchPresets();
+juce::String batchPresetLabel (int index);
+ExportOptions batchPresetOptions (int index);
+
+/** Scelta dei preset per l'esportazione in batch. */
+class BatchExportDialog : public juce::Component
+{
+public:
+    explicit BatchExportDialog (std::function<void (const std::vector<int>&)> onAccept);
+    void paint (juce::Graphics& g) override { g.fillAll (theme::panel); }
+    void resized() override;
+
+private:
+    std::function<void (const std::vector<int>&)> accept;
+    juce::Label info;
+    std::vector<std::unique_ptr<juce::ToggleButton>> boxes;
+    juce::TextButton okBtn { TRANS ("Esporta...") }, cancelBtn { "Annulla" };
+};
+
 /** Finestra di esportazione con preset e opzioni avanzate. */
 class ExportDialog : public juce::Component
 {

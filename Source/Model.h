@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <optional>
 
 #include <JuceHeader.h>
 #include "Lang.h"
@@ -65,6 +66,7 @@ struct Clip
     int takeNo = 0;
     bool muted = false;
     bool invert = false;     // polarita' invertita (DOP)
+    int xShape = 0;          // forma del crossfade che finisce su questo clip: 0 automatica, 1 lineare, 2 a potenza costante
     int lane = 0;            // corsia (calcolata da Session::computeLanes, non salvata)
     int rating = 0;          // take ADR: valutazione 0..5 stelle
     bool rejected = false;   // take ADR scartato: non suona mai e non conta; si puo' ripristinare o eliminare del tutto
@@ -259,6 +261,7 @@ struct Marker
 {
     int id = 0;
     int64_t pos = 0;      // campioni
+    int64_t end = -1;     // marker di ciclo (come Cycle Marker di Nuendo): fine della regione; -1 = marker semplice
     juce::String name;
     juce::Colour colour { 0xffffc94d };
 };
@@ -364,6 +367,8 @@ struct Session
                         a.xfadeOut = juce::jmax (a.xfadeOut, ovl);
                         const bool continuous = a.asset == b.asset && a.asset != nullptr && a.offset + (b.start - a.start) == b.offset;
                         if (continuous) { a.xLinear = true; b.xLinear = true; }
+                        if (b.xShape == 1) { a.xLinear = true; b.xLinear = true; }
+                        else if (b.xShape == 2) { a.xLinear = false; b.xLinear = false; }
                     }
                 }
         }
@@ -490,6 +495,26 @@ public:
     void freezeTrack (int trackId, const juce::File& folder, std::function<void (juce::String)> done);
     void unfreezeTrack (int trackId);
     void setTracksLanes (const std::vector<int>& ids, bool on);
+    // Clip Package / Track Archive: la sessione (o le tracce scelte) con tutti i file audio e il video in un solo .zip, con percorsi relativi
+    void exportPackage (const juce::File& zip, const std::vector<int>& onlyTrackIds, std::function<void (juce::String)> done);
+    /** Importa un archivio di tracce: i file vanno in 'extractTo' e le tracce si aggiungono alla sessione (clip con id nuovi, fuori dai gruppi). */
+    void importTrackArchive (const juce::File& zip, const juce::File& extractTo, std::function<void (juce::String)> done);
+    void appendTracksFrom (const Project& other);
+    // Info Line: modifica numerica del clip (campioni); ogni campo e' facoltativo
+    struct ClipEdit
+    {
+        std::optional<int64_t> start, length, offset, fadeIn, fadeOut;
+        std::optional<float> gainDb;
+        std::optional<bool> muted, invert;
+    };
+    bool setClipInfo (int64_t clipId, const ClipEdit&);   // false se un valore non e' ammesso (traccia bloccata, fuori dal file...)
+    /** Crossfade tra due clip della stessa traccia (A prima di B, vicini o gia' sovrapposti): sovrapposizione di 'lengthSec' a cavallo del taglio, con la forma scelta (0 auto, 1 lineare, 2 potenza costante). */
+    bool makeCrossfade (int64_t clipA, int64_t clipB, double lengthSec, int shape);
+    // aiuti di montaggio
+    bool snapZero = false;     // i tagli si spostano sul passaggio per lo zero piu' vicino (Snap to Zero Crossing)
+    int autoFadeMs = 0;        // dissolvenze automatiche ai bordi dei clip nuovi e dei tagli (0 = spente)
+    int64_t zeroCrossNear (const Clip&, int64_t pos) const;
+    int64_t autoFadeSamples() const { return (int64_t) (autoFadeMs * sampleRate / 1000.0); }
     // Track Versions
     int addVersion (int trackId, const juce::String& name, bool duplicateCurrent);   // ritorna l'id della versione, che diventa quella attiva
     void switchVersion (int trackId, int versionId);
@@ -560,6 +585,8 @@ public:
 
     // marker
     int addMarker (int64_t pos, const juce::String& name = {});
+    int addCycleMarker (int64_t start, int64_t end, const juce::String& name = {});   // regione con nome sul righello
+    void setMarkerEnd (int id, int64_t end);
     void removeMarker (int id);
     void renameMarker (int id, const juce::String& name);
     void setMarkerColour (int id, juce::Colour c);
@@ -639,6 +666,7 @@ public:
     int adrDialogueSize = 30;      // dimensione (px) del dialogo mostrato sotto il video
     /** Schema dei nomi dei take registrati: {personaggio} {scena} {bobina} {cue} {take} {data} {progetto}. */
     juce::String adrNaming = "{personaggio}_{scena}_{cue}_T{take}";
+    juce::String notes;            // Notepad: appunti di sessione (salvati con la sessione, senza undo)
     int selectedCueId = 0;         // cue ADR selezionato (stato dell'interfaccia)
     int adrTrackId = -1;           // traccia su cui si registra l'ADR (-1 = la traccia selezionata)
 

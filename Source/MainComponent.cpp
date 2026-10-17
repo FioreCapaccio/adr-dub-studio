@@ -76,6 +76,36 @@ private:
     ExportResult result;
 };
 
+/** Esporta piu' preset in sequenza (esportazione in batch). */
+class BatchExportJob : public juce::ThreadWithProgressWindow
+{
+public:
+    struct Item { ExportOptions options; juce::File target; };
+    BatchExportJob (Session s, double r, std::vector<Item> items, juce::String name, std::function<void (juce::StringArray, juce::StringArray)> d)
+        : juce::ThreadWithProgressWindow (TRANS ("Esportazione in batch..."), true, true),
+          session (std::move (s)), rate (r), list (std::move (items)), baseName (std::move (name)), done (std::move (d)) {}
+
+    void run() override
+    {
+        for (size_t i = 0; i < list.size() && ! threadShouldExit(); ++i)
+        {
+            setStatusMessage (list[i].options.presetName);
+            const double base = (double) i / (double) list.size(), span = 1.0 / (double) list.size();
+            const auto r = exportSession (session, rate, list[i].options, list[i].target, baseName, [this, base, span] (double p) { setProgress (base + span * p); return ! threadShouldExit(); });
+            if (r.ok) for (auto& f : r.files) files.add (f); else errors.add (list[i].options.presetName + ": " + r.message);
+        }
+    }
+    void threadComplete (bool) override { if (done) done (files, errors); }
+
+private:
+    Session session;
+    double rate;
+    std::vector<Item> list;
+    juce::String baseName;
+    std::function<void (juce::StringArray, juce::StringArray)> done;
+    juce::StringArray files, errors;
+};
+
 /** Ricerca dei media mancanti in una cartella, in un thread con barra di avanzamento. */
 class RelinkJob : public juce::ThreadWithProgressWindow
 {
@@ -216,6 +246,7 @@ MainComponent::MainComponent()
     timeline->onControlsChanged = [this] { settings().setValue ("trackControls", timeline->getControlMask()); settings().saveIfNeeded(); };
     timeline->onProcessRequest = [this] (int op) { processSelected (op); };
     timeline->onSilenceRequest = [this] { silenceDialog(); };
+    timeline->onCrossfadeRequest = [this] { crossfadeDialog(); };
     timeline->onFreezeRequest = [this] (const std::vector<int>& ids) { freezeTracks (ids); };
     timeline->onStretchCommit = [this] (int64_t id, double ratio, int64_t newStart)
     {
@@ -245,6 +276,8 @@ MainComponent::MainComponent()
     exitBtn.setTooltip (TRANS ("Esci dal programma (chiede se salvare le modifiche)"));
     exitBtn.onClick = [this] { requestQuit(); };
     returnToStart = settings().getBoolValue ("returnToStart", true);
+    project->snapZero = settings().getBoolValue ("snapZero", false);
+    project->autoFadeMs = settings().getIntValue ("autoFadeMs", 0);
     {
         const auto saved = settings().getValue ("layout", "standard");
         for (int i = 0; i < (int) std::size (kLayouts); ++i) if (saved == kLayouts[i].id) { applyLayout (i, false); break; }
@@ -327,6 +360,8 @@ MainComponent::~MainComponent()
     mtcWindow.reset();
     mtcSync.reset();
     adrWindow.reset();
+    infoWindow.reset();
+    notesWindow.reset();
 
     if (auto xml = engine.deviceManager.createStateXml())
     {
@@ -1241,6 +1276,57 @@ void MainComponent::exportDialog()
     lo.launchAsync();
 }
 
+void MainComponent::batchExportDialog()
+{
+    if (project->contentEnd() <= 0) { showError (TRANS ("La sessione e' vuota: importa prima dell'audio.")); return; }
+    if (exportJob != nullptr || videoJob != nullptr) return;
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto* dlg = new BatchExportDialog ([safe] (const std::vector<int>& chosen)
+    {
+        if (safe == nullptr) return;
+        safe->chooser = std::make_unique<juce::FileChooser> ("Cartella per l'esportazione in batch", juce::File::getSpecialLocation (juce::File::userDesktopDirectory), "");
+        safe->chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe, chosen] (const juce::FileChooser& fc)
+        {
+            const auto dir = fc.getResult();
+            if (safe == nullptr || ! dir.isDirectory()) return;
+            const auto base = safe->project->getFile() == juce::File() ? juce::String ("Mixdown") : safe->project->getFile().getFileNameWithoutExtension();
+            std::vector<BatchExportJob::Item> items;
+            for (int i : chosen)
+            {
+                auto o = batchPresetOptions (i);
+                const auto label = juce::File::createLegalFileName (o.presetName.upToFirstOccurrenceOf (" (", false, false).trim());
+                BatchExportJob::Item it;
+                it.options = o;
+                it.target = (o.stems || o.delivery) ? dir.getChildFile (label) : dir.getChildFile (base + "_" + label + "." + o.format);
+                items.push_back (it);
+            }
+            safe->batchJob = std::make_unique<BatchExportJob> (safe->project->getSession().cloneDetached(), safe->project->getSampleRate(), std::move (items), base,
+                                                               [safe] (juce::StringArray files, juce::StringArray errors)
+            {
+                juce::MessageManager::callAsync ([safe, files, errors]
+                {
+                    if (safe == nullptr) return;
+                    safe->batchJob.reset();
+                    juce::String msg = juce::String (files.size()) + TRANS (" file creati.");
+                    for (auto& e : errors) msg << "\n" << e;
+                    juce::AlertWindow::showMessageBoxAsync (errors.isEmpty() ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Esportazione in batch"), msg);
+                });
+            });
+            safe->batchJob->launchThread();
+        });
+    });
+    dlg->setSize (520, 70 + 26 * numBatchPresets() + 60);
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (dlg);
+    lo.dialogTitle = TRANS ("Esporta in batch");
+    lo.dialogBackgroundColour = panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = false;
+    lo.launchAsync();
+}
+
 void MainComponent::runExport (const ExportOptions& o)
 {
     const auto base = project->getFile() == juce::File() ? juce::String ("Mixdown") : project->getFile().getFileNameWithoutExtension();
@@ -1376,7 +1462,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
-                  cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs });
+                  cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1437,6 +1523,16 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdToolRazor:     i.setInfo (TRANS ("Lama"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('b', 0); i.setTicked (timeline->getTool() == Tool::Razor); break;
         case cmdToolStretch:   i.setInfo (TRANS ("Stretch"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('e', 0); i.setTicked (timeline->getTool() == Tool::Stretch); break;
         case cmdToolSlip:      i.setInfo (TRANS ("Slip"), "", TRANS ("Strumenti"), 0); i.addDefaultKeypress ('y', 0); i.setTicked (timeline->getTool() == Tool::Slip); break;
+        case cmdExportPackage: i.setInfo (TRANS ("Esporta il pacchetto della sessione (Clip Package)..."), "", TRANS ("File"), 0); break;
+        case cmdExportTrackArchive: i.setInfo (TRANS ("Esporta le tracce selezionate come archivio (Track Archive)..."), "", TRANS ("Traccia"), 0); break;
+        case cmdImportTrackArchive: i.setInfo (TRANS ("Importa un archivio di tracce..."), "", TRANS ("Traccia"), 0); break;
+        case cmdNotes:         i.setInfo (TRANS ("Note di sessione (Notepad)"), "", TRANS ("Vista"), 0); i.setTicked (notesWindow != nullptr); break;
+        case cmdCycleMarker:   i.setInfo (TRANS ("Marker di ciclo dalla regione di loop"), "", TRANS ("Marker"), 0); i.setActive (engine.getLoopEnd() > engine.getLoopStart()); break;
+        case cmdBatchExport:   i.setInfo (TRANS ("Esporta in batch (piu' formati insieme)..."), "", TRANS ("File"), 0); break;
+        case cmdInfoLine:      i.setInfo (TRANS ("Info clip (Info Line)"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('i', cmd | juce::ModifierKeys::altModifier); i.setTicked (infoWindow != nullptr); break;
+        case cmdSnapZero:      i.setInfo (TRANS ("Tagli sul passaggio per lo zero (Snap to Zero Crossing)"), "", TRANS ("Modifica"), 0); i.setTicked (project->snapZero); break;
+        case cmdAutoFade:      i.setInfo (TRANS ("Dissolvenze automatiche: ") + (project->autoFadeMs == 0 ? TRANS ("spente") : juce::String (project->autoFadeMs) + " ms") + TRANS (" (clic per cambiare)"), "", TRANS ("Modifica"), 0); break;
+        case cmdCrossfade:     i.setInfo (TRANS ("Crossfade tra due clip selezionati..."), "", TRANS ("Modifica"), 0); i.setActive (project->selection.size() >= 2); break;
         case cmdStripSilence:  i.setInfo (TRANS ("Rileva / elimina i silenzi dei clip selezionati..."), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
         case cmdProcInvert:    i.setInfo (TRANS ("Elabora: inverti la fase dei clip selezionati"), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
         case cmdProcReverse:   i.setInfo (TRANS ("Elabora: reverse dei clip selezionati"), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
@@ -1567,6 +1663,69 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdToolSlip:      timeline->setTool (Tool::Slip); break;
         case cmdToolStretch:   timeline->setTool (Tool::Stretch); break;
         case cmdToolHand:      timeline->setTool (Tool::Hand); break;
+        case cmdInfoLine:
+            if (infoWindow != nullptr) infoWindow.reset();
+            else
+            {
+                juce::Component::SafePointer<MainComponent> safe (this);
+                infoWindow = std::make_unique<InfoLineWindow> (*project, [safe] { juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->infoWindow.reset(); safe->commandManager.commandStatusChanged(); } }); });
+                infoWindow->setVisible (true);
+            }
+            break;
+        case cmdSnapZero:      project->snapZero = ! project->snapZero; settings().setValue ("snapZero", project->snapZero); settings().saveIfNeeded(); break;
+        case cmdAutoFade:
+        {
+            static const int steps[] = { 0, 5, 10, 25 };
+            int k = 0;
+            for (int i = 0; i < 4; ++i) if (steps[i] == project->autoFadeMs) k = i;
+            project->autoFadeMs = steps[(k + 1) % 4];
+            settings().setValue ("autoFadeMs", project->autoFadeMs); settings().saveIfNeeded();
+            break;
+        }
+        case cmdCrossfade:     crossfadeDialog(); break;
+        case cmdBatchExport:   batchExportDialog(); break;
+        case cmdExportPackage: exportPackageDialog (false); break;
+        case cmdExportTrackArchive: exportPackageDialog (true); break;
+        case cmdImportTrackArchive: importTrackArchiveDialog(); break;
+        case cmdCycleMarker:   if (engine.getLoopEnd() > engine.getLoopStart()) project->addCycleMarker (engine.getLoopStart(), engine.getLoopEnd()); break;
+        case cmdNotes:
+            if (notesWindow != nullptr) notesWindow.reset();
+            else
+            {
+                struct Pad : public juce::Component
+                {
+                    Pad (Project& p) : project (p)
+                    {
+                        ed.setMultiLine (true, true);
+                        ed.setReturnKeyStartsNewLine (true);
+                        ed.setFont (font (14.0f));
+                        ed.setColour (juce::TextEditor::backgroundColourId, bg);
+                        ed.setText (project.notes, false);
+                        ed.onTextChange = [this] { project.notes = ed.getText(); };
+                        ed.onFocusLost = [this] { project.notes = ed.getText(); project.markDirty(); };
+                        addAndMakeVisible (ed);
+                    }
+                    void resized() override { ed.setBounds (getLocalBounds().reduced (8)); }
+                    void paint (juce::Graphics& g) override { g.fillAll (panel); }
+                    Project& project;
+                    juce::TextEditor ed;
+                };
+                struct Win : public juce::DocumentWindow
+                {
+                    Win (std::function<void()> c) : juce::DocumentWindow (TRANS ("Note di sessione"), bg, juce::DocumentWindow::closeButton), onClose (std::move (c)) {}
+                    void closeButtonPressed() override { if (onClose) onClose(); }
+                    std::function<void()> onClose;
+                };
+                juce::Component::SafePointer<MainComponent> safe (this);
+                auto w = std::make_unique<Win> ([safe] { juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { if (safe->notesWindow != nullptr) safe->project->markDirty(); safe->notesWindow.reset(); safe->commandManager.commandStatusChanged(); } }); });
+                w->setUsingNativeTitleBar (true);
+                w->setContentOwned (new Pad (*project), true);
+                w->setResizable (true, false);
+                w->centreWithSize (520, 420);
+                w->setVisible (true);
+                notesWindow = std::move (w);
+            }
+            break;
         case cmdStripSilence:  silenceDialog(); break;
         case cmdProcInvert:    processSelected (21); break;
         case cmdProcReverse:   processSelected (22); break;
@@ -1847,7 +2006,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             if (recent.getNumItems() > 0) { recent.addSeparator(); recent.addCommandItem (&commandManager, cmdClearRecent); }
             m.addSubMenu (TRANS ("Apri recente"), recent, recent.getNumItems() > 0);
             m.addSeparator();
-            add ({ cmdSave, cmdSaveAs, cmdSaveVersion, cmdVersions, 0, cmdCollectMedia, cmdRelink, cmdCheckSession, 0, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings,
+            add ({ cmdSave, cmdSaveAs, cmdSaveVersion, cmdVersions, 0, cmdCollectMedia, cmdRelink, cmdCheckSession, 0, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdBatchExport, cmdExportPackage, cmdExportVideo, 0, cmdAudioSettings,
 #if ! JUCE_MAC
                   0, cmdQuit
 #endif
@@ -1855,12 +2014,12 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
-        case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 2: add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck }); break;
         case 3: add ({ cmdToolSelect, cmdToolRazor, cmdToolSlip, cmdToolStretch, cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdToolHand, cmdToolZoom, cmdToolAuto }); break;
         case 4:
         {
-            add ({ cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdDetectCuts });
+            add ({ cmdAddMarker, cmdCycleMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdDetectCuts });
             const auto& marks = project->getSession().markers;
             if (! marks.empty()) m.addSeparator();
             for (size_t i = 0; i < marks.size() && i < 60; ++i)
@@ -1884,7 +2043,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 7:
-            add ({ cmdSnap, cmdFollow, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer });
+            add ({ cmdSnap, cmdFollow, cmdInfoLine, cmdNotes, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, 0, cmdTaller, cmdShorter, cmdFitTracks, 0, cmdRulerTc, cmdShowVideo, cmdDetachVideo, cmdMixer });
             menuActions.clear();
             m.addSeparator();
             m.addSubMenu (TRANS ("Tema"), buildThemeMenu());
@@ -1909,6 +2068,78 @@ void MainComponent::freezeTracks (const std::vector<int>& ids)
         if (t->frozen != nullptr) { project->unfreezeTrack (id); continue; }
         project->freezeTrack (id, folder, [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); });
     }
+}
+
+void MainComponent::crossfadeDialog()
+{
+    // i due primi clip selezionati della stessa traccia, in ordine di posizione
+    std::vector<std::pair<int64_t, int64_t>> order;   // (start, id)
+    int track = -2;
+    for (auto id : project->selection)
+    {
+        int ti = -1;
+        if (const auto* c = project->findClip (id, &ti)) { if (track == -2) track = ti; if (ti == track) order.emplace_back (c->start, id); }
+    }
+    std::sort (order.begin(), order.end());
+    if (order.size() < 2) { showError (TRANS ("Seleziona due clip vicini sulla stessa traccia.")); return; }
+    const int64_t a = order[0].second, b = order[1].second;
+    auto* aw = new juce::AlertWindow (TRANS ("Crossfade"), TRANS ("Crea o modifica il crossfade tra i primi due clip selezionati. Serve audio disponibile oltre i bordi di entrambi."), juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("len", "30", TRANS ("Durata (ms)"));
+    aw->addComboBox ("shape", { TRANS ("Automatica"), TRANS ("Lineare (stesso materiale)"), TRANS ("Potenza costante (materiale diverso)") }, TRANS ("Forma"));
+    aw->addButton (TRANS ("Applica"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, a, b] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        const double ms = juce::jlimit (1.0, 2000.0, aw->getTextEditorContents ("len").replaceCharacter (',', '.').getDoubleValue());
+        if (! safe->project->makeCrossfade (a, b, ms / 1000.0, aw->getComboBoxComponent ("shape")->getSelectedItemIndex()))
+            safe->showError (TRANS ("Non si puo' creare il crossfade: manca audio oltre il bordo di uno dei due clip, o la traccia e' bloccata."));
+    }), true);
+}
+
+void MainComponent::exportPackageDialog (bool tracksOnly)
+{
+    std::vector<int> ids;
+    if (tracksOnly)
+    {
+        ids = project->selectedTracks();
+        if (ids.empty()) { showError (TRANS ("Seleziona almeno una traccia.")); return; }
+    }
+    const auto base = (project->getFile() == juce::File() ? juce::String ("Sessione") : project->getFile().getFileNameWithoutExtension()) + (tracksOnly ? "_tracce" : "_pacchetto");
+    chooser = std::make_unique<juce::FileChooser> (tracksOnly ? "Salva l'archivio delle tracce" : "Salva il pacchetto della sessione",
+                                                   juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("zip"), "*.zip");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [safe, ids, tracksOnly] (const juce::FileChooser& fc)
+    {
+        auto f = fc.getResult();
+        if (safe == nullptr || f == juce::File()) return;
+        f = f.withFileExtension ("zip");
+        safe->project->exportPackage (f, ids, [safe, f, tracksOnly] (juce::String err)
+        {
+            if (safe == nullptr) return;
+            if (err.isNotEmpty()) { safe->showError (err); return; }
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, tracksOnly ? TRANS ("Archivio delle tracce") : TRANS ("Pacchetto della sessione"),
+                                                    TRANS ("Creato ") + f.getFullPathName() + TRANS (". Dentro ci sono la sessione e tutti i file audio: si estrae e si apre il file session.adb."));
+        });
+    });
+}
+
+void MainComponent::importTrackArchiveDialog()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Importa un archivio di tracce", juce::File(), "*.zip");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe] (const juce::FileChooser& fc)
+    {
+        auto f = fc.getResult();
+        if (safe == nullptr || ! f.existsAsFile()) return;
+        const auto dest = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Archivi").getChildFile (f.getFileNameWithoutExtension());
+        safe->project->importTrackArchive (f, dest.getNonexistentSibling(), [safe] (juce::String err)
+        {
+            if (safe != nullptr && err.isNotEmpty()) safe->showError (err);
+        });
+    });
 }
 
 void MainComponent::silenceDialog()

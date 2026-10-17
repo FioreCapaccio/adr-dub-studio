@@ -276,6 +276,12 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
                 }
         refresh();
     };
+    cbStatusFilter.addItem (TRANS ("Tutti gli stati"), 1);
+    for (int i = 0; i < 4; ++i) cbStatusFilter.addItem (i == 0 ? TRANS ("Da registrare (ADR Required)") : adrStatusName (i), i + 2);
+    cbStatusFilter.setSelectedId (1, juce::dontSendNotification);
+    cbStatusFilter.setTooltip (TRANS ("Mostra solo i cue in un certo stato: per esempio quelli ancora da registrare"));
+    cbStatusFilter.onChange = [this] { statusFilter = cbStatusFilter.getSelectedId() - 2; refresh(); };
+    addAndMakeVisible (cbStatusFilter);
     addAndMakeVisible (lblFilter);
     addAndMakeVisible (lblCount);
     addAndMakeVisible (cbFilter);
@@ -325,7 +331,7 @@ void AdrPanel::rebuildShown()
 
     shown.clear();
     for (size_t i = 0; i < cues.size(); ++i)
-        if (filterChar.isEmpty() || cues[i].character.trim().equalsIgnoreCase (filterChar)) shown.push_back (i);
+        if ((filterChar.isEmpty() || cues[i].character.trim().equalsIgnoreCase (filterChar)) && (statusFilter < 0 || cues[i].status == statusFilter)) shown.push_back (i);
     lblCount.setText (juce::String ((int) shown.size()) + " / " + juce::String ((int) cues.size()) + " cue", juce::dontSendNotification);
 }
 
@@ -602,6 +608,8 @@ void AdrPanel::resized()
     auto fr = r.removeFromTop (26);
     lblFilter.setBounds (fr.removeFromLeft (120));
     cbFilter.setBounds (fr.removeFromLeft (220));
+    fr.removeFromLeft (8);
+    cbStatusFilter.setBounds (fr.removeFromLeft (210));
     fr.removeFromLeft (10);
     lblCount.setBounds (fr.removeFromLeft (120));
     r.removeFromTop (8);

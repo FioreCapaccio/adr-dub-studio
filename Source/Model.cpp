@@ -459,6 +459,7 @@ void Project::importFiles (juce::Array<juce::File> files, int trackId, int64_t s
                     c.asset = loaded[i];
                     c.start = juce::jmax<int64_t> (0, start);
                     c.length = loaded[i]->length();
+                    if (autoFadeMs > 0) c.fadeIn = c.fadeOut = juce::jmin (autoFadeSamples(), c.length / 4);
                     session.tracks[(size_t) idx + i].clips.push_back (c);
                     selection.insert (c.id);
                 }
@@ -509,6 +510,7 @@ void Project::addRecordings (std::vector<RecItem> items, std::function<void (juc
                 c.start = start;
                 c.offset = offset;
                 c.length = asset->length() - offset;
+                if (autoFadeMs > 0) c.fadeIn = c.fadeOut = juce::jmin (autoFadeSamples(), c.length / 4);
                 if (items[i].cueId != 0 && findCue (items[i].cueId) != nullptr)
                 {
                     // take ADR: il nuovo take diventa quello attivo e gli altri vengono silenziati
@@ -584,6 +586,7 @@ void Project::importTakes (std::vector<TakeFile> items, std::function<void (juce
                 c.start = start;
                 c.offset = offset;
                 c.length = asset->length() - offset;
+                if (autoFadeMs > 0) c.fadeIn = c.fadeOut = juce::jmin (autoFadeSamples(), c.length / 4);
                 c.cueId = items[i].cueId;
                 c.takeNo = items[i].takeNo;
                 for (auto& t : session.tracks) for (auto& oc : t.clips) if (oc.cueId == c.cueId && oc.takeNo == c.takeNo) { c.takeNo = nextTakeNumber (c.cueId); break; }   // numero gia' preso da un'altra take
@@ -1041,6 +1044,25 @@ void Project::addMarkers (const std::vector<std::pair<int64_t, juce::String>>& l
     changed();
 }
 
+int Project::addCycleMarker (int64_t start, int64_t end, const juce::String& name)
+{
+    beginEdit();
+    Marker m;
+    m.id = nextMarkerId++;
+    m.pos = juce::jmax<int64_t> (0, start);
+    m.end = end > m.pos ? end : -1;
+    m.name = name.isEmpty() ? TRANS ("Ciclo ") + juce::String ((int) session.markers.size() + 1) : name;
+    session.markers.push_back (m);
+    std::sort (session.markers.begin(), session.markers.end(), [] (const Marker& a, const Marker& b) { return a.pos < b.pos; });
+    changed();
+    return m.id;
+}
+
+void Project::setMarkerEnd (int id, int64_t end)
+{
+    if (auto* m = findMarker (id)) { beginEdit(); m->end = end > m->pos ? end : -1; changed(); }
+}
+
 int Project::addMarker (int64_t pos, const juce::String& name)
 {
     beginEdit();
@@ -1180,6 +1202,76 @@ void Project::setTracksLanes (const std::vector<int>& ids, bool on)
 
 //==============================================================================
 // Track Versions
+int64_t Project::zeroCrossNear (const Clip& c, int64_t pos) const
+{
+    if (! snapZero || c.asset == nullptr || c.asset->offline) return pos;
+    const int64_t rel = c.offset + (pos - c.start);
+    const int radius = (int) (0.005 * sampleRate);
+    const auto& a = c.asset->audio;
+    if (rel < 1 || rel + radius + 2 >= a.getNumSamples()) return pos;
+    const float* d = a.getReadPointer (0);
+    int64_t best = pos;
+    int bestDist = radius + 1;
+    for (int k = -radius; k <= radius; ++k)
+    {
+        const int64_t i = rel + k;
+        if (i < 0 || i + 1 >= a.getNumSamples()) continue;
+        if ((d[i] <= 0.0f && d[i + 1] > 0.0f) || (d[i] >= 0.0f && d[i + 1] < 0.0f))
+            if (std::abs (k) < bestDist) { bestDist = std::abs (k); best = pos + k; }
+    }
+    return juce::jlimit (c.start + 16, c.end() - 16, best);
+}
+
+bool Project::setClipInfo (int64_t clipId, const ClipEdit& e)
+{
+    int ti = -1;
+    auto* c = findClip (clipId, &ti);
+    if (c == nullptr || c->asset == nullptr || session.tracks[(size_t) ti].editLocked()) return false;
+    Clip n = *c;
+    if (e.start) n.start = juce::jmax<int64_t> (0, *e.start);
+    if (e.offset) n.offset = juce::jmax<int64_t> (0, *e.offset);
+    if (e.length) n.length = *e.length;
+    if (n.length < 16 || n.offset + n.length > c->asset->length()) return false;
+    if (e.gainDb) n.gainDb = juce::jlimit (-60.0f, 24.0f, *e.gainDb);
+    if (e.fadeIn) n.fadeIn = juce::jlimit<int64_t> (0, n.length, *e.fadeIn);
+    if (e.fadeOut) n.fadeOut = juce::jlimit<int64_t> (0, n.length, *e.fadeOut);
+    n.fadeIn = juce::jmin (n.fadeIn, n.length);
+    n.fadeOut = juce::jmin (n.fadeOut, n.length);
+    if (e.muted) n.muted = *e.muted;
+    if (e.invert) n.invert = *e.invert;
+    beginEdit();
+    *c = n;
+    changed();
+    return true;
+}
+
+bool Project::makeCrossfade (int64_t idA, int64_t idB, double lengthSec, int shape)
+{
+    int ta = -1, tb = -1;
+    auto* a = findClip (idA, &ta);
+    auto* b = findClip (idB, &tb);
+    if (a == nullptr || b == nullptr || ta != tb || session.tracks[(size_t) ta].editLocked()) return false;
+    if (b->start < a->start) { std::swap (a, b); std::swap (idA, idB); }
+    if (a->asset == nullptr || b->asset == nullptr || a->asset->offline || b->asset->offline) return false;
+    const int64_t len = juce::jmax<int64_t> (16, (int64_t) (lengthSec * sampleRate));
+    const int64_t boundary = juce::jmax (a->end() <= b->start ? a->end() : b->start, a->start + 16);   // il punto del taglio
+    const int64_t bEdge = juce::jmin (boundary, b->end() - 16);
+    // A si allunga oltre il taglio e B parte prima: serve materiale audio da entrambe le parti
+    const int64_t extraA = len / 2, extraB = len - len / 2;
+    if (a->offset + a->length + extraA > a->asset->length() || b->offset < extraB) return false;
+    beginEdit();
+    const int64_t aEnd = juce::jmax (a->end(), boundary);
+    a->length = (aEnd - a->start) + extraA;
+    const int64_t newStart = bEdge - extraB;
+    const int64_t shift = b->start - newStart;
+    b->start = newStart;
+    b->offset -= shift;
+    b->length += shift;
+    b->xShape = juce::jlimit (0, 2, shape);
+    changed();
+    return true;
+}
+
 int Project::addVersion (int trackId, const juce::String& name, bool duplicateCurrent)
 {
     auto* t = findTrack (trackId);
@@ -1444,6 +1536,155 @@ void Project::processClips (const std::vector<int64_t>& clipIds, int opInt, doub
     });
 }
 
+//==============================================================================
+// Clip Package / Track Archive
+namespace
+{
+/** Percorsi dei file (audio, congelati, video) scritti in un albero di sessione. */
+void collectFiles (const juce::var& v, std::set<juce::String>& out)
+{
+    if (auto* o = v.getDynamicObject())
+    {
+        for (auto& nv : o->getProperties())
+        {
+            if ((nv.name.toString() == "file" || nv.name.toString() == "frozenFile" || nv.name.toString() == "video") && nv.value.isString() && nv.value.toString().isNotEmpty())
+                out.insert (nv.value.toString());
+            else collectFiles (nv.value, out);
+        }
+    }
+    else if (auto* a = v.getArray())
+        for (auto& e : *a) collectFiles (e, out);
+}
+
+void relocateFiles (juce::var& v, const std::map<juce::String, juce::String>& map)
+{
+    if (auto* o = v.getDynamicObject())
+    {
+        std::vector<juce::Identifier> names;
+        for (auto& nv : o->getProperties()) names.push_back (nv.name);
+        for (auto& n : names)
+        {
+            auto child = o->getProperty (n);
+            const auto key = n.toString();
+            if ((key == "file" || key == "frozenFile" || key == "video") && child.isString())
+            {
+                if (auto it = map.find (child.toString()); it != map.end()) o->setProperty (n, it->second);
+            }
+            else if (child.getDynamicObject() != nullptr || child.getArray() != nullptr) relocateFiles (child, map);
+        }
+    }
+    else if (auto* a = v.getArray())
+        for (auto& e : *a) relocateFiles (e, map);
+}
+}
+
+void Project::exportPackage (const juce::File& zip, const std::vector<int>& onlyTrackIds, std::function<void (juce::String)> done)
+{
+    auto root = toVar();
+    if (! onlyTrackIds.empty())
+    {
+        // archivio di tracce: solo le tracce scelte, senza cue, marker e video
+        auto* ro = root.getDynamicObject();
+        juce::Array<juce::var> kept;
+        if (auto* all = ro->getProperty ("tracks").getArray())
+            for (size_t i = 0; i < session.tracks.size() && i < (size_t) all->size(); ++i)
+                if (std::find (onlyTrackIds.begin(), onlyTrackIds.end(), session.tracks[i].id) != onlyTrackIds.end()) kept.add ((*all)[(int) i]);
+        ro->setProperty ("tracks", kept);
+        ro->setProperty ("cues", juce::Array<juce::var>());
+        ro->setProperty ("markers", juce::Array<juce::var>());
+        ro->removeProperty ("video");
+        ro->removeProperty ("notes");
+        juce::Array<juce::var> none;
+        ro->setProperty ("trackGroups", none);
+    }
+    if (root.getDynamicObject() == nullptr || (root.getDynamicObject()->getProperty ("tracks").getArray() != nullptr && root.getDynamicObject()->getProperty ("tracks").getArray()->isEmpty()))
+    { if (done) done (TRANS ("Non ci sono tracce da esportare.")); return; }
+
+    runAsync ([=, this]() mutable -> std::function<void()>
+    {
+        std::set<juce::String> files;
+        collectFiles (root, files);
+        const auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("adr_pacchetto_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
+        temp.createDirectory();
+        const auto media = temp.getChildFile ("Media");
+        media.createDirectory();
+        std::map<juce::String, juce::String> map;
+        juce::String err;
+        int k = 0;
+        for (auto& path : files)
+        {
+            setTask (TRANS ("Preparo il pacchetto"), (float) k++ / (float) juce::jmax<size_t> (1, files.size()) * 0.8f);
+            const juce::File src (path);
+            if (! src.existsAsFile()) { err += (err.isEmpty() ? "" : "\n") + juce::String (TRANS ("File non trovato (non incluso): ")) + path; continue; }
+            const auto rel = "Media/" + juce::String (k).paddedLeft ('0', 3) + "_" + juce::File::createLegalFileName (src.getFileName());
+            if (src.copyFileTo (temp.getChildFile (rel))) map[path] = rel;
+        }
+        relocateFiles (root, map);
+        temp.getChildFile ("session.adb").replaceWithText (juce::JSON::toString (root, false));
+        juce::ZipFile::Builder builder;
+        builder.addFile (temp.getChildFile ("session.adb"), 9, "session.adb");
+        for (auto& e : map) builder.addFile (temp.getChildFile (e.second), 0, e.second);   // l'audio non si comprime: e' lento e guadagna poco
+        zip.deleteFile();
+        {
+            juce::FileOutputStream os (zip);
+            if (os.openedOk()) { builder.writeToStream (os, nullptr); os.flush(); }
+            else err += (err.isEmpty() ? "" : "\n") + juce::String (TRANS ("Impossibile scrivere ")) + zip.getFullPathName();
+        }
+        temp.deleteRecursively();
+        setTask ({}, -1.0f);
+        return [=] { if (done) done (err); };
+    });
+}
+
+void Project::appendTracksFrom (const Project& other)
+{
+    if (other.session.tracks.empty()) return;
+    beginEdit();
+    int firstId = -1;
+    for (auto t : other.session.tracks)
+    {
+        t.id = nextTrackId++;
+        t.groupId = 0;
+        for (auto& c : t.clips) c.id = nextClipId++;
+        for (auto& v : t.versions) for (auto& c : v.clips) c.id = nextClipId++;
+        if (firstId < 0) firstId = t.id;
+        session.tracks.push_back (std::move (t));
+    }
+    selectedTrackId = firstId;
+    changed();
+    if (onSessionLoaded) onSessionLoaded();   // ripristina i plug-in delle tracce arrivate
+}
+
+void Project::importTrackArchive (const juce::File& zip, const juce::File& extractTo, std::function<void (juce::String)> done)
+{
+    auto holder = std::make_shared<std::unique_ptr<Project>>();
+    runAsync ([=, this]() -> std::function<void()>
+    {
+        setTask (TRANS ("Apro l'archivio"), 0.1f);
+        juce::String err;
+        juce::ZipFile z (zip);
+        if (z.getNumEntries() == 0) err = TRANS ("L'archivio e' vuoto o non e' valido.");
+        else
+        {
+            extractTo.createDirectory();
+            const auto r = z.uncompressTo (extractTo, true);
+            if (! r.wasOk()) err = r.getErrorMessage();
+        }
+        setTask ({}, -1.0f);
+        return [=, this]
+        {
+            if (err.isNotEmpty() || ! extractTo.getChildFile ("session.adb").existsAsFile()) { if (done) done (err.isNotEmpty() ? err : TRANS ("L'archivio non contiene una sessione.")); return; }
+            *holder = std::make_unique<Project> (formats, sampleRate);
+            (*holder)->loadSession (extractTo.getChildFile ("session.adb"), [this, holder, done] (juce::String errors)
+            {
+                appendTracksFrom (**holder);
+                juce::MessageManager::callAsync ([holder] { holder->reset(); });   // il progetto temporaneo non si distrugge dentro la sua stessa callback
+                if (done) done (errors);
+            });
+        };
+    });
+}
+
 void Project::showAllTracks()
 {
     for (auto& t : session.tracks) t.hidden = false;
@@ -1663,20 +1904,22 @@ void Project::splitAt (int64_t pos, bool allTracks)
     if (targets.empty()) return;
 
     beginEdit();
+    const int64_t af = autoFadeSamples();
     for (auto [ti, ci] : targets)
     {
         auto& clips = session.tracks[ti].clips;
         Clip right = clips[ci];
         const bool wasSelected = selection.count (right.id) > 0;
-        const int64_t cut = pos - clips[ci].start;
+        const int64_t cp = zeroCrossNear (clips[ci], pos);
+        const int64_t cut = cp - clips[ci].start;
         right.id = nextClipId++;
-        right.start = pos;
+        right.start = cp;
         right.offset += cut;
         right.length -= cut;
-        right.fadeIn = 0;
+        right.fadeIn = af > 0 ? juce::jmin (af, right.length / 2) : 0;
         right.fadeOut = juce::jmin (right.fadeOut, right.length);
         clips[ci].length = cut;
-        clips[ci].fadeOut = 0;
+        clips[ci].fadeOut = af > 0 ? juce::jmin (af, cut / 2) : 0;
         clips[ci].fadeIn = juce::jmin (clips[ci].fadeIn, cut);
         clips.push_back (right);
         if (wasSelected) selection.insert (right.id);
@@ -1694,20 +1937,20 @@ void Project::splitClip (int64_t id, int64_t pos)
     auto& clips = session.tracks[(size_t) ti].clips;
     const size_t idx = (size_t) (c - clips.data());
     Clip right = clips[idx];
-    const bool wasSelected = selection.count (right.id) > 0;
+    const int64_t af = autoFadeSamples();
+    pos = zeroCrossNear (clips[idx], pos);
     const int64_t cut = pos - clips[idx].start;
     right.id = nextClipId++;
     right.start = pos;
     right.offset += cut;
     right.length -= cut;
-    right.fadeIn = 0;
+    right.fadeIn = af > 0 ? juce::jmin (af, right.length / 2) : 0;
     right.fadeOut = juce::jmin (right.fadeOut, right.length);
     clips[idx].length = cut;
-    clips[idx].fadeOut = 0;
+    clips[idx].fadeOut = af > 0 ? juce::jmin (af, cut / 2) : 0;
     clips[idx].fadeIn = juce::jmin (clips[idx].fadeIn, cut);
     clips.push_back (right);
     selection = { right.id };
-    (void) wasSelected;
     changed();
 }
 
@@ -1748,10 +1991,11 @@ void Project::trimToPlayhead (bool trimStart, int64_t pos)
             if (! t.editLocked() && inside (c) && (! onlySelected || selection.count (c.id) > 0))
             {
                 if (! any) { beginEdit(); any = true; }
+                const int64_t cp = zeroCrossNear (c, pos);
                 if (trimStart)
                 {
-                    const int64_t d = pos - c.start;
-                    c.start = pos;
+                    const int64_t d = cp - c.start;
+                    c.start = cp;
                     c.offset += d;
                     c.length -= d;
                     c.fadeIn = 0;
@@ -1759,7 +2003,7 @@ void Project::trimToPlayhead (bool trimStart, int64_t pos)
                 }
                 else
                 {
-                    c.length = pos - c.start;
+                    c.length = cp - c.start;
                     c.fadeOut = 0;
                     c.fadeIn = juce::jmin (c.fadeIn, c.length);
                 }
@@ -2277,11 +2521,13 @@ juce::var Project::toVar() const
         {
             auto* o = new juce::DynamicObject();
             o->setProperty ("pos", (juce::int64) m.pos);
+            if (m.end > m.pos) o->setProperty ("end", (juce::int64) m.end);
             o->setProperty ("name", m.name);
             o->setProperty ("colour", m.colour.toString());
             marks.add (juce::var (o));
         }
         root->setProperty ("markers", marks);
+        if (notes.isNotEmpty()) root->setProperty ("notes", notes);
     }
     if (session.video != nullptr)
     {
@@ -2309,6 +2555,7 @@ juce::var Project::toVar() const
             co->setProperty ("fadeOut", (juce::int64) c.fadeOut);
             if (c.muted) co->setProperty ("muted", true);
             if (c.invert) co->setProperty ("invert", true);
+            if (c.xShape != 0) co->setProperty ("xShape", c.xShape);
             if (c.cueId != 0) { co->setProperty ("cueId", c.cueId); co->setProperty ("takeNo", c.takeNo); if (c.rating > 0) co->setProperty ("rating", c.rating); if (c.rejected) co->setProperty ("rejected", true); }
             clips.add (juce::var (co));
         }
@@ -2624,6 +2871,7 @@ void Project::newSession (bool withDefaultTrack)
     if (withDefaultTrack) addTrackInternal();   // una nuova sessione parte con una sola traccia
     selectedTrackId = session.tracks.empty() ? -1 : session.tracks.front().id;
     adrNaming = "{personaggio}_{scena}_{cue}_T{take}";
+    notes.clear();
     sessionFile = juce::File();
     publish();
     dirty = false;
@@ -2643,6 +2891,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
         auto parsed = juce::JSON::parse (f);
         auto result = std::make_shared<Session>();
         const int loudStd = (int) parsed.getProperty ("loudnessStandard", 1);
+        const juce::String pNotes = parsed.getProperty ("notes", "").toString();
         const int ptcFormat = (int) parsed.getProperty ("tcFormat", 2);
         const double ptcStart = (double) parsed.getProperty ("tcStart", 0.0);
         const bool prulerTc = (bool) parsed.getProperty ("rulerTimecode", true);
@@ -2661,6 +2910,8 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
             const double scale = rate / (savedRate > 0 ? savedRate : rate);
             auto sc = [scale] (const juce::var& v) { return (int64_t) std::llround ((double) (juce::int64) v * scale); };
             std::map<juce::String, AssetPtr> cache;
+            // i percorsi relativi (pacchetti e archivi) partono dalla cartella del file di sessione
+            auto resolvePath = [&f] (const juce::String& p) { return juce::File::isAbsolutePath (p) ? juce::File (p) : f.getParentDirectory().getChildFile (p); };
 
             result->master->volumeDb = (float) (double) parsed.getProperty ("masterDb", 0.0);
             result->master->limiterOn = (bool) parsed.getProperty ("limiterOn", true);
@@ -2704,6 +2955,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 {
                     Marker mk;
                     mk.pos = sc (mv.getProperty ("pos", 0));
+                    if (mv.hasProperty ("end")) mk.end = sc (mv.getProperty ("end", -1));
                     mk.name = mv.getProperty ("name", "Marker").toString();
                     mk.colour = juce::Colour::fromString (mv.getProperty ("colour", "ffffc94d").toString());
                     result->markers.push_back (mk);
@@ -2727,12 +2979,12 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                             if (it == cache.end())
                             {
                                 juce::String err;
-                                auto a = loadAsset (*fm, juce::File (path), rate, err);
+                                auto a = loadAsset (*fm, resolvePath (path), rate, err);
                                 if (a == nullptr)
                                 {
                                     // file mancante: il clip resta, senza audio, e si potra' ricollegare
                                     a = std::make_shared<Asset>();
-                                    a->file = juce::File (path);
+                                    a->file = resolvePath (path);
                                     a->name = a->file.getFileNameWithoutExtension();
                                     a->offline = true;
                                     ++missingCount;
@@ -2756,6 +3008,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                             c.rating = juce::jlimit (0, 5, (int) cv.getProperty ("rating", 0));
                             c.rejected = (bool) cv.getProperty ("rejected", false);
                             c.invert = (bool) cv.getProperty ("invert", false);
+                            c.xShape = juce::jlimit (0, 2, (int) cv.getProperty ("xShape", 0));
                             if (c.asset->offline) c.asset->offlineLength = juce::jmax (c.asset->offlineLength, c.offset + c.length);   // la lunghezza minima che i clip richiedono
                             c.offset = juce::jlimit<int64_t> (0, c.asset->length(), c.offset);
                             c.length = juce::jlimit<int64_t> (0, c.asset->length() - c.offset, c.length);
@@ -2772,7 +3025,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     if (const auto ff = tv.getProperty ("frozenFile", {}).toString(); ff.isNotEmpty())
                     {
                         juce::String fe;
-                        t.frozen = loadAsset (*fm, juce::File (ff), rate, fe);
+                        t.frozen = loadAsset (*fm, resolvePath (ff), rate, fe);
                         if (t.frozen == nullptr) errors += (errors.isEmpty() ? "" : "\n") + juce::String (TRANS ("File del Freeze non trovato (la traccia torna in tempo reale): ")) + ff;
                     }
                     t.hidden = (bool) tv.getProperty ("hidden", false);
@@ -2862,7 +3115,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
             const auto vpath = parsed.getProperty ("video", "").toString();
             if (ok && vpath.isNotEmpty())
             {
-                juce::File vf (vpath);
+                juce::File vf (juce::File::isAbsolutePath (vpath) ? juce::File (vpath) : f.getParentDirectory().getChildFile (vpath));
                 auto info = video::probe (vf);
                 if (info.ok)
                 {
@@ -2913,6 +3166,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 selectedTrackId = session.tracks.empty() ? -1 : session.tracks.front().id;
                 sessionFile = f;
                 loudnessStandard = loudStd;
+                notes = pNotes;
                 tcFormat = juce::jlimit (0, numTcFormats - 1, ptcFormat);
                 tcStartSec = ptcStart;
                 rulerTimecode = prulerTc;

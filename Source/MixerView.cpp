@@ -630,6 +630,10 @@ LoudnessPanel::LoudnessPanel (Project& p, Loudness::Meter& m) : project (p), met
     resetBtn.setTooltip (TRANS ("Azzera la misura integrata, il loudness range e i picchi"));
     resetBtn.onClick = [this] { meter.requestReset(); tpDb = -100.0f; integ = -100.0f; repaint(); };
     addAndMakeVisible (resetBtn);
+    gateBtn.setClickingTogglesState (true);
+    gateBtn.setTooltip (TRANS ("Misura dialogue-gated: il loudness integrato conta solo i blocchi in cui c'e' parlato (stima per banda 300-3400 Hz). Cambiando modo la misura riparte"));
+    gateBtn.onClick = [this] { meter.dialogueGate = gateBtn.getToggleState(); meter.requestReset(); tpDb = -100.0f; integ = -100.0f; repaint(); };
+    addAndMakeVisible (gateBtn);
     startTimerHz (15);
 }
 
@@ -642,7 +646,10 @@ void LoudnessPanel::resized()
     bigBox = r.removeFromTop (84);
     r.removeFromTop (8);
     barBox = r.removeFromTop (34);
-    resetBtn.setBounds (getLocalBounds().reduced (10).removeFromBottom (28));
+    auto bottom = getLocalBounds().reduced (10).removeFromBottom (28);
+    gateBtn.setBounds (bottom.removeFromRight (bottom.getWidth() / 2 - 3));
+    bottom.removeFromRight (6);
+    resetBtn.setBounds (bottom);
 }
 
 void LoudnessPanel::timerCallback()
@@ -696,7 +703,7 @@ void LoudnessPanel::paint (juce::Graphics& g)
         g.fillRoundedRectangle (f, 8.0f);
         g.setColour (hasTarget && integ > -99.0f ? c.withAlpha (0.7f) : border);
         g.drawRoundedRectangle (f.reduced (0.5f), 8.0f, 1.0f);
-        drawCaption (g, TRANS ("Integrato (LUFS)"), bigBox.withTrimmedLeft (12).withHeight (18).translated (0, 4), juce::Justification::centredLeft);
+        drawCaption (g, meter.dialogueGate.load() ? TRANS ("Integrato - solo parlato (LUFS)") + "  " + juce::String ((int) std::lround (meter.speechShare.load() * 100.0f)) + "%" : TRANS ("Integrato (LUFS)"), bigBox.withTrimmedLeft (12).withHeight (18).translated (0, 4), juce::Justification::centredLeft);
         g.setColour (c);
         g.setFont (mono (34.0f));
         g.drawText (fmt (integ), bigBox.withTrimmedTop (16).withTrimmedBottom (18), juce::Justification::centred);

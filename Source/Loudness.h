@@ -87,12 +87,17 @@ class Meter
 public:
     std::atomic<float> momentary { -100.0f }, shortTerm { -100.0f }, integrated { -100.0f }, lra { 0.0f };
     std::atomic<float> samplePeak { 0.0f }, truePeak { 0.0f };   // lineari
+    /** Misura "dialogue-gated": nell'integrato entrano solo i blocchi di 400 ms in cui l'energia sta soprattutto nella banda del parlato
+        (300-3400 Hz). E' una stima per energia spettrale, non un riconoscitore di voce. */
+    std::atomic<bool> dialogueGate { false };
+    std::atomic<float> speechShare { 0.0f };   // quota (0..1) dei blocchi contati come parlato
 
     void prepare (double sampleRate)
     {
         subLen = juce::jmax (1, (int) std::round (sampleRate * 0.1));
         for (int c = 0; c < 2; ++c)
             makeKWeighting (sampleRate, shelf[c], highpass[c]);
+        makeBand (sampleRate);
         resetAll();
     }
 
@@ -103,8 +108,12 @@ public:
     {
         for (int c = 0; c < 2; ++c) { shelf[c].reset(); highpass[c].reset(); hist4[c].fill (0.0f); }
         ring.fill (0.0);
+        midRing.fill (0.0); speechRing.fill (0.0);
         ringPos = filled = count = 0;
-        acc = 0.0;
+        acc = accMid = accSpeech = 0.0;
+        speechBlocks = totalBlocks = 0;
+        speechShare = 0.0f;
+        bandHp.reset(); bandLp.reset();
         histogram.fill (0);
         stHistogram.fill (0);
         momentary = shortTerm = integrated = -100.0f;
@@ -124,6 +133,12 @@ public:
             const double yl = highpass[0].process (shelf[0].process ((double) l[i]));
             const double yr = highpass[1].process (shelf[1].process ((double) r[i]));
             acc += yl * yl + yr * yr;
+            {
+                const double mid = 0.5 * ((double) l[i] + (double) r[i]);
+                accMid += mid * mid;
+                const double sp = bandLp.process (bandHp.process (mid));
+                accSpeech += sp * sp;
+            }
             blockPeak = juce::jmax (blockPeak, std::abs (l[i]), std::abs (r[i]));
 
             // true-peak: stima dei picchi tra i campioni con interpolazione di Hermite a 4 punti
@@ -150,9 +165,11 @@ private:
     void finishSubBlock()
     {
         ring[(size_t) ringPos] = acc / (double) count;
+        midRing[(size_t) ringPos] = accMid / (double) count;
+        speechRing[(size_t) ringPos] = accSpeech / (double) count;
         ringPos = (ringPos + 1) % 30;
         filled = juce::jmin (filled + 1, 30);
-        acc = 0.0;
+        acc = accMid = accSpeech = 0.0;
         count = 0;
         if (filled < 4) return;
 
@@ -170,8 +187,21 @@ private:
 
         if (lm > -70.0)
         {
-            ++histogram[(size_t) juce::jlimit (0, histBins - 1, (int) std::floor ((lm + 70.0) * 10.0))];
-            integrated = (float) computeIntegrated();
+            bool counts = true;
+            if (dialogueGate.load())
+            {
+                double mid = 0.0, sp = 0.0;
+                for (int k = 1; k <= 4; ++k) { mid += midRing[(size_t) ((ringPos - k + 30) % 30)]; sp += speechRing[(size_t) ((ringPos - k + 30) % 30)]; }
+                counts = mid > 1.0e-10 && sp / mid > 0.5;
+                ++totalBlocks;
+                if (counts) ++speechBlocks;
+                speechShare = (float) speechBlocks / (float) totalBlocks;
+            }
+            if (counts)
+            {
+                ++histogram[(size_t) juce::jlimit (0, histBins - 1, (int) std::floor ((lm + 70.0) * 10.0))];
+                integrated = (float) computeIntegrated();
+            }
         }
         if (filled >= 30 && ls > -70.0)
         {
@@ -223,7 +253,26 @@ private:
         return juce::jmax (0.0, percentile (0.95) - percentile (0.10));
     }
 
-    Biquad shelf[2], highpass[2];
+    void makeBand (double fs)
+    {
+        auto rbj = [fs] (Biquad& b, bool high, double f0)
+        {
+            const double w0 = juce::MathConstants<double>::twoPi * f0 / fs, c = std::cos (w0), alpha = std::sin (w0) / (2.0 * 0.7071);
+            const double a0 = 1.0 + alpha;
+            b.b0 = (high ? (1.0 + c) : (1.0 - c)) / 2.0 / a0;
+            b.b1 = (high ? -(1.0 + c) : (1.0 - c)) / a0;
+            b.b2 = b.b0;
+            b.a1 = -2.0 * c / a0;
+            b.a2 = (1.0 - alpha) / a0;
+        };
+        rbj (bandHp, true, 300.0);
+        rbj (bandLp, false, 3400.0);
+    }
+
+    Biquad shelf[2], highpass[2], bandHp, bandLp;
+    std::array<double, 30> midRing {}, speechRing {};
+    double accMid = 0.0, accSpeech = 0.0;
+    uint32_t speechBlocks = 0, totalBlocks = 0;
     std::array<float, 4> hist4[2] {};
     std::array<double, 30> ring {};
     std::array<uint32_t, histBins> histogram {}, stHistogram {};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AdrPanel.h"
+#include "InfoLine.h"
 #include "AudioEngine.h"
 #include "ExternalSync.h"
 #include "EditBar.h"
@@ -87,6 +88,10 @@ private:
     void importAdrDialog();
     void joinSelected();
     void silenceDialog();
+    void exportPackageDialog (bool tracksOnly);
+    void importTrackArchiveDialog();
+    void batchExportDialog();
+    void crossfadeDialog();
     void processSelected (int op);
     void freezeTracks (const std::vector<int>&);
     void onInputStalled();
@@ -173,7 +178,10 @@ private:
     std::unique_ptr<juce::Component> helpWindow;
     std::shared_ptr<VideoAsset> shownVideo;
     juce::File loadingVideo;
+    std::unique_ptr<juce::ThreadWithProgressWindow> batchJob;
+    std::unique_ptr<juce::DocumentWindow> notesWindow;
     std::unique_ptr<AdrWindow> adrWindow;
+    std::unique_ptr<InfoLineWindow> infoWindow;
     std::unique_ptr<class BoothWindow> scriptWindow, cueWindow;
     void toggleMtcWindow();
     void keyEditorDialog();

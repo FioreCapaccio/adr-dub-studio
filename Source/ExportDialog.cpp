@@ -25,6 +25,67 @@ constexpr int numPresets = (int) (sizeof (presets) / sizeof (presets[0]));
 constexpr int customPreset = numPresets - 1;
 } // namespace
 
+int numBatchPresets() { return numPresets - 1; }
+juce::String batchPresetLabel (int i) { return juce::translate (presets[juce::jlimit (0, numPresets - 2, i)].name); }
+
+ExportOptions batchPresetOptions (int i)
+{
+    const auto& p = presets[juce::jlimit (0, numPresets - 2, i)];
+    ExportOptions o;
+    o.format = p.fmt;
+    o.bitDepth = p.depth;
+    o.outRate = p.rate;
+    o.norm = p.norm == 1 ? ExportOptions::Norm::Peak : (p.norm == 2 ? ExportOptions::Norm::Lufs : ExportOptions::Norm::None);
+    o.normTarget = p.value;
+    o.ceilingDb = p.ceiling;
+    o.dither = p.dither;
+    o.stems = p.stems;
+    o.delivery = p.delivery;
+    o.excludeGuide = true;
+    o.presetName = juce::translate (p.name);
+    return o;
+}
+
+BatchExportDialog::BatchExportDialog (std::function<void (const std::vector<int>&)> onAccept) : accept (std::move (onAccept))
+{
+    info.setText (TRANS ("Scegli i formati da esportare in una volta sola. Ognuno va in una sottocartella o in un file con il nome del preset, nella cartella che sceglierai."), juce::dontSendNotification);
+    info.setFont (font (12.5f));
+    info.setColour (juce::Label::textColourId, text);
+    info.setJustificationType (juce::Justification::topLeft);
+    addAndMakeVisible (info);
+    for (int i = 0; i < numBatchPresets(); ++i)
+    {
+        auto b = std::make_unique<juce::ToggleButton> (batchPresetLabel (i));
+        b->setToggleState (i == 1 || i == 6, juce::dontSendNotification);   // EBU R128 e la consegna sono i piu' usati
+        b->setWantsKeyboardFocus (false);
+        addAndMakeVisible (*b);
+        boxes.push_back (std::move (b));
+    }
+    auto close = [this] (bool ok)
+    {
+        std::vector<int> chosen;
+        for (size_t i = 0; i < boxes.size(); ++i) if (boxes[i]->getToggleState()) chosen.push_back ((int) i);
+        auto cb = accept;
+        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) dw->exitModalState (ok ? 1 : 0);
+        if (ok && ! chosen.empty() && cb) juce::MessageManager::callAsync ([cb, chosen] { cb (chosen); });
+    };
+    okBtn.onClick = [close] { close (true); };
+    cancelBtn.onClick = [close] { close (false); };
+    addAndMakeVisible (okBtn);
+    addAndMakeVisible (cancelBtn);
+}
+
+void BatchExportDialog::resized()
+{
+    auto r = getLocalBounds().reduced (18);
+    info.setBounds (r.removeFromTop (48));
+    for (auto& b : boxes) { b->setBounds (r.removeFromTop (26)); }
+    auto bottom = getLocalBounds().reduced (18).removeFromBottom (34);
+    cancelBtn.setBounds (bottom.removeFromRight (100));
+    bottom.removeFromRight (8);
+    okBtn.setBounds (bottom.removeFromRight (120));
+}
+
 ExportDialog::ExportDialog (bool loop, int64_t loopStart, int64_t loopEnd, bool sel, int64_t selStart, int64_t selEnd, const juce::String& selLabel,
                             std::function<void (const ExportOptions&)> onAccept)
     : hasLoopRegion (loop), hasSelRegion (sel), ls (loopStart), le (loopEnd), ss (selStart), se (selEnd), accept (std::move (onAccept))

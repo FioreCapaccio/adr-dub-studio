@@ -388,6 +388,14 @@ void TimelineView::drawRuler (juce::Graphics& g)
         flag.lineTo (x + 4.5f, 29.0f);
         flag.lineTo (x, 25.0f);
         flag.closeSubPath();
+        if (m.end > m.pos)   // marker di ciclo: fascia colorata fino alla fine della regione
+        {
+            const float x1 = juce::jmin (sampleToX (m.end), (float) r.getRight());
+            g.setColour (m.colour.withAlpha (0.22f));
+            g.fillRect (x, 17.0f, juce::jmax (1.0f, x1 - x), (float) rulerH - 18.0f);
+            g.setColour (m.colour);
+            g.fillRect (x1 - 0.5f, 17.0f, 1.0f, (float) rulerH - 18.0f);
+        }
         g.setColour (m.colour);
         g.fillPath (flag);
         g.fillRect (x - 0.5f, 17.0f, 1.0f, (float) rulerH - 18.0f);
@@ -2690,9 +2698,15 @@ void TimelineView::showMarkerMenu (int markerId)
     juce::PopupMenu m;
     const int64_t pos = engine.getPosition();
     m.addItem (1, TRANS ("Aggiungi marker alla testina"));
+    const bool hasLoop = engine.getLoopEnd() > engine.getLoopStart();
+    m.addItem (4, TRANS ("Marker di ciclo dalla regione di loop"), hasLoop);
     if (markerId != 0)
     {
         m.addSeparator();
+        const auto* mk = project.findMarker (markerId);
+        m.addItem (5, TRANS ("Fai suonare in loop questo marker di ciclo"), mk != nullptr && mk->end > mk->pos);
+        m.addItem (6, TRANS ("Imposta la fine del ciclo sulla regione di loop"), hasLoop);
+        m.addItem (7, TRANS ("Trasforma in marker semplice"), mk != nullptr && mk->end > mk->pos);
         m.addItem (2, TRANS ("Rinomina..."));
         juce::PopupMenu colours;
         for (int i = 0; i < numPaletteColours; ++i) colours.addColouredItem (100 + i, "Colore " + juce::String (i + 1), trackPalette[i]);
@@ -2707,6 +2721,10 @@ void TimelineView::showMarkerMenu (int markerId)
         if (r == 1) p.addMarker (pos);
         else if (r == 2) safe->renameMarkerDialog (markerId);
         else if (r == 3) p.removeMarker (markerId);
+        else if (r == 4) p.addCycleMarker (safe->engine.getLoopStart(), safe->engine.getLoopEnd());
+        else if (r == 5) { if (const auto* mk = p.findMarker (markerId)) { safe->engine.setLoop (true, mk->pos, mk->end); safe->engine.setPosition (mk->pos); if (safe->onLoopChanged) safe->onLoopChanged(); safe->repaint(); } }
+        else if (r == 6) p.setMarkerEnd (markerId, safe->engine.getLoopEnd());
+        else if (r == 7) p.setMarkerEnd (markerId, -1);
         else if (r >= 100) p.setMarkerColour (markerId, trackPalette[r - 100]);
     });
 }
@@ -2839,6 +2857,7 @@ void TimelineView::showClipMenu (int64_t clipId)
         const bool soloed = lanes && project.getSession().tracks[(size_t) ti].soloLane >= 0;
         m.addItem (17, soloed ? TRANS ("Solo Lane: ascolta tutte le corsie") : TRANS ("Solo Lane: ascolta solo la corsia di questo clip"), lanes);
         juce::PopupMenu proc;
+        proc.addItem (25, TRANS ("Crossfade con il clip vicino..."), project.selection.size() >= 2);
         proc.addItem (20, TRANS ("Rileva / elimina i silenzi..."));
         proc.addItem (21, TRANS ("Inverti la fase"));
         proc.addItem (22, TRANS ("Reverse"));
@@ -2868,6 +2887,7 @@ void TimelineView::showClipMenu (int64_t clipId)
             case 12: if (safe->onJoinRequest) safe->onJoinRequest(); break;
             case 17: { int ti = -1; p.findClip (clipId, &ti); if (ti >= 0) { p.setSoloLane (p.getSession().tracks[(size_t) ti].id, safe->lanesOf (ti).index.count (clipId) ? safe->lanesOf (ti).index.at (clipId) : 0); safe->repaint(); } break; }
             case 20: if (safe->onSilenceRequest) safe->onSilenceRequest(); break;
+            case 25: if (safe->onCrossfadeRequest) safe->onCrossfadeRequest(); break;
             case 21: case 22: case 23: case 24:
                 if (p.selection.count (clipId) == 0) p.selection = { clipId };
                 if (safe->onProcessRequest) safe->onProcessRequest (r);

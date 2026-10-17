@@ -3,6 +3,7 @@
 #include "VideoSupport.h"
 #include "AdrImport.h"
 #include "TakeImport.h"
+#include "ExportDialog.h"
 #include "AudioTools.h"
 #include "VideoViewer.h"
 #include "TimeStretch.h"
@@ -108,7 +109,7 @@ private:
     }
 
     std::function<void (int)> finishCb;
-    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject, dopProject;
+    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject, dopProject, packProject, unpacked, other;
     juce::AudioBuffer<float> before;
     int dupsDummy = 0;
 
@@ -269,7 +270,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); });
         });
     }
 
@@ -1649,6 +1650,169 @@ private:
         expect (saved2 && f.loadFileAsString().contains ("\"lanes\""), "Corsie (Lanes) salvate nella sessione");
         expect (saved && txt.contains ("\"locked\"") && txt.contains ("\"hidden\""), "Lock e visibilita' salvati nella sessione");
         f.deleteFile();
+    }
+
+    // Clip Package e Track Archive: un file .zip con sessione e media, percorsi relativi
+    void stepPackage (std::function<void()> next)
+    {
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_pacchetto");
+        dir.deleteRecursively();
+        dir.createDirectory();
+        const auto src = dir.getChildFile ("sorgente").getChildFile ("voce.wav");
+        src.getParentDirectory().createDirectory();
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::FileOutputStream> os (src.createOutputStream());
+            std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), 48000.0, 1, 16, {}, 0));
+            if (w != nullptr)
+            {
+                os.release();
+                juce::AudioBuffer<float> b (1, 24000);
+                for (int i = 0; i < 24000; ++i) b.setSample (0, i, 0.3f * std::sin (0.05f * (float) i));
+                w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+            }
+        }
+        juce::String e;
+        auto asset = fc::loadAsset (formats, src, 48000.0, e);
+        packProject = std::make_unique<fc::Project> (formats, 48000.0);
+        auto& p = *packProject;
+        fc::Clip c; c.id = 1; c.asset = asset; c.start = 4800; c.length = 24000;
+        p.edit().tracks[0].clips = { c };
+        p.edit().tracks[0].name = "Dialoghi uno";
+        p.notes = "Nota per il regista: rifare le scene 3 e 4.";
+        const int tid = p.getSession().tracks[0].id;
+        const auto zip = dir.getChildFile ("pacchetto.zip");
+        p.exportPackage (zip, {}, [this, next, dir, zip, tid] (juce::String err)
+        {
+            expect (err.isEmpty() && zip.existsAsFile() && zip.getSize() > 1000, "Pacchetto: file .zip creato " + err);
+            juce::ZipFile z (zip);
+            bool hasSession = false, hasMedia = false;
+            for (int i = 0; i < z.getNumEntries(); ++i) { const auto n = z.getEntry (i)->filename; hasSession = hasSession || n == "session.adb"; hasMedia = hasMedia || n.startsWith ("Media/"); }
+            expect (hasSession && hasMedia, "Pacchetto: dentro ci sono la sessione e la cartella Media");
+            const auto out = dir.getChildFile ("estratto");
+            z.uncompressTo (out, true);
+            // la sessione estratta si apre anche se il file originale sparisce (percorsi relativi)
+            const auto orig = dir.getChildFile ("sorgente");
+            orig.deleteRecursively();
+            unpacked = std::make_unique<fc::Project> (formats, 48000.0);
+            unpacked->loadSession (out.getChildFile ("session.adb"), [this, next, dir, tid, zip] (juce::String errs)
+            {
+                const auto& s = unpacked->getSession();
+                expect (errs.isEmpty() && ! s.tracks.empty() && ! s.tracks[0].clips.empty() && ! s.tracks[0].clips[0].asset->offline && s.tracks[0].clips[0].length == 24000 && unpacked->notes.contains ("regista"),
+                        "Pacchetto: la sessione estratta si apre con i suoi media e le note (" + errs + ")");
+                // archivio delle tracce: importato in un'altra sessione
+                unpacked->exportPackage (dir.getChildFile ("tracce.zip"), { unpacked->getSession().tracks[0].id }, [this, next, dir] (juce::String err2)
+                {
+                    expect (err2.isEmpty() && dir.getChildFile ("tracce.zip").existsAsFile(), "Archivio tracce: creato");
+                    other = std::make_unique<fc::Project> (formats, 48000.0);
+                    const auto before = (int) other->getSession().tracks.size();
+                    other->importTrackArchive (dir.getChildFile ("tracce.zip"), dir.getChildFile ("arrivo"), [this, next, dir, before] (juce::String err3)
+                    {
+                        const auto& s = other->getSession();
+                        expect (err3.isEmpty() && (int) s.tracks.size() == before + 1 && s.tracks.back().name == "Dialoghi uno" && s.tracks.back().clips.size() == 1 && ! s.tracks.back().clips[0].asset->offline,
+                                "Archivio tracce: la traccia arriva nella sessione con i suoi clip e media (" + err3 + ")");
+                        dir.deleteRecursively();
+                        next();
+                    });
+                });
+            });
+        });
+    }
+
+    // misura del loudness dialogue-gated
+    void stepDialogueGate()
+    {
+        const double sr = 48000.0;
+        auto feed = [sr] (Loudness::Meter& m, bool speech, double seconds)
+        {
+            juce::Random rnd (42);
+            std::vector<float> l ((size_t) (sr * seconds)), r;
+            for (size_t i = 0; i < l.size(); ++i)
+                l[i] = speech ? 0.05f * (float) std::sin (juce::MathConstants<double>::twoPi * 1000.0 * (double) i / sr) : 0.25f * (rnd.nextFloat() * 2.0f - 1.0f);
+            r = l;
+            for (size_t i = 0; i < l.size(); i += 480) m.process (l.data() + i, r.data() + i, (int) juce::jmin<size_t> (480, l.size() - i));
+        };
+        Loudness::Meter speechOnly, gated, plain;
+        for (auto* m : { &speechOnly, &gated, &plain }) m->prepare (sr);
+        gated.dialogueGate = true;
+        feed (speechOnly, true, 6.0);
+        for (auto* m : { &gated, &plain }) { feed (*m, true, 6.0); feed (*m, false, 6.0); }
+        const float ref = speechOnly.integrated.load(), g = gated.integrated.load(), pl = plain.integrated.load();
+        expect (std::abs (g - ref) < 0.6f && pl > ref + 3.0f && gated.speechShare.load() > 0.35f && gated.speechShare.load() < 0.65f,
+                "Loudness dialogue-gated: il rumore forte non conta (" + juce::String (g, 1) + " LUFS contro " + juce::String (pl, 1) + " senza gate, solo parlato " + juce::String (ref, 1) + ", quota parlato " + juce::String (gated.speechShare.load(), 2) + ")");
+    }
+
+    // Info Line, Snap to Zero Crossing, dissolvenze automatiche, crossfade
+    void stepEditAids()
+    {
+        auto mk = [] (int n, float freq)
+        {
+            auto a = std::make_shared<fc::Asset>(); a->name = "s"; a->audio.setSize (2, n);
+            for (int i = 0; i < n; ++i) { const float v = 0.5f * std::sin (freq * (float) i); a->audio.setSample (0, i, v); a->audio.setSample (1, i, v); }
+            a->buildPeaks();
+            return a;
+        };
+        fc::Project p (formats, 48000.0);
+        auto A = mk (96000, 0.1f);
+        fc::Clip c; c.id = 1; c.asset = A; c.length = 96000;
+        p.edit().tracks[0].clips = { c };
+        p.snapZero = true;
+        p.splitClip (1, 20003);
+        const auto& cl = p.getSession().tracks[0].clips;
+        const int64_t cut = cl.size() == 2 ? cl[1].start : -1;
+        expect (cut > 0 && std::abs (cut - 20003) <= 240 && std::abs (A->audio.getSample (0, (int) cut)) < 0.07f, "Snap to Zero: il taglio cade su un passaggio per lo zero (campione " + juce::String ((juce::int64) cut) + ")");
+        p.undo();
+        p.snapZero = false;
+        p.autoFadeMs = 10;
+        p.splitClip (1, 20003);
+        expect (p.getSession().tracks[0].clips.size() == 2 && p.getSession().tracks[0].clips[0].fadeOut == 480 && p.getSession().tracks[0].clips[1].fadeIn == 480, "Dissolvenze automatiche: ai bordi del taglio (10 ms)");
+        p.undo();
+        p.autoFadeMs = 0;
+
+        // Info Line
+        fc::Project::ClipEdit e;
+        e.gainDb = -3.0f; e.length = 48000; e.fadeIn = 240; e.muted = true; e.invert = true;
+        expect (p.setClipInfo (1, e) && std::abs (p.findClip (1)->gainDb + 3.0f) < 1.0e-6f && p.findClip (1)->length == 48000 && p.findClip (1)->fadeIn == 240 && p.findClip (1)->muted && p.findClip (1)->invert, "Info Line: guadagno, lunghezza, fade, mute e fase");
+        fc::Project::ClipEdit bad; bad.length = 500000;
+        expect (! p.setClipInfo (1, bad) && p.findClip (1)->length == 48000, "Info Line: una lunghezza oltre il file non e' ammessa");
+        fc::Project::ClipEdit mv; mv.start = 12345;
+        p.setClipInfo (1, mv);
+        expect (p.findClip (1)->start == 12345, "Info Line: inizio");
+        p.setTracksLocked ({ p.getSession().tracks[0].id }, true);
+        expect (! p.setClipInfo (1, mv), "Info Line: non agisce su una traccia bloccata");
+        p.setTracksLocked ({ p.getSession().tracks[0].id }, false);
+
+        // marker di ciclo, note, preset del batch
+        {
+            fc::Project m (formats, 48000.0);
+            const int id = m.addCycleMarker (1000, 5000, "Scena 3");
+            m.notes = "Appunti";
+            const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_cicli.adb");
+            juce::String er;
+            expect (m.save (f, er) && f.loadFileAsString().contains ("\"end\"") && f.loadFileAsString().contains ("Appunti") && m.findMarker (id)->end == 5000, "Marker di ciclo e note: salvati con la sessione");
+            f.deleteFile();
+            expect (fc::numBatchPresets() >= 8 && fc::batchPresetOptions (1).norm == fc::ExportOptions::Norm::Lufs && std::abs (fc::batchPresetOptions (1).normTarget + 23.0) < 1.0e-9, "Batch: i preset dell'esportazione sono disponibili senza finestra (EBU R128 a -23 LUFS)");
+        }
+
+        // Crossfade
+        fc::Project q (formats, 48000.0);
+        auto X = mk (96000, 0.1f), Y = mk (96000, 0.13f);
+        fc::Clip a1, b1;
+        a1.id = 1; a1.asset = X; a1.start = 0; a1.offset = 0; a1.length = 24000;
+        b1.id = 2; b1.asset = Y; b1.start = 24000; b1.offset = 24000; b1.length = 24000;
+        q.edit().tracks[0].clips = { a1, b1 };
+        expect (q.makeCrossfade (1, 2, 0.02, 1), "Crossfade: creato fra due clip vicini");
+        {
+            auto s = q.getSession(); s.computeCrossfades();
+            const auto& k = s.tracks[0].clips;
+            expect (k[0].end() - k[1].start == 960 && k[1].xfadeIn == 960 && k[1].xLinear, "Crossfade: sovrapposizione di 20 ms a cavallo del taglio, forma lineare");
+        }
+        expect (q.makeCrossfade (1, 2, 0.02, 2), "Crossfade: la forma si puo' cambiare");
+        { auto s = q.getSession(); s.computeCrossfades(); expect (! s.tracks[0].clips[1].xLinear, "Crossfade: forma a potenza costante"); }
+        fc::Project r (formats, 48000.0);
+        fc::Clip x1 = a1, x2 = b1; x2.offset = 100;   // il secondo clip non ha audio prima del suo inizio
+        r.edit().tracks[0].clips = { x1, x2 };
+        expect (! r.makeCrossfade (1, 2, 0.5, 0), "Crossfade: senza audio oltre il bordo non si crea");
     }
 
     // Track Versions, Solo Lane, Strip Silence e Direct Offline Processing
@@ -3410,7 +3574,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.17.0"; }
+    const juce::String getApplicationVersion() override { return "2.18.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

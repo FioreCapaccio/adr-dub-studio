@@ -45,7 +45,8 @@ public:
     std::function<void (const juce::File&)> onVideoDropped;
     std::function<void()> onJoinRequest;
     std::function<void (int op)> onProcessRequest;   // Direct Offline Processing dal menu del clip (tools::Op)
-    std::function<void()> onSilenceRequest;          // Rileva / elimina i silenzi
+    std::function<void()> onSilenceRequest;
+    std::function<void()> onCrossfadeRequest;          // Rileva / elimina i silenzi
     std::function<void (const std::vector<int>&)> onFreezeRequest;   // Freeze / Unfreeze delle tracce scelte   // JOIN dei clip selezionati
     std::function<void (bool toCue)> onStretchRequest;
     std::function<void (int64_t clipId, double ratio, int64_t newStart)> onStretchCommit;   // al rilascio dello strumento Stretch

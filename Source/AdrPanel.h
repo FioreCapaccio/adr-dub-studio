@@ -110,7 +110,8 @@ private:
     juce::Label lblRate;
     juce::Label lblChar, lblScene, lblReel, lblIn, lblOut, lblStatus, lblDialogue, lblNotes, lblTrack, lblTakes;
     juce::TextEditor edChar, edScene, edReel, edIn, edOut, edDialogue, edNotes;
-    juce::ComboBox cbStatus, cbTrack, cbFilter;
+    juce::ComboBox cbStatus, cbTrack, cbFilter, cbStatusFilter;
+    int statusFilter = -1;             // -1 = tutti gli stati; altrimenti solo i cue in quello stato (ADR Required = da registrare)
     juce::Label lblFilter, lblCount;
     juce::String filterChar;           // vuoto = tutti i personaggi
     std::vector<size_t> shown;         // indici in session.cues dei cue mostrati
