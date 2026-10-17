@@ -2419,7 +2419,7 @@ void TimelineView::showTrackMenu (int trackId)
         for (int i = 0; i < numPaletteColours; ++i)
             colours.addColouredItem (100 + i, "Colore " + juce::String (i + 1), trackPalette[i]);
         m.addSubMenu (TRANS ("Colore"), colours);
-        m.addItem (2, TRANS ("Elimina traccia"), project.getSession().tracks.size() > 1);
+        m.addItem (2, TRANS ("Elimina traccia"));
         {
             juce::PopupMenu groups;
             const auto* tr = project.findTrack (trackId);

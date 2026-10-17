@@ -864,11 +864,29 @@ void MixerView::resized()
     viewport.setBounds (r);
     const int h = r.getHeight() - viewport.getScrollBarThickness();
     const int groupX = (int) strips.size() * stripW + 16;   // i bus di gruppo seguono le tracce, separati da uno spazio
-    content.setSize (juce::jmax (r.getWidth(), groupX + Session::kNumGroups * stripW + 8), h);
+    int shown = 0;
+    groupUseMask = 0;
+    for (int k = 0; k < Session::kNumGroups; ++k)
+    {
+        const bool used = groupInUse (k);
+        groupStrips[k]->setVisible (used);
+        if (! used) continue;
+        groupUseMask |= 1 << k;
+        groupStrips[k]->setBounds (groupX + shown++ * stripW, 0, stripW, h);
+    }
+    content.setSize (juce::jmax (r.getWidth(), groupX + shown * stripW + 8), h);
     for (size_t i = 0; i < strips.size(); ++i)
         strips[i]->setBounds ((int) i * stripW + 4, 0, stripW, h);
-    for (int k = 0; k < Session::kNumGroups; ++k)
-        groupStrips[k]->setBounds (groupX + k * stripW, 0, stripW, h);
+}
+
+bool MixerView::groupInUse (int k) const
+{
+    const auto& s = project.getSession();
+    for (auto& t : s.tracks) if (t.live->outBus.load() == k + 1) return true;
+    const auto& g = s.group[(size_t) k];
+    if (std::abs (g->volumeDb.load()) > 0.01f || g->mute.load() || g->solo.load() || ! g->pending.empty()) return true;
+    const auto chain = g->getChain();
+    return chain != nullptr && ! chain->slots.empty();
 }
 
 void MixerView::rebuild()
@@ -918,6 +936,11 @@ void MixerView::changeListenerCallback (juce::ChangeBroadcaster*)
     {
         if (groupStrips[k]->getLive() != project.getSession().group[(size_t) k]) { makeGroup (k); resized(); }
         groupStrips[k]->syncFromLive();
+    }
+    {
+        int mask = 0;
+        for (int k = 0; k < Session::kNumGroups; ++k) if (groupInUse (k)) mask |= 1 << k;
+        if (mask != groupUseMask) resized();   // un bus compare quando una traccia ci viene instradata e sparisce quando non serve piu'
     }
     masterStrip->syncFromLive();
     for (size_t i = 0; i < strips.size() && i < tracks.size(); ++i)

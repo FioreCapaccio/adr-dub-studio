@@ -353,7 +353,7 @@ void Project::setTrackType (int trackId, int type)
 void Project::removeTrack (int id)
 {
     const int i = trackIndexForId (id);
-    if (i < 0 || session.tracks.size() <= 1) return;
+    if (i < 0) return;
     beginEdit();
     session.tracks.erase (session.tracks.begin() + i);
     changed();
@@ -1934,7 +1934,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                         }
                     result->tracks.push_back (std::move (t));
                 }
-            if (result->tracks.empty()) { ok = false; errors = TRANS ("La sessione non contiene tracce."); }
+            if (result->tracks.empty() && ! parsed.hasProperty ("tracks")) { ok = false; errors = TRANS ("La sessione non contiene tracce."); }   // una sessione senza tracce e' valida
             for (auto& t : result->tracks)   // un gruppo che non esiste piu' non lascia tracce nascoste
             {
                 bool known = false;
@@ -1993,7 +1993,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 undoStack.clear();
                 redoStack.clear();
                 selection.clear();
-                selectedTrackId = session.tracks.front().id;
+                selectedTrackId = session.tracks.empty() ? -1 : session.tracks.front().id;
                 sessionFile = f;
                 loudnessStandard = loudStd;
                 tcFormat = juce::jlimit (0, numTcFormats - 1, ptcFormat);

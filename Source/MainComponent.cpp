@@ -173,7 +173,7 @@ MainComponent::MainComponent()
     project->positionFn = [this] { return engine.getPosition(); };
     pluginHost->onChanged = [this] { project->liveChanged(); };
     pluginHost->onError = [this] (const juce::String& m) { showError (m); };
-    project->newSession();
+    project->newSession (false);   // si parte senza tracce: si creano o si importano
 
     engine.onSampleRateChanged = [this] (double rate)
     {
@@ -1482,7 +1482,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNew:
         {
             juce::Component::SafePointer<MainComponent> safe (this);
-            confirmDiscard ([safe] { if (safe != nullptr) { safe->engine.stop(); safe->engine.setPosition (0); safe->project->newSession(); safe->pendingFit = true; safe->layoutAll(); } });
+            confirmDiscard ([safe] { if (safe != nullptr) { safe->engine.stop(); safe->engine.setPosition (0); safe->project->newSession (false); safe->pendingFit = true; safe->layoutAll(); } });
             break;
         }
         case cmdOpen:          openDialog(); break;

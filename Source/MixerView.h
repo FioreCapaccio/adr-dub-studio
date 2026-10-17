@@ -145,6 +145,8 @@ private:
     std::vector<std::unique_ptr<ChannelStrip>> strips;
     std::unique_ptr<ChannelStrip> masterStrip;
     std::unique_ptr<ChannelStrip> auxStrips[2];
+    bool groupInUse (int k) const;   // un bus di gruppo si vede solo se serve: ha tracce, inserti o un fader/mute/solo cambiati
+    int groupUseMask = 0;
     std::unique_ptr<ChannelStrip> groupStrips[Session::kNumGroups];   // a destra delle tracce, nell'area scorrevole
     void makeAux (int k);
     void openEq (int trackId);

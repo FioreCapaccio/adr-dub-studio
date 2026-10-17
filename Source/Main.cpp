@@ -1661,6 +1661,20 @@ private:
         for (auto& t : p.getSession().tracks) muted += t.live->mute.load() ? 1 : 0;
         expect (muted == 2, "Gruppi: muto del gruppo = solo le sue tracce (" + juce::String (muted) + ")");
 
+        // una sessione senza tracce (all'avvio) si salva e si riapre
+        {
+            fc::Project e (formats, 48000.0);
+            e.newSession (false);
+            expect (e.getSession().tracks.empty() && e.selectedTrackId == -1, "Sessione vuota: nessuna traccia all'avvio");
+            e.addTrack();
+            e.removeTrack (e.getSession().tracks[0].id);
+            expect (e.getSession().tracks.empty(), "Sessione vuota: si puo' eliminare anche l'ultima traccia");
+            const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_vuota.adb");
+            juce::String er;
+            expect (e.save (f, er) && f.loadFileAsString().contains ("\"tracks\""), "Sessione vuota: si salva " + er);
+            f.deleteFile();
+        }
+
         // selezione di piu' tracce e gruppo con un solo passo di undo
         {
             fc::Project m (formats, 48000.0);
@@ -2749,7 +2763,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.11.0"; }
+    const juce::String getApplicationVersion() override { return "2.11.1"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
