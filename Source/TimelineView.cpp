@@ -1592,6 +1592,7 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
                 cueOrigIn = cue->inPos;
                 cueOrigOut = cue->outPos;
                 if (project.selectedCueId != ch.id) { project.selectedCueId = ch.id; project.sendChangeMessage(); }
+                if (! engine.isRecording()) engine.setPosition (cue->inPos);   // selezionare il cue porta la testina al suo ingresso
                 return;
             }
 
