@@ -64,6 +64,8 @@ struct Clip
     int cueId = 0;
     int takeNo = 0;
     bool muted = false;
+    bool invert = false;     // polarita' invertita (DOP)
+    int lane = 0;            // corsia (calcolata da Session::computeLanes, non salvata)
     int rating = 0;          // take ADR: valutazione 0..5 stelle
     bool rejected = false;   // take ADR scartato: non suona mai e non conta; si puo' ripristinare o eliminare del tutto
     // crossfade automatico con i clip che si sovrappongono (calcolato da Session::computeCrossfades, non salvato)
@@ -220,6 +222,12 @@ struct Track
 {
     int id = 0;
     int groupId = 0;   // 0 = nessun gruppo
+    /** Track Versions: piu' versioni dei clip della stessa traccia (per esempio un passaggio di registrazione per versione). I clip della versione
+        attiva sono quelli di 'clips'; versions[i].clips contiene gli altri (quelli della versione attiva li' non sono aggiornati). */
+    struct Version { int id = 0; juce::String name; std::vector<Clip> clips; };
+    std::vector<Version> versions;
+    int activeVersion = 0;
+    int soloLane = -1;       // Solo Lane: suona solo questa corsia (-1 = tutte); stato di lavoro, non salvato
     std::shared_ptr<Asset> frozen;   // Freeze: l'audio della traccia gia' elaborato (EQ, compressore, plug-in); i clip restano ma non suonano
     bool editLocked() const noexcept { return locked || frozen != nullptr; }   // bloccata a mano, oppure congelata
     bool locked = false;   // traccia bloccata: i suoi clip non si modificano (come Lock di Nuendo)
@@ -316,6 +324,26 @@ struct Session
         return e;
     }
 
+    /** Assegna a ogni clip la corsia (la prima dove non si sovrappone a un altro): serve a Solo Lane e a Versioni da corsie. */
+    void computeLanes()
+    {
+        for (auto& t : tracks)
+        {
+            std::vector<Clip*> order;
+            for (auto& c : t.clips) order.push_back (&c);
+            std::stable_sort (order.begin(), order.end(), [] (const Clip* a, const Clip* b) { return a->start < b->start; });
+            std::vector<int64_t> laneEnd;
+            for (auto* c : order)
+            {
+                size_t l = 0;
+                while (l < laneEnd.size() && laneEnd[l] > c->start) ++l;
+                if (l == laneEnd.size()) laneEnd.push_back (0);
+                laneEnd[l] = c->end();
+                c->lane = (int) l;
+            }
+        }
+    }
+
     /** Calcola i crossfade impliciti dove due clip della stessa traccia si sovrappongono parzialmente. */
     void computeCrossfades()
     {
@@ -372,6 +400,7 @@ struct Session
             c.group[k]->chain = group[k]->getChain();
         }
         c.computeCrossfades();
+        c.computeLanes();
         return c;
     }
 };
@@ -461,6 +490,19 @@ public:
     void freezeTrack (int trackId, const juce::File& folder, std::function<void (juce::String)> done);
     void unfreezeTrack (int trackId);
     void setTracksLanes (const std::vector<int>& ids, bool on);
+    // Track Versions
+    int addVersion (int trackId, const juce::String& name, bool duplicateCurrent);   // ritorna l'id della versione, che diventa quella attiva
+    void switchVersion (int trackId, int versionId);
+    void renameVersion (int trackId, int versionId, const juce::String& name);
+    void deleteVersion (int trackId, int versionId);
+    int lanesFromVersions (int trackId);   // le altre versioni diventano corsie (clip silenziati) della traccia
+    int versionsFromLanes (int trackId);   // ogni corsia oltre la prima diventa una versione
+    void setSoloLane (int trackId, int lane);
+    // strumenti sull'audio dei clip
+    /** Detect / Strip Silence: dentro ogni clip scelto trova le zone con suono; divide ai bordi o elimina i silenzi. Ritorna quanti clip sono cambiati. */
+    int stripSilence (const std::vector<int64_t>& clipIds, float thresholdDb, double minSilenceSec, double padSec, bool deleteSilence);
+    /** Direct Offline Processing: inverti fase, reverse, rimuovi DC offset, normalizza al loudness (targetLufs). I file nuovi vanno in 'folder'. */
+    void processClips (const std::vector<int64_t>& clipIds, int op, double targetLufs, const juce::File& folder, std::function<void (juce::String)> done);
     void showAllTracks();
     void hideEmptyTracks();
     bool trackLocked (int trackId) const noexcept;

@@ -44,6 +44,8 @@ public:
     std::function<void()> onVideoOffsetChanged;
     std::function<void (const juce::File&)> onVideoDropped;
     std::function<void()> onJoinRequest;
+    std::function<void (int op)> onProcessRequest;   // Direct Offline Processing dal menu del clip (tools::Op)
+    std::function<void()> onSilenceRequest;          // Rileva / elimina i silenzi
     std::function<void (const std::vector<int>&)> onFreezeRequest;   // Freeze / Unfreeze delle tracce scelte   // JOIN dei clip selezionati
     std::function<void (bool toCue)> onStretchRequest;
     std::function<void (int64_t clipId, double ratio, int64_t newStart)> onStretchCommit;   // al rilascio dello strumento Stretch
@@ -156,6 +158,8 @@ private:
     void showGroupMenu (int groupId);
     void showVisibilityMenu();
     void renameGroupDialog (int groupId);
+    void versionNameDialog (int trackId, bool duplicate);
+    void versionRenameDialog (int trackId, int versionId);
     void newGroupDialog (std::vector<int> trackIds);
     void drawGroupBars (juce::Graphics&);
     bool groupAll (int groupId, bool solo) const;   // tutte le tracce del gruppo mute / in solo

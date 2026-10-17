@@ -73,7 +73,7 @@ void Mixer::renderClip (const Clip& c, int64_t pos, int n)
 
     const int dstOff = (int) (cs - pos);
     const int nch = c.asset->numChannels();
-    const float gain = dbToGain (c.gainDb);
+    const float gain = dbToGain (c.gainDb) * (c.invert ? -1.0f : 1.0f);
     const int64_t inClip0 = cs - c.start;
 
     const bool needsFade = (c.fadeIn > 0 && inClip0 < c.fadeIn)
@@ -170,7 +170,7 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
             }
             else if (audible)
                 for (auto& c : t.clips)
-                    if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! c.rejected && ! (auditionClip < 0 && c.cueId != 0))) && c.end() > cpos && c.start < cpos + chunk)
+                    if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! c.rejected && ! (auditionClip < 0 && c.cueId != 0))) && (t.soloLane < 0 || c.lane == t.soloLane) && c.end() > cpos && c.start < cpos + chunk)
                         renderClip (c, cpos, chunk);
 
             if (audible)   // guadagno in ingresso (a rampa): alimenta EQ e compressore al livello giusto

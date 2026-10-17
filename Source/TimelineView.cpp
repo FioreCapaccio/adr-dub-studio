@@ -513,6 +513,14 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         if (shows (CtlRec)) right = juce::jmin (right, armRect (ti).getX() - 4);
         if (shows (CtlLock)) right = juce::jmin (right, lockRect (ti).getX() - 4);
         g.drawText (t.name, 42, y + 9, juce::jmax (30, right - 42), 20, juce::Justification::centredLeft, true);
+        if (t.versions.size() > 1)   // Track Versions: la versione attiva sotto il nome
+        {
+            juce::String vn;
+            for (auto& v : t.versions) if (v.id == t.activeVersion) vn = v.name;
+            g.setColour (blue.brighter (0.3f));
+            g.setFont (font (10.0f, true));
+            g.drawText (juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xb8 ")) + vn + "  (" + juce::String ((int) t.versions.size()) + ")", 42, y + 26, juce::jmax (30, right - 42), 12, juce::Justification::centredLeft, true);
+        }
     }
 
     auto drawBtn = [&] (juce::Rectangle<int> b, const char* label, bool on, juce::Colour onCol)
@@ -967,6 +975,16 @@ void TimelineView::paint (juce::Graphics& g)
             {
                 anyClip = true;
                 drawClip (g, s.tracks[(size_t) i], i, c, lanes);
+                if (s.tracks[(size_t) i].soloLane >= 0)   // Solo Lane: le altre corsie si abbassano
+                {
+                    const auto& li = lanesOf (i);
+                    const auto it = li.index.find (c.id);
+                    if ((it != li.index.end() ? it->second : 0) != s.tracks[(size_t) i].soloLane)
+                    {
+                        g.setColour (juce::Colours::black.withAlpha (0.5f));
+                        g.fillRect (clipRect (i, c));
+                    }
+                }
             }
         }
 
@@ -2582,6 +2600,36 @@ void TimelineView::renameGroupDialog (int groupId)
     }), true);
 }
 
+void TimelineView::versionNameDialog (int trackId, bool duplicate)
+{
+    auto* aw = new juce::AlertWindow (duplicate ? TRANS ("Duplica la versione") : TRANS ("Nuova versione"), TRANS ("Nome della versione (per esempio Passaggio 2)"), juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("name", "");
+    aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<TimelineView> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, trackId, duplicate] (int r)
+    {
+        if (r == 1 && safe != nullptr) { safe->project.addVersion (trackId, aw->getTextEditorContents ("name"), duplicate); safe->updateScrollBars(); }
+    }), true);
+}
+
+void TimelineView::versionRenameDialog (int trackId, int versionId)
+{
+    const auto* t = project.findTrack (trackId);
+    if (t == nullptr) return;
+    juce::String cur;
+    for (auto& v : t->versions) if (v.id == versionId) cur = v.name;
+    auto* aw = new juce::AlertWindow (TRANS ("Rinomina la versione"), "", juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor ("name", cur);
+    aw->addButton (TRANS ("OK"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<TimelineView> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, trackId, versionId] (int r)
+    {
+        if (r == 1 && safe != nullptr) safe->project.renameVersion (trackId, versionId, aw->getTextEditorContents ("name"));
+    }), true);
+}
+
 void TimelineView::newGroupDialog (std::vector<int> trackIds)
 {
     auto* aw = new juce::AlertWindow (TRANS ("Nuovo gruppo"), TRANS ("Nome del gruppo (per esempio Dialoghi)"), juce::MessageBoxIconType::NoIcon);
@@ -2676,6 +2724,23 @@ void TimelineView::showTrackMenu (int trackId)
         m.addItem (2, TRANS ("Elimina traccia"));
         m.addItem (13, TRANS ("Blocca la traccia (Lock)"), true, project.trackLocked (trackId));
         m.addItem (14, TRANS ("Nascondi la traccia"));
+        {
+            juce::PopupMenu vers;
+            if (const auto* tr = project.findTrack (trackId); tr != nullptr)
+            {
+                for (auto& v : tr->versions) vers.addItem (500 + v.id, v.name, true, v.id == tr->activeVersion);
+                if (! tr->versions.empty()) vers.addSeparator();
+            }
+            vers.addItem (490, TRANS ("Nuova versione (vuota)..."));
+            vers.addItem (491, TRANS ("Duplica la versione corrente..."));
+            const bool many = project.findTrack (trackId) != nullptr && project.findTrack (trackId)->versions.size() > 1;
+            vers.addItem (492, TRANS ("Rinomina la versione corrente..."), many);
+            vers.addItem (493, TRANS ("Elimina la versione corrente"), many);
+            vers.addSeparator();
+            vers.addItem (494, TRANS ("Corsie dalle versioni (le altre versioni diventano corsie)"), many);
+            vers.addItem (495, TRANS ("Versioni dalle corsie (ogni corsia diventa una versione)"));
+            m.addSubMenu (TRANS ("Versioni della traccia"), vers);
+        }
         m.addItem (16, TRANS ("Mostra le corsie dei take (Lanes)"), true, project.findTrack (trackId) != nullptr && project.findTrack (trackId)->showLanes);
         m.addItem (15, project.findTrack (trackId) != nullptr && project.findTrack (trackId)->frozen != nullptr ? TRANS ("Scongela la traccia (Unfreeze)") : TRANS ("Congela la traccia (Freeze: rende EQ, compressore e plug-in)"));
         {
@@ -2719,6 +2784,12 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 6) p.clearAutomation (trackId);
         else if (r == 13) p.setTracksLocked (targets, ! p.trackLocked (trackId));
         else if (r == 14) p.setTracksHidden (targets, true);
+        else if (r >= 500) p.switchVersion (trackId, r - 500);
+        else if (r == 490 || r == 491) safe->versionNameDialog (trackId, r == 491);
+        else if (r == 492) { if (const auto* tr = p.findTrack (trackId)) safe->versionRenameDialog (trackId, tr->activeVersion); }
+        else if (r == 493) { if (const auto* tr = p.findTrack (trackId)) p.deleteVersion (trackId, tr->activeVersion); }
+        else if (r == 494) p.lanesFromVersions (trackId);
+        else if (r == 495) p.versionsFromLanes (trackId);
         else if (r == 16) { const auto* tr = p.findTrack (trackId); p.setTracksLanes (targets, tr != nullptr && ! tr->showLanes); safe->updateScrollBars(); safe->repaint(); }
         else if (r == 15 && safe->onFreezeRequest) safe->onFreezeRequest (targets);
         else if (r == 399) p.setTracksGroup (targets, 0);
@@ -2761,6 +2832,20 @@ void TimelineView::showClipMenu (int64_t clipId)
     }
     m.addSeparator();
     m.addItem (12, TRANS ("Unisci i clip selezionati (JOIN)"), project.joinableGroups (project.selection) > 0);
+    {
+        int ti = -1;
+        project.findClip (clipId, &ti);
+        const bool lanes = ti >= 0 && project.getSession().tracks[(size_t) ti].showLanes;
+        const bool soloed = lanes && project.getSession().tracks[(size_t) ti].soloLane >= 0;
+        m.addItem (17, soloed ? TRANS ("Solo Lane: ascolta tutte le corsie") : TRANS ("Solo Lane: ascolta solo la corsia di questo clip"), lanes);
+        juce::PopupMenu proc;
+        proc.addItem (20, TRANS ("Rileva / elimina i silenzi..."));
+        proc.addItem (21, TRANS ("Inverti la fase"));
+        proc.addItem (22, TRANS ("Reverse"));
+        proc.addItem (23, TRANS ("Rimuovi il DC offset"));
+        proc.addItem (24, TRANS ("Normalizza al loudness..."));
+        m.addSubMenu (TRANS ("Elaborazione (offline)"), proc);
+    }
     m.addItem (10, TRANS ("Time-stretch..."));
 
     juce::Component::SafePointer<TimelineView> safe (this);
@@ -2781,6 +2866,12 @@ void TimelineView::showClipMenu (int64_t clipId)
             case 8: if (c != nullptr) p.setActiveTake (c->cueId, c->takeNo); break;
             case 9: if (c != nullptr) p.deleteTake (c->cueId, c->takeNo); break;
             case 12: if (safe->onJoinRequest) safe->onJoinRequest(); break;
+            case 17: { int ti = -1; p.findClip (clipId, &ti); if (ti >= 0) { p.setSoloLane (p.getSession().tracks[(size_t) ti].id, safe->lanesOf (ti).index.count (clipId) ? safe->lanesOf (ti).index.at (clipId) : 0); safe->repaint(); } break; }
+            case 20: if (safe->onSilenceRequest) safe->onSilenceRequest(); break;
+            case 21: case 22: case 23: case 24:
+                if (p.selection.count (clipId) == 0) p.selection = { clipId };
+                if (safe->onProcessRequest) safe->onProcessRequest (r);
+                break;
             case 10: case 11:
                 if (p.selection.count (clipId) == 0) p.selection = { clipId };
                 if (safe->onStretchRequest) safe->onStretchRequest (r == 11);

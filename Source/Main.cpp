@@ -3,6 +3,7 @@
 #include "VideoSupport.h"
 #include "AdrImport.h"
 #include "TakeImport.h"
+#include "AudioTools.h"
 #include "VideoViewer.h"
 #include "TimeStretch.h"
 #include "ExportEngine.h"
@@ -107,7 +108,7 @@ private:
     }
 
     std::function<void (int)> finishCb;
-    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject;
+    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject, dopProject;
     juce::AudioBuffer<float> before;
     int dupsDummy = 0;
 
@@ -268,7 +269,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); });
         });
     }
 
@@ -1648,6 +1649,126 @@ private:
         expect (saved2 && f.loadFileAsString().contains ("\"lanes\""), "Corsie (Lanes) salvate nella sessione");
         expect (saved && txt.contains ("\"locked\"") && txt.contains ("\"hidden\""), "Lock e visibilita' salvati nella sessione");
         f.deleteFile();
+    }
+
+    // Track Versions, Solo Lane, Strip Silence e Direct Offline Processing
+    void stepVersionsTools (std::function<void()> next)
+    {
+        auto tone = [] (int ms, float amp, float dc = 0.0f)
+        {
+            auto a = std::make_shared<fc::Asset>(); a->name = "t";
+            a->audio.setSize (2, 48 * ms);
+            for (int i = 0; i < a->audio.getNumSamples(); ++i) { const float v = dc + amp * std::sin (0.1f * (float) i); a->audio.setSample (0, i, v); a->audio.setSample (1, i, v); }
+            a->buildPeaks();
+            return a;
+        };
+        // Versions
+        fc::Project p (formats, 48000.0);
+        auto A = tone (1000, 0.5f);
+        fc::Clip c1; c1.id = 1; c1.asset = A; c1.length = 48000;
+        p.edit().tracks[0].clips = { c1 };
+        const int tid = p.getSession().tracks[0].id;
+        const int v2 = p.addVersion (tid, "Passaggio 2", false);
+        expect (v2 == 2 && p.getSession().tracks[0].clips.empty() && p.getSession().tracks[0].versions.size() == 2, "Versioni: la nuova versione parte vuota e la prima si conserva");
+        fc::Clip c2 = c1; c2.id = 50; c2.start = 24000;
+        p.edit().tracks[0].clips = { c2 };
+        p.switchVersion (tid, 1);
+        expect (p.getSession().tracks[0].clips.size() == 1 && p.getSession().tracks[0].clips[0].id == 1, "Versioni: tornando alla prima i suoi clip ci sono ancora");
+        p.switchVersion (tid, 2);
+        expect (p.getSession().tracks[0].clips.size() == 1 && p.getSession().tracks[0].clips[0].start == 24000, "Versioni: la seconda ha i suoi");
+        const int v3 = p.addVersion (tid, "", true);
+        expect (v3 == 3 && p.getSession().tracks[0].clips.size() == 1 && p.getSession().tracks[0].clips[0].id != 50, "Versioni: duplica la versione corrente (clip con id nuovi)");
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_versioni.adb");
+        juce::String err;
+        expect (p.save (tmp, err) && tmp.loadFileAsString().contains ("\"versions\"") && tmp.loadFileAsString().contains ("Passaggio 2"), "Versioni: salvate nella sessione");
+        tmp.deleteFile();
+        p.deleteVersion (tid, v3);
+        expect (p.getSession().tracks[0].versions.size() == 2 && p.getSession().tracks[0].activeVersion != v3, "Versioni: eliminando l'attiva se ne attiva un'altra");
+        expect (p.lanesFromVersions (tid) == 1 && p.getSession().tracks[0].versions.empty() && p.getSession().tracks[0].clips.size() == 2 && p.getSession().tracks[0].showLanes,
+                "Corsie dalle versioni: le altre versioni diventano clip silenziati su corsie");
+        expect (p.versionsFromLanes (tid) == 1 && p.getSession().tracks[0].versions.size() == 2 && p.getSession().tracks[0].clips.size() == 1, "Versioni dalle corsie: ogni corsia oltre la prima diventa una versione");
+
+        // Solo Lane: due clip sovrapposti, suona solo la corsia scelta
+        fc::Project q (formats, 48000.0);
+        auto B1 = tone (1000, 0.5f), B2 = tone (1000, 0.25f);
+        fc::Clip k1, k2; k1.id = 1; k1.asset = B1; k1.length = 48000; k2 = k1; k2.id = 2; k2.asset = B2;
+        q.edit().tracks[0].clips = { k1, k2 };
+        auto peakAt = [&q] (int soloLane)
+        {
+            q.edit().tracks[0].soloLane = soloLane;
+            auto s = q.getSession().cloneDetached();
+            s.master->limiterOn = false;
+            fc::Mixer m; juce::AudioBuffer<float> out (2, 2048);
+            m.render (s, 1000, out, 0, 2048);
+            return out.getMagnitude (0, 2048);
+        };
+        const float both = peakAt (-1), lane0 = peakAt (0), lane1 = peakAt (1);
+        expect (lane0 > 0.4f && lane1 > 0.2f && lane1 < 0.3f && both > lane0, "Solo Lane: suona solo la corsia scelta (" + juce::String (lane0, 2) + " / " + juce::String (lane1, 2) + " / tutte " + juce::String (both, 2) + ")");
+
+        // Strip / Detect Silence
+        fc::Project sp (formats, 48000.0);
+        auto S = std::make_shared<fc::Asset>(); S->name = "s"; S->audio.setSize (2, 48000 * 3); S->audio.clear();
+        for (int i = 0; i < 24000; ++i) { S->audio.setSample (0, i, 0.4f * std::sin (0.1f * (float) i)); S->audio.setSample (1, i, S->audio.getSample (0, i)); }
+        for (int i = 96000; i < 120000; ++i) { S->audio.setSample (0, i, 0.4f * std::sin (0.1f * (float) i)); S->audio.setSample (1, i, S->audio.getSample (0, i)); }
+        S->buildPeaks();
+        fc::Clip sc; sc.id = 1; sc.asset = S; sc.length = 3 * 48000;
+        sp.edit().tracks[0].clips = { sc };
+        sp.undo();
+        sp.edit().tracks[0].clips = { sc };
+        expect (sp.stripSilence ({ 1 }, -40.0f, 0.3, 0.05, true) == 1 && sp.getSession().tracks[0].clips.size() == 2, "Strip Silence: i silenzi lunghi si tolgono, restano due zone con suono");
+        {
+            auto cl = sp.getSession().tracks[0].clips;
+            std::sort (cl.begin(), cl.end(), [] (const fc::Clip& a, const fc::Clip& b) { return a.start < b.start; });
+            expect (cl.size() == 2 && std::abs (cl[0].start - 0) < 100 && std::abs (cl[0].length - (24000 + 2400)) < 800 && std::abs (cl[1].start - (96000 - 2400)) < 800,
+                    "Strip Silence: inizio, durata e margine di 50 ms delle zone");
+        }
+        sp.undo();
+        expect (sp.getSession().tracks[0].clips.size() == 1, "Strip Silence: si annulla");
+        sp.edit().tracks[0].clips = { sc };
+        expect (sp.stripSilence ({ 1 }, -40.0f, 0.3, 0.05, false) == 1 && sp.getSession().tracks[0].clips.size() == 4, "Detect Silence: divide ai bordi (suono, pausa, suono, pausa) senza togliere nulla");
+
+        // Direct Offline Processing
+        dopProject = std::make_unique<fc::Project> (formats, 48000.0);
+        auto& d = *dopProject;
+        auto R = std::make_shared<fc::Asset>(); R->name = "ramp"; R->audio.setSize (2, 4800);
+        for (int i = 0; i < 4800; ++i) { R->audio.setSample (0, i, 0.2f + (float) i / 4800.0f * 0.5f); R->audio.setSample (1, i, R->audio.getSample (0, i)); }
+        R->buildPeaks();
+        fc::Clip rc; rc.id = 1; rc.asset = R; rc.length = 4800; rc.fadeIn = 100; rc.fadeOut = 7;
+        d.edit().tracks[0].clips = { rc };
+        d.processClips ({ 1 }, (int) fc::tools::Op::InvertPolarity, 0.0, {}, [] (juce::String) {});
+        expect (d.findClip (1)->invert, "DOP: inverti fase");
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_dop");
+        dir.deleteRecursively();
+        d.processClips ({ 1 }, (int) fc::tools::Op::Reverse, 0.0, dir, [this, next, dir] (juce::String err)
+        {
+            auto& d = *dopProject;
+            const auto* c = d.findClip (1);
+            expect (err.isEmpty() && c != nullptr && c->asset->audio.getNumSamples() == 4800 && std::abs (c->asset->audio.getSample (0, 0) - 0.7f) < 1.0e-3f && c->fadeIn == 7 && c->fadeOut == 100,
+                    "DOP: reverse (il primo campione e' l'ultimo di prima, le dissolvenze si scambiano) " + err);
+            d.processClips ({ 1 }, (int) fc::tools::Op::RemoveDc, 0.0, dir, [this, next, dir] (juce::String err2)
+            {
+                auto& d = *dopProject;
+                const auto* c = d.findClip (1);
+                double sum = 0.0;
+                for (int i = 0; i < c->asset->audio.getNumSamples(); ++i) sum += c->asset->audio.getSample (0, i);
+                expect (err2.isEmpty() && std::abs (sum / c->asset->audio.getNumSamples()) < 1.0e-4, "DOP: rimuovi DC offset (media a zero)");
+                // normalizza al loudness
+                auto T = std::make_shared<fc::Asset>(); T->name = "t"; T->audio.setSize (2, 48000 * 3);
+                for (int i = 0; i < T->audio.getNumSamples(); ++i) { const float v = 0.05f * std::sin (0.12f * (float) i); T->audio.setSample (0, i, v); T->audio.setSample (1, i, v); }
+                T->buildPeaks();
+                fc::Clip tc; tc.id = 9; tc.asset = T; tc.length = 3 * 48000;
+                d.edit().tracks[1].clips = { tc };
+                const double lufs = fc::tools::measureLufs (T->audio, 0, T->audio.getNumSamples(), 48000.0);
+                d.processClips ({ 9 }, (int) fc::tools::Op::NormalizeLufs, -23.0, dir, [this, next, dir, lufs] (juce::String err3)
+                {
+                    auto& d = *dopProject;
+                    const double g = d.findClip (9)->gainDb;
+                    expect (err3.isEmpty() && lufs < -23.0 && std::abs (g - (-23.0 - lufs)) < 0.05 && g > 0.0, "DOP: normalizza al loudness (da " + juce::String (lufs, 1) + " LUFS a -23: guadagno " + juce::String (g, 1) + " dB)");
+                    dir.deleteRecursively();
+                    next();
+                });
+            });
+        });
     }
 
     // piu' registrazioni dello stesso cue: valutare, scartare, tenere la migliore
@@ -3289,7 +3410,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.16.0"; }
+    const juce::String getApplicationVersion() override { return "2.17.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
