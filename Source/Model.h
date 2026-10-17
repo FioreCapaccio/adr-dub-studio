@@ -442,6 +442,13 @@ public:
 
     // stato
     bool isDirty() const noexcept { return dirty; }
+    /** Sessione senza contenuto (nessun clip, cue, marker, video o nota): non c'e' niente da salvare. */
+    bool isEmpty() const noexcept
+    {
+        for (auto& t : session.tracks) if (! t.clips.empty() || ! t.versions.empty()) return false;
+        return session.cues.empty() && session.markers.empty() && session.video == nullptr && notes.isEmpty();
+    }
+    double quietUntil = 0.0;   // subito dopo l'apertura i plug-in che si ricaricano non rendono la sessione "modificata"
     juce::File getFile() const { return sessionFile; }
     int getBusyCount() const noexcept { return busy; }
     /** Avanzamento (0..1) dell'operazione lunga in corso (caricamento video), o -1 se non ce n'e'. */

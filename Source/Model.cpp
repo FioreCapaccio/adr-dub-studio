@@ -289,7 +289,7 @@ void Project::changed()
 
 void Project::liveChanged()
 {
-    dirty = true;
+    if (juce::Time::getMillisecondCounterHiRes() > quietUntil) dirty = true;
     sendChangeMessage();
 }
 
@@ -3177,7 +3177,9 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 missingVideoOffset = lostVideoOffset;
                 publish();
                 dirty = false;
+                quietUntil = juce::Time::getMillisecondCounterHiRes() + 6000.0;
                 if (onSessionLoaded) onSessionLoaded();
+                dirty = false;
             }
             if (done) done (errors);
         };

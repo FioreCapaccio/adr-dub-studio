@@ -817,7 +817,7 @@ void MainComponent::setLoopFromSelection()
 
 void MainComponent::confirmDiscard (std::function<void()> proceed)
 {
-    if (! project->isDirty()) { proceed(); return; }
+    if (! project->isDirty() || project->isEmpty()) { proceed(); return; }
     auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, TRANS ("Modifiche non salvate"),
                                                                  TRANS ("Vuoi salvare le modifiche alla sessione?"), TRANS ("Salva"), TRANS ("Non salvare"), TRANS ("Annulla"));
     juce::Component::SafePointer<MainComponent> safe (this);
@@ -1125,10 +1125,27 @@ void MainComponent::importFromCommandLine (const juce::StringArray& paths)
     juce::Array<juce::File> files;
     for (auto& p : paths)
     {
-        juce::File f (p);
+        juce::File f (p.unquoted());   // Finder passa i percorsi con spazi tra virgolette
         if (f.existsAsFile())
         {
-            if (isSessionFile (f)) { project->loadSession (f, [] (juce::String) {}); return; }
+            if (isSessionFile (f))
+            {
+                juce::Component::SafePointer<MainComponent> safe (this);
+                confirmDiscard ([safe, f]
+                {
+                    if (safe == nullptr) return;
+                    safe->engine.stop();
+                    safe->engine.setPosition (0);
+                    safe->project->loadSession (f, [safe, f] (juce::String errs)
+                    {
+                        if (safe == nullptr) return;
+                        safe->addRecent (f);
+                        safe->timeline->zoomToFit();
+                        if (errs.isNotEmpty()) safe->showError (errs);
+                    });
+                });
+                return;
+            }
             if (video::isVideoFile (f)) { loadVideo (f); continue; }
             if (adr::isCueFile (f)) { importAdrFile (f); continue; }
             files.add (f);

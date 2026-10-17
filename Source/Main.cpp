@@ -109,7 +109,7 @@ private:
     }
 
     std::function<void (int)> finishCb;
-    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject, dopProject, packProject, unpacked, other;
+    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject, dopProject, packProject, unpacked, other, probeProject;
     juce::AudioBuffer<float> before;
     int dupsDummy = 0;
 
@@ -270,7 +270,7 @@ private:
                 expect (rt.volAuto.size() == 2 && rt.volAuto[1].pos == 96000 && std::abs (rt.volAuto[1].db + 3.0f) < 1.0e-4f && rt.live->autoMode.load() == 1,
                         "automazione: salvata e ricaricata con la sessione");
             }
-            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); });
+            stepStretch ([this] { stepPlugin ([this] { stepReliability ([this] { stepTakeImport ([this] { stepJoin ([this] { stepDialogueGate(); stepEditAids(); stepTakeChoice(); stepRangeTools(); stepLockHide(); stepPlayEnd(); stepFreeze ([this] { stepVersionsTools ([this] { stepPackage ([this] { stepLoadProbe ([this] { stepVideoPlayProbe ([this] { stepRecording(); }); }); }); }); }); }); }); }); }); });
         });
     }
 
@@ -1427,6 +1427,22 @@ private:
     }
 
     // sessioni affidabili: media mancanti non distruttivi, ricollegamento, versioni, controllo, flusso
+    // diagnostica (facoltativa): ADR_TEST_SESSION="file.adb" apre la sessione e stampa cosa contiene
+    void stepLoadProbe (std::function<void()> next)
+    {
+        const char* env = std::getenv ("ADR_TEST_SESSION");
+        if (env == nullptr) { next(); return; }
+        probeProject = std::make_unique<fc::Project> (formats, 48000.0);
+        probeProject->loadSession (juce::File (env), [this, next] (juce::String errs)
+        {
+            const auto& s = probeProject->getSession();
+            int clips = 0;
+            for (auto& t : s.tracks) clips += (int) t.clips.size();
+            std::cout << "     sessione: " << (int) s.tracks.size() << " tracce, " << clips << " clip, " << (int) s.cues.size() << " cue, video " << (s.video != nullptr ? "si" : "no") << ", errori: [" << errs.replace ("\n", " | ") << "]" << std::endl;
+            next();
+        });
+    }
+
     // diagnostica (facoltativa): ADR_TEST_VIDEO_PLAY="file.mp4" simula la riproduzione per 6 s e conta i riposizionamenti del video
     struct VideoPlayProbe : public juce::Timer
     {
@@ -3575,7 +3591,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.19.0"; }
+    const juce::String getApplicationVersion() override { return "2.19.1"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
