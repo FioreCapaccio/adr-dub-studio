@@ -148,6 +148,12 @@ juce::String machineId()
     return id;
 }
 
+juce::String buyUrl()
+{
+    return "https://adr-suite.com/buy.html?tier=dubstudio&lang=" + (settings().getValue ("language", "it") == "en" ? juce::String ("en") : juce::String ("it"))
+           + "&machineId=" + machineId();
+}
+
 juce::String canonicalPayload (const juce::var& p)
 {
     juce::String r = "{";

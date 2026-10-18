@@ -38,6 +38,9 @@ struct Status
     juce::String issuedTo, expiresAt, code, reason;
 };
 
+/** Pagina di acquisto (49 euro, pagamento facoltativo) con il Machine ID gia' inserito. */
+juce::String buyUrl();
+
 /** ID di questa macchina: SHA-256 dell'identificatore hardware (IOPlatformUUID su macOS, MachineGuid su Windows), primi 32 esadecimali maiuscoli. */
 juce::String machineId();
 

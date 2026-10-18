@@ -31,7 +31,8 @@ private:
     juce::Label title, status, idLabel, msg;
     juce::TextEditor idBox;
     juce::TextButton copyBtn { TRANS ("Copia") }, importBtn { TRANS ("Importa licenza (.lic)...") }, pasteBtn { TRANS ("Incolla la chiave") },
-                     termsBtn { TRANS ("Condizioni d'uso...") }, quitBtn { TRANS ("Esci") }, continueBtn { TRANS ("Continua") };
+                     termsBtn { TRANS ("Condizioni d'uso...") }, quitBtn { TRANS ("Esci") }, continueBtn { TRANS ("Continua") },
+                     buyBtn { TRANS ("Acquista la licenza (49 euro)...") };
     std::shared_ptr<juce::FileChooser> chooser;
 };
 

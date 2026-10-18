@@ -30,6 +30,8 @@ LicensePanel::LicensePanel (bool lockedIn, std::function<void()> onChanged, std:
     for (juce::Component* c : std::initializer_list<juce::Component*> { &title, &status, &msg, &idLabel, &idBox, &copyBtn, &importBtn, &pasteBtn, &termsBtn })
         addAndMakeVisible (c);
     continueBtn.onClick = [this] { proceeded = true; if (proceed) proceed(); };
+    buyBtn.onClick = [] { juce::URL (buyUrl()).launchInDefaultBrowser(); };
+    addAndMakeVisible (buyBtn);
     if (locked && kHardLock) addAndMakeVisible (quitBtn);
     if (locked && ! kHardLock)
     {
@@ -39,7 +41,7 @@ LicensePanel::LicensePanel (bool lockedIn, std::function<void()> onChanged, std:
         continueBtn.setButtonText (TRANS ("Continua") + " (" + juce::String (waiting) + ")");
         startTimer (1000);
     }
-    setSize (560, 330);   // lo stato puo' andare su due righe
+    setSize (560, 390);   // lo stato puo' andare su due righe
     refresh();
 }
 
@@ -54,9 +56,11 @@ void LicensePanel::refresh()
     const auto s = current();
     status.setText (describe (s), juce::dontSendNotification);
     status.setColour (juce::Label::textColourId, allowed (s) ? theme::green : theme::accent);
-    msg.setText (locked && ! kHardLock ? TRANS ("Il programma continua a funzionare con tutte le funzioni. Se ti e' utile, acquista una licenza: invia il Machine ID per riceverla, poi importa il file .lic.")
+    buyBtn.setVisible (s.state != State::Licensed);   // con la licenza attiva non serve
+    resized();
+    msg.setText (locked && ! kHardLock ? TRANS ("Il programma continua a funzionare con tutte le funzioni: la licenza e' facoltativa. Se ti e' utile, acquistala (49 euro, una tantum) e importa il file .lic che ricevi per email.")
               : locked ? TRANS ("Per continuare serve una licenza. Invia il Machine ID per riceverla, poi importa il file .lic. Le sessioni gia' salvate restano al sicuro: non vengono toccate.")
-                        : TRANS ("Per attivare il programma importa il file .lic ricevuto: e' valido solo su questo computer."),
+                        : TRANS ("La licenza e' facoltativa. Per attivarla importa il file .lic ricevuto per email: e' valido solo su questo computer."),
                 juce::dontSendNotification);
 }
 
@@ -72,7 +76,8 @@ void LicensePanel::resized()
     copyBtn.setBounds (row.removeFromRight (80));
     row.removeFromRight (6);
     idBox.setBounds (row);
-    r.removeFromTop (16);
+    r.removeFromTop (14);
+    if (buyBtn.isVisible()) { buyBtn.setBounds (r.removeFromTop (34)); r.removeFromTop (10); }
     auto b1 = r.removeFromTop (30);
     importBtn.setBounds (b1.removeFromLeft (230));
     b1.removeFromLeft (8);
