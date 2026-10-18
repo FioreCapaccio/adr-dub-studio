@@ -58,7 +58,8 @@ jobs:
           New-Item -ItemType Directory -Path pkg | Out-Null
           Copy-Item "build/ArotronStudio_artefacts/Release/ADR Dub Studio.exe" pkg/
           Copy-Item (Join-Path $bin "ffmpeg.exe"), (Join-Path $bin "ffprobe.exe") pkg/
-          Copy-Item LICENSE pkg/
+          # condizioni d'uso al posto della licenza open source (UTF-8 con BOM, cosi' Inno Setup legge bene gli accenti)
+          foreach ($l in 'it','en') { [IO.File]::WriteAllText("pkg/EULA_$l.txt", (Get-Content -Raw -Encoding utf8 "Resources/eula/eula_$l.txt"), (New-Object Text.UTF8Encoding $true)) }
           Set-Content -Path pkg/FFMPEG.txt -Value "ffmpeg.exe e ffprobe.exe sono FFmpeg (https://ffmpeg.org), build LGPL di https://github.com/BtbN/FFmpeg-Builds , usati per leggere e esportare i video."
           Compress-Archive -Path pkg/* -DestinationPath ADR-Dub-Studio-${{ env.APP_VERSION }}-Windows-x64-portable.zip
       - name: Build the installer (Inno Setup)

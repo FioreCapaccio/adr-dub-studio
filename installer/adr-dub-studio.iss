@@ -1,5 +1,5 @@
 ; Installer di ADR Dub Studio per Windows (Inno Setup 6). Si compila da CI: iscc /DMyAppVersion=1.0.0 installer\adr-dub-studio.iss
-; La cartella "pkg" (accanto a "installer") contiene ADR Dub Studio.exe, ffmpeg.exe, ffprobe.exe, LICENSE, FFMPEG.txt.
+; La cartella "pkg" (accanto a "installer") contiene ADR Dub Studio.exe, ffmpeg.exe, ffprobe.exe, EULA_it.txt, EULA_en.txt, FFMPEG.txt.
 #ifndef MyAppVersion
   #define MyAppVersion "2.23.0"
 #endif
@@ -17,7 +17,6 @@ AppSupportURL=https://github.com/FioreCapaccio/adr-dub-studio/issues
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-LicenseFile=..\pkg\LICENSE
 OutputDir=..\installer_out
 OutputBaseFilename=ADR-Dub-Studio-{#MyAppVersion}-Windows-x64-Setup
 Compression=lzma2/max
@@ -30,8 +29,8 @@ UninstallDisplayIcon={app}\{#MyAppExe}
 UninstallDisplayName={#MyAppName}
 
 [Languages]
-Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
-Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"; LicenseFile: "..\pkg\EULA_it.txt"
+Name: "english"; MessagesFile: "compiler:Default.isl"; LicenseFile: "..\pkg\EULA_en.txt"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
