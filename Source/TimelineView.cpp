@@ -2978,6 +2978,7 @@ void TimelineView::showTrackMenu (int trackId)
             m.addSubMenu (TRANS ("Versioni della traccia"), vers);
         }
         m.addItem (16, TRANS ("Mostra le corsie dei take (Lanes)"), true, project.findTrack (trackId) != nullptr && project.findTrack (trackId)->showLanes);
+        m.addItem (17, TRANS ("Livella il volume (automazione)..."));
         m.addItem (15, project.findTrack (trackId) != nullptr && project.findTrack (trackId)->frozen != nullptr ? TRANS ("Scongela la traccia (Unfreeze)") : TRANS ("Congela la traccia (Freeze: rende EQ, compressore e plug-in)"));
         {
             juce::PopupMenu groups;
@@ -3028,6 +3029,7 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 494) p.lanesFromVersions (trackId);
         else if (r == 495) p.versionsFromLanes (trackId);
         else if (r == 16) { const auto* tr = p.findTrack (trackId); p.setTracksLanes (targets, tr != nullptr && ! tr->showLanes); safe->updateScrollBars(); safe->repaint(); }
+        else if (r == 17 && safe->onLevelRequest) safe->onLevelRequest (targets);
         else if (r == 15 && safe->onFreezeRequest) safe->onFreezeRequest (targets);
         else if (r == 399) p.setTracksGroup (targets, 0);
         else if (r == 398) safe->newGroupDialog (targets);

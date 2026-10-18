@@ -266,6 +266,7 @@ MainComponent::MainComponent()
     timeline->onSilenceRequest = [this] { silenceDialog(); };
     timeline->onSeparateRequest = [this] { separateStemsDialog(); };
     timeline->onCrossfadeRequest = [this] { crossfadeDialog(); };
+    timeline->onLevelRequest = [this] (const std::vector<int>& ids) { levelTrackDialog (ids); };
     timeline->onFreezeRequest = [this] (const std::vector<int>& ids) { freezeTracks (ids); };
     timeline->onStretchCommit = [this] (int64_t id, double ratio, int64_t newStart)
     {
@@ -1541,7 +1542,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems });
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1679,6 +1680,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdSyncClear:     i.setInfo (TRANS ("Punto di sincronia: togli"), "", TRANS ("Modifica"), 0); i.setActive (singleSelectedClip() != 0); break;
         case cmdSyncToCue:     i.setInfo (TRANS ("Punto di sincronia: porta sul cue (o sulla testina)"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('s', juce::ModifierKeys::altModifier | juce::ModifierKeys::shiftModifier); i.setActive (singleSelectedClip() != 0); break;
         case cmdAutoDuck:      i.setInfo (TRANS ("Ducking automatico del fondo sotto i dialoghi..."), "", TRANS ("Traccia"), 0); break;
+        case cmdLevelTrack:    i.setInfo (TRANS ("Livella il volume della traccia (automazione)..."), "", TRANS ("Traccia"), 0); break;
         case cmdDetectCuts:    i.setInfo (TRANS ("Rileva i tagli del video (marker)..."), "", TRANS ("Marker"), 0); i.setActive (project->getSession().video != nullptr); break;
         case cmdAdrCueSheet:   i.setInfo (TRANS ("Foglio cue e copione per personaggio (stampabile)..."), "", TRANS ("ADR"), 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdSessionSettings: i.setInfo (TRANS ("Impostazioni sessione: timecode e ADR..."), "", TRANS ("File"), 0); break;
@@ -1965,6 +1967,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdScriptReader:  toggleScriptWindow(); break;
         case cmdCueMix:        toggleCueWindow(); break;
         case cmdAutoDuck:      autoDuckDialog(); break;
+        case cmdLevelTrack:    levelTrackDialog(); break;
         case cmdDetectCuts:    detectVideoCuts(); break;
         case cmdRulerTc:       project->rulerTimecode = ! project->rulerTimecode; project->markDirty(); timeline->repaint(); break;
         case cmdShortcuts:     showShortcuts(); break;
@@ -2178,7 +2181,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
         case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, cmdSeparateStems, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2:
-            add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdRefTrack, cmdRefAB, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck });
+            add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdRefTrack, cmdRefAB, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck, cmdLevelTrack });
             m.addSeparator();
             m.addSubMenu (TRANS ("Snapshot del mixer"), buildSnapshotMenu());
             m.addSubMenu (TRANS ("Preset di traccia"), buildPresetMenu());
@@ -3816,6 +3819,61 @@ void MainComponent::autoDuckDialog()
         juce::AlertWindow::showMessageBoxAsync (n > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Ducking automatico"),
             n > 0 ? TRANS ("Automazione del volume scritta su ") + juce::String (n) + (n == 1 ? TRANS (" traccia") : TRANS (" tracce")) + TRANS (".\nLe tracce sono in modalita' lettura: la curva si vede e si modifica nella corsia VOL.\n\nPer togliere tutto: Modifica > Annulla.")
                   : TRANS ("Non ho trovato parlato sopra la soglia, oppure non ci sono tracce M&E / Effetti (o una traccia selezionata) su cui scrivere."));
+    }), true);
+}
+
+void MainComponent::levelTrackDialog (std::vector<int> wanted)
+{
+    if (levelJob != nullptr) return;
+    if (wanted.empty()) wanted = project->selectedTracks();
+    std::vector<int> ids;
+    for (int id : wanted)
+        if (auto* t = project->findTrack (id); t != nullptr && ! t->clips.empty()) ids.push_back (id);
+    if (ids.empty()) { showError (TRANS ("Seleziona una o piu' tracce con dei clip da livellare.")); return; }
+
+    auto* aw = new juce::AlertWindow (TRANS ("Livella il volume della traccia"),
+        TRANS ("Analizza il loudness e scrive un'automazione del volume che rende uniforme il livello percepito (annullabile). Le pause non vengono alzate."), juce::MessageBoxIconType::NoIcon);
+    aw->addComboBox ("target", { TRANS ("Automatico (livello mediano del parlato)"), "-16 LUFS", "-20 LUFS", "-23 LUFS (EBU R128)", "-24 LUFS", "-27 LUFS (dialoghi Netflix)" }, TRANS ("Obiettivo"));
+    aw->addTextEditor ("boost", "9", TRANS ("Massimo aumento (dB)"));
+    aw->addTextEditor ("cut", "9", TRANS ("Massima riduzione (dB)"));
+    aw->addComboBox ("react", { TRANS ("Lenta"), TRANS ("Media"), TRANS ("Rapida") }, TRANS ("Velocita' di reazione"));
+    if (auto* c = aw->getComboBoxComponent ("react")) c->setSelectedItemIndex (1, juce::dontSendNotification);
+    aw->addButton (TRANS ("Livella"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, ids] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        auto num = [aw] (const char* n) { return aw->getTextEditorContents (n).replaceCharacter (',', '.').getDoubleValue(); };
+        level::Request rq;
+        rq.snapshot = safe->project->getSession().cloneDetached();
+        rq.trackIds = ids;
+        rq.rate = safe->project->getSampleRate();
+        rq.totalSamples = safe->project->getSession().endSample() + (int64_t) (0.5 * rq.rate);
+        const int ti = aw->getComboBoxComponent ("target") != nullptr ? aw->getComboBoxComponent ("target")->getSelectedItemIndex() : 0;
+        static const double targets[] = { 0.0, -16.0, -20.0, -23.0, -24.0, -27.0 };
+        rq.settings.autoTarget = ti <= 0;
+        rq.settings.targetLufs = targets[juce::jlimit (0, 5, ti)];
+        rq.settings.maxBoostDb = juce::jlimit (0.0, 24.0, std::abs (num ("boost")));
+        rq.settings.maxCutDb = juce::jlimit (0.0, 24.0, std::abs (num ("cut")));
+        rq.settings.reaction = aw->getComboBoxComponent ("react") != nullptr ? aw->getComboBoxComponent ("react")->getSelectedItemIndex() : 1;
+        if (safe->project->exportOut > safe->project->exportIn && safe->project->exportIn >= 0) { rq.from = safe->project->exportIn; rq.to = safe->project->exportOut; }
+        const int64_t from = rq.from, to = rq.to;
+        safe->levelJob = std::make_unique<level::Job> (std::move (rq), [safe, from, to] (level::Outcome o)
+        {
+            juce::MessageManager::callAsync ([safe, o, from, to]
+            {
+                if (safe == nullptr) return;
+                safe->levelJob.reset();
+                if (! o.ok) { if (! o.cancelled) safe->showError (o.message); return; }
+                if (o.curves.empty()) { safe->showError (o.message); return; }
+                int clamped = 0;
+                level::apply (*safe->project, o.curves, from, to, &clamped);
+                safe->timeline->repaint();
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Livello del volume"), level::summary (o.curves, clamped));
+            });
+        });
+        safe->levelJob->launchThread();
     }), true);
 }
 

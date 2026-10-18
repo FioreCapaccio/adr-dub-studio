@@ -1,0 +1,100 @@
+#pragma once
+
+#include "Model.h"
+#include <array>
+
+/** Livellatore automatico del volume: analizza una traccia e scrive sul suo volume un'automazione che rende uniforme il livello percepito
+    (come un "vocal rider"). Il loudness e' quello BS.1770 (K-weighting) a finestre di 400 ms con passo di 100 ms. */
+namespace fc::level
+{
+struct Settings
+{
+    bool autoTarget = true;        // obiettivo = livello mediano del parlato della traccia
+    double targetLufs = -23.0;     // altrimenti questo
+    double maxBoostDb = 9.0;       // massimo aumento
+    double maxCutDb = 9.0;         // massima riduzione
+    int reaction = 1;              // 0 lenta, 1 media, 2 rapida
+    double gateAbsLufs = -50.0;    // sotto questo livello e' pausa: il guadagno resta fermo
+    double gateRelLu = 20.0;       // e cosi' sotto (mediana del parlato - questo)
+    double peakCeilingDb = -1.0;   // l'aumento non porta i picchi oltre questo livello
+    double deadbandDb = 0.7;       // differenze piu' piccole non muovono il guadagno
+    double toleranceDb = 0.4;      // semplificazione della curva
+};
+
+inline constexpr double kHopSec = 0.1;     // passo
+inline constexpr int kSubPerWindow = 4;    // 4 x 100 ms = finestra di 400 ms
+
+/** Energia K-weighted (media dei canali sommati) e picco di ogni blocco di 100 ms: si alimenta a blocchi, anche da un file. */
+class Analyser
+{
+public:
+    explicit Analyser (double sampleRate);
+    void process (const float* l, const float* r, int n);
+    void finish();
+    const std::vector<double>& energy() const { return e; }       // media dei quadrati K-weighted, canali sommati
+    const std::vector<float>& peak() const { return pk; }         // picco lineare del blocco
+
+private:
+    int subLen;
+    int count = 0;
+    double acc = 0.0;
+    float blockPeak = 0.0f;
+    struct Filt { double b0, b1, b2, a1, a2, z1 = 0, z2 = 0; };
+    std::array<std::array<Filt, 2>, 2> filt;   // [canale][shelf, passa-alto]
+    std::vector<double> e;
+    std::vector<float> pk;
+};
+
+/** Livello a finestre (LUFS) e picco (dBFS) dei frame di 100 ms, dalla finestra di 400 ms centrata sul frame. */
+struct Frames
+{
+    std::vector<float> lufs, peakDb;
+};
+Frames framesFrom (const Analyser&);
+
+struct Plan
+{
+    std::vector<float> gainDb;        // guadagno per frame (liscio, con attacco e rilascio)
+    double speechMedian = -100.0;     // livello mediano del parlato (LUFS)
+    double targetUsed = -23.0;
+    double spreadBefore = 0.0, spreadAfter = 0.0;   // deviazione standard del livello dei frame con parlato (dB)
+    int activeFrames = 0;
+};
+Plan planGains (const Frames&, const Settings&);
+
+/** Curva semplificata: posizione in campioni e guadagno in dB. */
+std::vector<std::pair<int64_t, float>> curveFrom (const Plan&, double rate, const Settings&);
+
+/** Curva di una traccia, pronta per essere scritta. */
+struct TrackCurve
+{
+    int trackId = 0;
+    std::vector<std::pair<int64_t, float>> points;
+    Plan plan;
+    juce::String trackName;
+};
+
+struct Request
+{
+    Session snapshot;                // copia staccata della sessione
+    std::vector<int> trackIds;
+    double rate = 48000.0;
+    int64_t totalSamples = 0;
+    Settings settings;
+    int64_t from = -1, to = -1;      // intervallo (campioni); -1 = tutta la traccia
+};
+
+struct Outcome
+{
+    bool ok = false, cancelled = false;
+    juce::String message;
+    std::vector<TrackCurve> curves;
+};
+
+/** Il lavoro (render della traccia dalla sua catena, analisi, curva). setProgress ritorna false per annullare. */
+Outcome process (const Request&, const std::function<bool (double)>& setProgress, const std::function<void (const juce::String&)>& setStatus);
+
+/** Scrive le curve sul volume delle tracce (attorno al livello del fader), sostituendo i punti nell'intervallo. Un solo passo di undo.
+    Ritorna il numero di punti limitati dal massimo della corsia (+6 dB) in 'clamped'. */
+int apply (Project&, const std::vector<TrackCurve>&, int64_t from, int64_t to, int* clamped = nullptr);
+} // namespace fc::level

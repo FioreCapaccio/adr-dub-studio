@@ -2,6 +2,7 @@
 
 #include "License.h"
 #include "StemSeparatorUi.h"
+#include "LevelerUi.h"
 
 #include "AdrPanel.h"
 #include "InfoLine.h"
@@ -217,6 +218,8 @@ private:
     bool nagDone = false;   // la schermata di avvio senza licenza si mostra una volta per avvio
     std::unique_ptr<juce::DocumentWindow> manualWindow;
     void separateStemsDialog();
+    void levelTrackDialog (std::vector<int> ids = {});
+    std::unique_ptr<level::Job> levelJob;
     std::unique_ptr<stems::Job> stemJob;
     juce::String manualLang;
 public:

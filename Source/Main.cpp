@@ -28,6 +28,7 @@
 #include "Lang.h"
 #include "License.h"
 #include "StemEngine.h"
+#include "Leveler.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
 class DelayTestProcessor : public juce::AudioProcessor
@@ -133,6 +134,7 @@ private:
         stepLang();
         stepLicense();
         stepStems();
+        stepLeveler();
         stepTrackFolders();
         stepEditing();
         stepPdc();
@@ -3631,6 +3633,107 @@ private:
         }
     }
 
+    // Livellatore del volume: toni a -30/-20/-12 dB con pause
+    void stepLeveler()
+    {
+        namespace lv = fc::level;
+        namespace dub = fc::dub;
+        const double sr = 48000.0;
+        fc::Project p (formats, sr);
+        dub::applyTemplate (p, dub::templates()[0]);
+        auto& tr = p.edit().tracks;
+        auto& T = tr[3];
+        T.live->eq.enabled = false; T.live->comp.enabled = false; T.live->limiterOn = false; T.live->volumeDb = 0.0f;
+        p.edit().master->limiterOn = false;
+        auto as = std::make_shared<fc::Asset>(); as->name = "lv";
+        const int total = 15 * (int) sr;
+        as->audio.setSize (2, total);
+        as->audio.clear();
+        const struct { double a, b; float amp; } bursts[] = { { 0.5, 3.5, 0.1f }, { 4.5, 7.5, 0.05f }, { 8.5, 11.5, 0.2f }, { 12.0, 14.0, 0.1f } };
+        for (auto& bu : bursts)
+            for (int i = (int) (bu.a * sr); i < (int) (bu.b * sr); ++i)
+            {
+                const float v = bu.amp * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 1000.0 * i / sr);
+                as->audio.setSample (0, i, v); as->audio.setSample (1, i, v);
+            }
+        as->buildPeaks();
+        fc::Clip c; c.id = 7001; c.asset = as; c.start = 0; c.length = total;
+        T.clips = { c };
+
+        lv::Request rq;
+        rq.snapshot = p.getSession().cloneDetached();
+        rq.trackIds = { T.id };
+        rq.rate = sr; rq.totalSamples = total;
+        const auto out = lv::process (rq, [] (double) { return true; }, [] (const juce::String&) {});
+        expect (out.ok && out.curves.size() == 1, "livellatore: curva calcolata " + out.message);
+        if (! (out.ok && out.curves.size() == 1)) return;
+        const auto& cv = out.curves[0];
+        expect (cv.plan.spreadBefore > 3.0 && cv.plan.spreadAfter < 1.5, "livellatore: variazione di livello da " + juce::String (cv.plan.spreadBefore, 1) + " a " + juce::String (cv.plan.spreadAfter, 1) + " dB");
+        float lo = 99.0f, hi = -99.0f;
+        for (auto& pt : cv.points) { lo = juce::jmin (lo, pt.second); hi = juce::jmax (hi, pt.second); }
+        expect (lo >= -9.01f && hi <= 9.01f, "livellatore: guadagno entro +/-9 dB (" + juce::String (lo, 1) + " .. " + juce::String (hi, 1) + ")");
+        expect ((int) cv.points.size() <= 45 && cv.points.size() >= 4, "livellatore: pochi punti, modificabili (" + juce::String ((int) cv.points.size()) + " in 15 s)");
+        float pmin = 99.0f, pmax = -99.0f;
+        for (int f = 143; f <= 149 && f < (int) cv.plan.gainDb.size(); ++f) { pmin = juce::jmin (pmin, cv.plan.gainDb[(size_t) f]); pmax = juce::jmax (pmax, cv.plan.gainDb[(size_t) f]); }
+        expect (pmax - pmin < 0.5f, "livellatore: nelle pause il guadagno resta fermo (" + juce::String (pmax - pmin, 2) + " dB)");
+
+        // applicazione: valori scritti = curva, un solo undo, punti fuori dall'intervallo conservati
+        fc::AutoPoint keepA, keepB;
+        keepA.id = p.nextAutoPointId(); keepA.pos = (int64_t) (1.0 * sr); keepA.db = -3.0f;
+        keepB.id = p.nextAutoPointId(); keepB.pos = (int64_t) (13.0 * sr); keepB.db = -4.0f;
+        T.volAuto = { keepA, keepB };
+        int clamped = 0;
+        p.edit().tracks[3].live->volumeDb = -6.0f;
+        lv::apply (p, out.curves, -1, -1, &clamped);
+        auto& lane = p.getSession().tracks[3].volAuto;
+        float worst = 0.0f;
+        for (auto& pt : cv.points) worst = juce::jmax (worst, std::abs (fc::evalAutomationDb (lane, pt.first) - (pt.second - 6.0f)));
+        expect (worst < 0.3f && clamped == 0 && p.getSession().tracks[3].live->autoMode.load() == 1, "livellatore: l'automazione scritta coincide con la curva (" + juce::String (worst, 2) + " dB), in lettura");
+        p.undo();
+        expect (p.getSession().tracks[3].volAuto.size() == 2 && p.getSession().tracks[3].volAuto[0].pos == keepA.pos, "livellatore: un solo passo di undo ripristina i punti di prima");
+
+        // intervallo 5..10 s: restano i punti a 1 s e 13 s
+        lv::apply (p, out.curves, (int64_t) (5.0 * sr), (int64_t) (10.0 * sr), nullptr);
+        bool a1 = false, a13 = false;
+        for (auto& pt : p.getSession().tracks[3].volAuto) { a1 = a1 || pt.pos == keepA.pos; a13 = a13 || pt.pos == keepB.pos; }
+        expect (a1 && a13, "livellatore: i punti fuori dall'intervallo restano");
+        p.undo();
+
+        // fader a +5 dB: l'aumento supera il massimo della corsia (+6 dB) e viene segnalato
+        p.edit().tracks[3].live->volumeDb = 5.0f;
+        T.volAuto.clear();
+        lv::apply (p, out.curves, -1, -1, &clamped);
+        expect (clamped > 0, "livellatore: punti oltre +6 dB segnalati (" + juce::String (clamped) + ")");
+        p.undo();
+        p.edit().tracks[3].live->volumeDb = -6.0f;
+
+        // percorso completo: esporto il mix con l'automazione e misuro il livello a finestre
+        lv::apply (p, out.curves, -1, -1, nullptr);
+        const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_livella.wav");
+        fc::ExportOptions o; o.bitDepth = 24;
+        const auto r = fc::exportSession (p.getSession(), sr, o, f, "prova", [] (double) { return true; });
+        expect (r.ok && f.existsAsFile(), "livellatore: mix esportato con l'automazione " + r.message);
+        if (f.existsAsFile())
+        {
+            juce::WavAudioFormat wf;
+            std::unique_ptr<juce::AudioFormatReader> rd (wf.createReaderFor (f.createInputStream().release(), true));
+            if (rd != nullptr)
+            {
+                juce::AudioBuffer<float> b ((int) rd->numChannels, (int) rd->lengthInSamples);
+                rd->read (&b, 0, (int) rd->lengthInSamples, 0, true, true);
+                lv::Analyser an (rd->sampleRate);
+                an.process (b.getReadPointer (0), b.getReadPointer (juce::jmin (1, b.getNumChannels() - 1)), b.getNumSamples());
+                an.finish();
+                auto fr = lv::framesFrom (an);
+                double sum = 0, sq = 0; int n = 0;
+                for (float l : fr.lufs) if (l > -40.0f) { sum += l; sq += (double) l * l; ++n; }
+                const double mean = n ? sum / n : 0.0, sd = n ? std::sqrt (std::max (0.0, sq / n - mean * mean)) : 99.0;
+                expect (n > 0 && sd < 2.5, "livellatore: dopo la mix la variazione e' " + juce::String (sd, 2) + " dB (era " + juce::String (cv.plan.spreadBefore, 1) + ")");
+            }
+        }
+        f.deleteFile();
+    }
+
     // consegna: pacchetto MIX + stem per ruolo + rapporto, esclusione della Guida
     void stepDelivery()
     {
@@ -4319,7 +4422,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.26.0"; }
+    const juce::String getApplicationVersion() override { return "2.27.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
