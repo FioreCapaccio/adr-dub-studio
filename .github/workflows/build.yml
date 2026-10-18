@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  APP_VERSION: "2.25.0"
+  APP_VERSION: "2.25.1"
 
 jobs:
   macos-universal:
@@ -58,6 +58,9 @@ jobs:
           New-Item -ItemType Directory -Path pkg | Out-Null
           Copy-Item "build/ArotronStudio_artefacts/Release/ADR Dub Studio.exe" pkg/
           Copy-Item (Join-Path $bin "ffmpeg.exe"), (Join-Path $bin "ffprobe.exe") pkg/
+          Copy-Item Resources/legal/THIRD_PARTY_LICENSES.txt pkg/
+          $ffl = Join-Path (Split-Path $bin -Parent) "LICENSE.txt"
+          if (Test-Path $ffl) { Copy-Item $ffl (Join-Path pkg "FFMPEG-LICENSE.txt") } else { Write-Warning "LICENSE.txt di FFmpeg non trovato" }
           # condizioni d'uso al posto della licenza open source (UTF-8 con BOM, cosi' Inno Setup legge bene gli accenti)
           foreach ($l in 'it','en') { [IO.File]::WriteAllText("pkg/EULA_$l.txt", (Get-Content -Raw -Encoding utf8 "Resources/eula/eula_$l.txt"), (New-Object Text.UTF8Encoding $true)) }
           Set-Content -Path pkg/FFMPEG.txt -Value "ffmpeg.exe e ffprobe.exe sono FFmpeg (https://ffmpeg.org), build LGPL di https://github.com/BtbN/FFmpeg-Builds , usati per leggere e esportare i video."

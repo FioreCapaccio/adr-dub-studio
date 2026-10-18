@@ -1402,3 +1402,5 @@ language: English
 "Il programma continua a funzionare con tutte le funzioni: la licenza e' facoltativa. Se ti e' utile, acquistala (49 euro, una tantum) e importa il file .lic che ricevi per email." = "The program keeps working with all its features: the license is optional. If you find it useful, buy it (49 euros, one-time) and import the .lic file you receive by email."
 "La licenza e' facoltativa. Per attivarla importa il file .lic ricevuto per email: e' valido solo su questo computer." = "The license is optional. To activate it, import the .lic file you received by email: it is valid only on this computer."
 "Acquista la licenza (49 euro)..." = "Buy the license (€49)..."
+"Licenze di terze parti..." = "Third-party licenses..."
+"Licenze di terze parti" = "Third-party licenses"

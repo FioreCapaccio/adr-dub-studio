@@ -1539,7 +1539,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula });
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1651,6 +1651,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdWorkflow:      i.setInfo (TRANS ("Flusso di lavoro del doppiaggio"), "", TRANS ("Aiuto"), 0); break;
         case cmdLicense:       i.setInfo (TRANS ("Licenza...") + " (" + license::shortLabel (licenseStatus) + ")", "", TRANS ("Aiuto"), 0); break;
         case cmdEula:          i.setInfo (TRANS ("Condizioni d'uso..."), "", TRANS ("Aiuto"), 0); break;
+        case cmdThirdParty:    i.setInfo (TRANS ("Licenze di terze parti..."), "", TRANS ("Aiuto"), 0); break;
         case cmdScriptReader:  i.setInfo (TRANS ("Lettore copione per l'attore"), "", TRANS ("ADR"), 0); i.setTicked (scriptWindow != nullptr); break;
         case cmdCueMix:        i.setInfo (TRANS ("Cuffie dell'attore e talkback..."), "", TRANS ("ADR"), 0); i.setTicked (cueWindow != nullptr); break;
         case cmdAlignToGuide:  i.setInfo (TRANS ("Allinea alla guida (sincronia automatica)..."), "", TRANS ("Modifica"), 0); break;
@@ -1939,6 +1940,23 @@ bool MainComponent::perform (const InvocationInfo& info)
         }
         case cmdLicense:       showLicenseDialog (false); break;
         case cmdEula:          showEulaDialog (false); break;
+        case cmdThirdParty:
+        {
+            auto win = std::make_shared<juce::Component::SafePointer<juce::DialogWindow>>();
+            auto* panel = new license::EulaPanel (false, [win] (bool)
+                { juce::MessageManager::callAsync ([win] { if (*win != nullptr) (*win)->exitModalState (0); }); }, license::thirdPartyText());
+            panel->setSize (760, 560);
+            juce::DialogWindow::LaunchOptions lo;
+            lo.content.setOwned (panel);
+            lo.dialogTitle = TRANS ("Licenze di terze parti");
+            lo.dialogBackgroundColour = theme::panel;
+            lo.componentToCentreAround = this;
+            lo.escapeKeyTriggersCloseButton = true;
+            lo.useNativeTitleBar = true;
+            lo.resizable = true;
+            *win = lo.launchAsync();
+            break;
+        }
         case cmdWorkflow:      workflowDialog(); break;
         case cmdScriptReader:  toggleScriptWindow(); break;
         case cmdCueMix:        toggleCueWindow(); break;
@@ -2175,7 +2193,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc }); break;
         case 8:
         {
-            add ({ cmdManual, cmdManualOther, 0, cmdWorkflow, cmdShortcuts, cmdKeyEditor, 0, cmdLicense, cmdEula });
+            add ({ cmdManual, cmdManualOther, 0, cmdWorkflow, cmdShortcuts, cmdKeyEditor, 0, cmdLicense, cmdEula, cmdThirdParty });
             m.addSeparator();
             juce::PopupMenu langs;
             langActions.clear();

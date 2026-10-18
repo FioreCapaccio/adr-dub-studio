@@ -40,7 +40,8 @@ private:
 class EulaPanel : public juce::Component
 {
 public:
-    EulaPanel (bool askToAccept, std::function<void (bool)> onAnswer);
+    /** body vuoto = testo delle condizioni d'uso; altrimenti mostra quel testo (usato per le licenze di terze parti). */
+    EulaPanel (bool askToAccept, std::function<void (bool)> onAnswer, const juce::String& body = {});
     void resized() override;
 
 private:

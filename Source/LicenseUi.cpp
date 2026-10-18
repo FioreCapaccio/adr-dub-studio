@@ -124,12 +124,12 @@ void LicensePanel::applyKey (const juce::String& text)
     juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Licenza"), TRANS ("Licenza attivata. Grazie!"));
 }
 
-EulaPanel::EulaPanel (bool askToAccept, std::function<void (bool)> onAnswer) : ask (askToAccept)
+EulaPanel::EulaPanel (bool askToAccept, std::function<void (bool)> onAnswer, const juce::String& body) : ask (askToAccept)
 {
     text.setMultiLine (true, true);
     text.setReadOnly (true);
     text.setFont (theme::font (13.0f));
-    text.setText (eulaText (lang::savedCode()), false);
+    text.setText (body.isNotEmpty() ? body : eulaText (lang::savedCode()), false);
     addAndMakeVisible (text);
     auto answer = std::make_shared<std::function<void (bool)>> (std::move (onAnswer));
     accept.onClick = [answer] { (*answer) (true); };

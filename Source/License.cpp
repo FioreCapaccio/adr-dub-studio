@@ -326,6 +326,11 @@ void acceptEula()
     settings().saveIfNeeded();
 }
 
+juce::String thirdPartyText()
+{
+    return juce::String::fromUTF8 (EulaData::THIRD_PARTY_LICENSES_txt, EulaData::THIRD_PARTY_LICENSES_txtSize);
+}
+
 juce::String eulaText (const juce::String& lang)
 {
     return lang == "en" ? juce::String::fromUTF8 (EulaData::eula_en_txt, EulaData::eula_en_txtSize)

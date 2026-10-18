@@ -1791,6 +1791,7 @@ private:
             const auto sid = juce::JSON::parse (so.toString())["payload"]["machineId"].toString();
             expect (sid == id, "Machine ID uguale a quello di ADR Studio Suite (" + sid + " / " + id + ")");
         }
+        expect (thirdPartyText().contains ("Monocypher") && thirdPartyText().contains ("FLAC") && thirdPartyText().contains ("Independent JPEG Group") && thirdPartyText().length() > 20000, "licenze di terze parti incorporate");
         expect (buyUrl().startsWith ("https://adr-suite.com/buy.html?tier=dubstudio") && buyUrl().endsWith ("machineId=" + id), "indirizzo di acquisto con il Machine ID");
         expect (eulaText ("it").contains ("ADR Dub Studio") && eulaText ("en").contains ("ADR Dub Studio"), "condizioni d'uso incorporate in italiano e inglese");
     }
@@ -4130,7 +4131,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.25.0"; }
+    const juce::String getApplicationVersion() override { return "2.25.1"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

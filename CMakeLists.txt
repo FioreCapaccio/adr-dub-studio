@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ArotronStudio VERSION 2.25.0 LANGUAGES C CXX)
+project(ArotronStudio VERSION 2.25.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,16 +8,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
-# Riusa i sorgenti JUCE gia' scaricati per Voice Cleaner, se ci sono.
-set(_vc_juce "/Volumes/NVME_500/Progetti/VoiceCleaner/build/_deps/juce-src")
-if(EXISTS "${_vc_juce}/CMakeLists.txt" AND NOT DEFINED FETCHCONTENT_SOURCE_DIR_JUCE)
-    set(FETCHCONTENT_SOURCE_DIR_JUCE "${_vc_juce}" CACHE PATH "" FORCE)
-endif()
-
+# Per compilare in locale senza riscaricare JUCE: -DFETCHCONTENT_SOURCE_DIR_JUCE=<cartella con i sorgenti JUCE>
 include(FetchContent)
 FetchContent_Declare(JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG        8.0.9
+    GIT_TAG        8.0.16-security
     GIT_SHALLOW    ON)
 FetchContent_MakeAvailable(JUCE)
 
@@ -29,8 +24,8 @@ endif()
 juce_add_gui_app(ArotronStudio
     ${_adr_wv2}
     PRODUCT_NAME "ADR Dub Studio"
-    VERSION 2.25.0
-    BUNDLE_VERSION 2.25.0
+    VERSION 2.25.1
+    BUNDLE_VERSION 2.25.1
     COMPANY_NAME "Arotron"
     BUNDLE_ID "com.arotron.studio"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png"
@@ -50,7 +45,7 @@ juce_add_binary_data(ArotronManual NAMESPACE ManualData HEADER_NAME ManualData.h
 target_link_libraries(ArotronStudio PRIVATE ArotronManual)
 
 # condizioni d'uso (testo del contratto, italiano e inglese)
-juce_add_binary_data(ArotronEula NAMESPACE EulaData HEADER_NAME EulaData.h SOURCES Resources/eula/eula_it.txt Resources/eula/eula_en.txt)
+juce_add_binary_data(ArotronEula NAMESPACE EulaData HEADER_NAME EulaData.h SOURCES Resources/eula/eula_it.txt Resources/eula/eula_en.txt Resources/legal/THIRD_PARTY_LICENSES.txt)
 target_link_libraries(ArotronStudio PRIVATE ArotronEula)
 
 target_sources(ArotronStudio PRIVATE
@@ -123,7 +118,7 @@ target_compile_definitions(ArotronStudio PRIVATE
     JUCE_PLUGINHOST_AU=0
     JUCE_MODAL_LOOPS_PERMITTED=0
     JUCE_APPLICATION_NAME_STRING="ADR Dub Studio"
-    JUCE_APPLICATION_VERSION_STRING="2.25.0")
+    JUCE_APPLICATION_VERSION_STRING="2.25.1")
 
 if(ADR_FFMPEG_VIDEO)
     target_compile_definitions(ArotronStudio PRIVATE ADR_FFMPEG_VIDEO=1)

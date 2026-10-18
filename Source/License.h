@@ -68,4 +68,5 @@ juce::String shortLabel (const Status&);      // etichetta per il menu
 bool eulaAccepted();
 void acceptEula();
 juce::String eulaText (const juce::String& lang);
+juce::String thirdPartyText();   // avvisi delle licenze dei componenti di terze parti (stesso testo del file THIRD_PARTY_LICENSES.txt)
 } // namespace fc::license
