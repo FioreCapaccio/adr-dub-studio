@@ -27,6 +27,7 @@
 #include "ThemeManager.h"
 #include "Lang.h"
 #include "License.h"
+#include "StemEngine.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
 class DelayTestProcessor : public juce::AudioProcessor
@@ -131,6 +132,7 @@ private:
         stepMtc();
         stepLang();
         stepLicense();
+        stepStems();
         stepTrackFolders();
         stepEditing();
         stepPdc();
@@ -1735,6 +1737,127 @@ private:
     }
 
     // Mix del direttore: somma per traccia con livello proprio
+    // Separazione in stem: trasformata, blocchi con sovrapposizione, maschere che sommano 1, ricampionamento, annullamento (con un "cuore" finto)
+    void stepStems()
+    {
+        using namespace fc::stems;
+        static const struct { int t, b; float re, im; } ref[] = { { 3, 19, -4.304752f, 7.830252f }, { 200, 19, 7.738445f, -4.467758f }, { 200, 20, -2.687564f, 1.551699f },
+                                                                  { 200, 128, -0.000001f, -3.695041f }, { 750, 19, -1.207687f, -0.087556f }, { 750, 128, -1.303517f, -0.532718f } };
+        std::vector<float> x ((size_t) kChunk), spec ((size_t) kBins * kFrames * 2), y ((size_t) kChunk);
+        for (int i = 0; i < kChunk; ++i) x[(size_t) i] = (float) (0.5 * std::sin (2.0 * 3.14159265358979 * 440.0 * i / 48000.0) + 0.2 * std::sin (2.0 * 3.14159265358979 * 3000.0 * i / 48000.0));
+        stftChunk (x.data(), spec.data());
+        float worst = 0.0f;
+        for (auto& r : ref)
+        {
+            const float* p = spec.data() + ((size_t) r.b * kFrames + (size_t) r.t) * 2;
+            worst = juce::jmax (worst, std::abs (p[0] - r.re), std::abs (p[1] - r.im));
+        }
+        expect (worst < 2.0e-3f, "STFT uguale a quella di torchaudio (errore massimo " + juce::String (worst, 6) + ")");
+        istftChunk (spec.data(), y.data());
+        float rt = 0.0f;
+        for (int i = 0; i < kChunk; ++i) rt = juce::jmax (rt, std::abs (y[(size_t) i] - x[(size_t) i]));
+        expect (rt < 1.0e-4f, "STFT e inversa: l'audio ritorna uguale (errore " + juce::String (rt, 7) + ")");
+
+        // cuore finto: tre stime proporzionali 0.8 / 0.5 / 0.3 -> maschere a / somma(a)
+        const float a[3] = { 0.8f, 0.5f, 0.3f };
+        const float sumA = a[0] + a[1] + a[2];
+        CoreFn fake = [&] (const float* s, float* e, juce::String&) -> bool
+        {
+            const size_t n = (size_t) kBins * kFrames * 2;
+            for (int k = 0; k < 3; ++k) for (size_t i = 0; i < n; ++i) e[(size_t) k * n + i] = s[i] * a[k];
+            return true;
+        };
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_stems");
+        dir.deleteRecursively();
+        std::array<juce::File, 3> files { dir.getChildFile ("d.wav"), dir.getChildFile ("m.wav"), dir.getChildFile ("e.wav") };
+        auto readAll = [&] (const juce::File& f, juce::AudioBuffer<float>& b)
+        {
+            juce::WavAudioFormat wf;
+            std::unique_ptr<juce::AudioFormatReader> r (wf.createReaderFor (f.createInputStream().release(), true));
+            if (r == nullptr) return false;
+            b.setSize ((int) r->numChannels, (int) r->lengthInSamples);
+            return r->read (&b, 0, (int) r->lengthInSamples, 0, true, true);
+        };
+        for (int hq = 0; hq < 2; ++hq)
+        {
+            const int n = 20 * 48000 + 1234;
+            std::vector<float> L ((size_t) n), R ((size_t) n);
+            for (int i = 0; i < n; ++i) { L[(size_t) i] = 0.4f * std::sin (0.031f * (float) i); R[(size_t) i] = 0.3f * std::sin (0.017f * (float) i + 1.0f); }
+            const float* ch[2] = { L.data(), R.data() };
+            juce::String err;
+            Options o; o.highQuality = hq == 1;
+            const bool ok = separate (ch, 2, n, 48000.0, o, files, fake, {}, err);
+            expect (ok, juce::String ("separazione con cuore finto (") + (hq ? "alta qualita'" : "veloce") + "): " + err);
+            juce::AudioBuffer<float> b0, b1, b2;
+            if (! (readAll (files[0], b0) && readAll (files[1], b1) && readAll (files[2], b2))) { expect (false, "file degli stem leggibili"); continue; }
+            expect (b0.getNumChannels() == 2 && b0.getNumSamples() == n, "stem: due canali e stessa lunghezza (" + juce::String (b0.getNumSamples()) + ")");
+            float eSum = 0.0f, eMask = 0.0f;
+            for (int i = 0; i < n; i += 7)
+            {
+                const float sum = b0.getSample (0, i) + b1.getSample (0, i) + b2.getSample (0, i);
+                eSum = juce::jmax (eSum, std::abs (sum - L[(size_t) i]));
+                eMask = juce::jmax (eMask, std::abs (b0.getSample (1, i) - R[(size_t) i] * a[0] / sumA));
+            }
+            expect (eSum < 2.0e-3f, "dialoghi + musica + effetti = originale (errore " + juce::String (eSum, 6) + ")");
+            expect (eMask < 2.0e-3f, "ogni stem segue la sua maschera sul canale destro (errore " + juce::String (eMask, 6) + ")");
+        }
+        // 44,1 kHz: l'uscita e' a 48 kHz, allineata (fase di un seno a 440 Hz)
+        {
+            const int n = 10 * 44100;
+            std::vector<float> m ((size_t) n);
+            for (int i = 0; i < n; ++i) m[(size_t) i] = 0.5f * std::sin (2.0f * 3.14159265f * 440.0f * (float) i / 44100.0f);
+            const float* ch[1] = { m.data() };
+            juce::String err;
+            expect (separate (ch, 1, n, 44100.0, {}, files, fake, {}, err), "separazione di un audio a 44,1 kHz: " + err);
+            juce::AudioBuffer<float> b0, b1, b2;
+            if (readAll (files[0], b0) && readAll (files[1], b1) && readAll (files[2], b2))
+            {
+                expect (b0.getNumChannels() == 1 && std::abs (b0.getNumSamples() - 480000) <= 1, "a 44,1 kHz: uscita a 48 kHz di 10 s (" + juce::String (b0.getNumSamples()) + ")");
+                float e = 0.0f;
+                for (int i = 20000; i < 460000; i += 13)
+                    e = juce::jmax (e, std::abs (b0.getSample (0, i) + b1.getSample (0, i) + b2.getSample (0, i) - 0.5f * std::sin (2.0f * 3.14159265f * 440.0f * (float) i / 48000.0f)));
+                expect (e < 0.01f, "ricampionamento allineato (errore " + juce::String (e, 5) + ")");
+            }
+        }
+        // annullamento a meta'
+        {
+            const int n = 30 * 48000;
+            std::vector<float> m ((size_t) n, 0.1f);
+            const float* ch[1] = { m.data() };
+            juce::String err;
+            int calls = 0;
+            const bool ok = separate (ch, 1, n, 48000.0, {}, files, fake, [&] (float) { return ++calls < 3; }, err);
+            expect (! ok, "annullamento: la separazione si ferma");
+        }
+        // modello vero, se scaricato
+        if (packReady())
+        {
+            OnnxCore core;
+            juce::String err;
+            if (core.load (err))
+            {
+                const int n = 12 * 48000;
+                std::vector<float> m ((size_t) n);
+                for (int i = 0; i < n; ++i) m[(size_t) i] = 0.3f * std::sin (0.05f * (float) i) * (0.5f + 0.5f * std::sin (0.0001f * (float) i));
+                const float* ch[1] = { m.data() };
+                Options mo;
+                mo.workers = OnnxCore::suggestedWorkers();
+                const bool ok = separate (ch, 1, n, 48000.0, mo, files, core.fn(), {}, err);
+                expect (ok, "modello vero: separazione di 12 s: " + err);
+                juce::AudioBuffer<float> b0, b1, b2;
+                if (ok && readAll (files[0], b0) && readAll (files[1], b1) && readAll (files[2], b2))
+                {
+                    float e = 0.0f;
+                    for (int i = 0; i < n; i += 11) e = juce::jmax (e, std::abs (b0.getSample (0, i) + b1.getSample (0, i) + b2.getSample (0, i) - m[(size_t) i]));
+                    expect (e < 3.0e-3f, "modello vero: gli stem sommano l'originale (errore " + juce::String (e, 6) + ")");
+                }
+            }
+            else expect (false, "modello vero caricato: " + err);
+        }
+        else std::cout << "     modello di separazione non scaricato: prova con il modello vero saltata" << std::endl;
+        expect (packDownloadMB() > 0 || packReady(), "elenco dei file del motore");
+    }
+
     // Licenza: firma Ed25519 (compatibile con il generatore di ADR Studio Suite), macchina, prodotto, scadenza, prova e orologio
     void stepLicense()
     {
@@ -4136,6 +4259,45 @@ public:
 
     void initialise (const juce::String& commandLine) override
     {
+        if (commandLine.contains ("--separate"))   // ADR Dub Studio --separate entrata.wav cartella [alta]: separa in dialoghi / musica / effetti (prova del motore)
+        {
+            auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--separate", false, false), true);
+            args.removeEmptyStrings();
+            int rc = 1;
+            if (args.size() < 2) std::cout << "uso: --separate entrata.wav cartella [alta]" << std::endl;
+            if (args.size() >= 2)
+            {
+                juce::AudioFormatManager fm;
+                fm.registerBasicFormats();
+                std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (juce::File (args[0])));
+                if (r == nullptr) std::cout << "non riesco a leggere " << args[0] << std::endl;
+                if (r != nullptr && r->numChannels >= 1)
+                {
+                    const int nch = (int) juce::jmin<unsigned> (2, r->numChannels);
+                    juce::AudioBuffer<float> buf ((int) r->numChannels, (int) r->lengthInSamples);
+                    r->read (&buf, 0, (int) r->lengthInSamples, 0, true, true);
+                    const float* ch[2] = { buf.getReadPointer (0), buf.getReadPointer (nch - 1) };
+                    const juce::File dir (args[1]);
+                    const std::array<juce::File, 3> files { dir.getChildFile ("dialoghi.wav"), dir.getChildFile ("musica.wav"), dir.getChildFile ("effetti.wav") };
+                    fc::stems::OnnxCore core;
+                    juce::String err;
+                    if (! core.load (err)) std::cout << "errore: " << err << std::endl;
+                    else
+                    {
+                        fc::stems::Options o;
+                        o.highQuality = args.contains ("alta");
+                        o.workers = fc::stems::OnnxCore::suggestedWorkers();
+                        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                        const bool ok = fc::stems::separate (ch, nch, (int64_t) r->lengthInSamples, r->sampleRate, o, files, core.fn(), [] (float p) { std::cout << "\r" << (int) (p * 100) << "%" << std::flush; return true; }, err);
+                        std::cout << "\n" << (ok ? "fatto" : "errore: " + err) << " in " << (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0 << " s (audio " << (double) r->lengthInSamples / r->sampleRate << " s)" << std::endl;
+                        rc = ok ? 0 : 1;
+                    }
+                }
+            }
+            setApplicationReturnValue (rc);
+            quit();
+            return;
+        }
         if (commandLine.contains ("--selftest"))
         {
             auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--selftest", false, false), true);

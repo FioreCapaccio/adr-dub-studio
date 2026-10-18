@@ -86,6 +86,7 @@ target_sources(ArotronStudio PRIVATE
     Source/Pool.cpp
     Source/Manual.cpp
     Source/License.cpp
+    Source/StemEngine.cpp
     Source/LicenseUi.cpp
     Source/third_party/monocypher/monocypher.c
     Source/third_party/monocypher/monocypher-ed25519.c

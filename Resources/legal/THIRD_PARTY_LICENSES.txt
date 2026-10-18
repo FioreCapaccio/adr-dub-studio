@@ -20,7 +20,9 @@ Index / Indice
   9. Monocypher (Loup Vaillant)                          - BSD-2-Clause or CC0
  10. FFmpeg (Windows version only)                       - LGPL
  11. Microsoft WebView2 loader (Windows version only)    - BSD-3-Clause
- 12. Other notes / Altre note
+ 12. ONNX Runtime (downloaded engine)                    - MIT
+ 13. Bandit v2 separation model (downloaded engine)      - CC BY-SA 4.0
+ 14. Other notes / Altre note
 
 ==============================================================================
 1. JUCE framework
@@ -726,7 +728,55 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-12. Other notes / Altre note
+12. ONNX Runtime
+Microsoft Corporation - https://onnxruntime.ai - downloaded the first time the stem separation is used (engine pack)
+==============================================================================
+
+ONNX Runtime is downloaded by ADR Dub Studio together with the separation model and runs it on your computer. Its full licence and the
+third-party notices of its own dependencies are saved with it, in the file onnxruntime-LICENSE-and-NOTICES.txt (in the program's data
+folder, subfolder 'engine').
+
+MIT License
+
+Copyright (c) Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+13. Bandit v2 separation model
+Karn N. Watcharasupat, Chih-Wei Wu, Iroro Orife - https://zenodo.org/records/12701995 - https://github.com/kwatcharasupat/bandit-v2
+==============================================================================
+
+The dialogue / music / effects separation uses the multilingual weights of Bandit v2, described in "Remastering Divide and Remaster:
+A Cinematic Audio Source Separation Dataset with Multilingual Support". The weights are licensed under Creative Commons
+Attribution-ShareAlike 4.0 International (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes made: converted to the ONNX format; the STFT/iSTFT steps were moved out of the network; complex arithmetic was replaced by
+real-valued tensors; weights are stored in half precision (float16). The adapted file is distributed under the same licence (CC BY-SA 4.0)
+and is downloaded on first use; it is a separate file, not part of the program. The program is a separate work and is not covered by
+that licence. Model code: Apache License 2.0.
+
+La separazione in dialoghi / musica / effetti usa i pesi multilingua di Bandit v2, con licenza CC BY-SA 4.0 (testo sopra). Il file adattato
+(convertito in ONNX, pesi in mezza precisione) e' distribuito con la stessa licenza, si scarica al primo uso ed e' un file separato dal programma.
+
+==============================================================================
+14. Other notes / Altre note
 
 ==============================================================================
 
