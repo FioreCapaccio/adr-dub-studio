@@ -14,9 +14,7 @@ saturazione, chorus, compressore multibanda), supporto ai plug-in VST3 come inse
 
 Copyright (C) 2026 Fioravante Capaccio.
 
-Questo programma e' software libero: puoi ridistribuirlo e modificarlo secondo i termini della
-GNU Affero General Public License v3 (vedi [LICENSE](LICENSE)). E' costruito con [JUCE](https://juce.com),
-usato sotto licenza AGPLv3.
+Tutti i diritti riservati. L'uso e' regolato dalle Condizioni d'uso (**Aiuto > Condizioni d'uso** nel programma). E' costruito con [JUCE](https://juce.com).
 
 ### Prova e attivazione
 
