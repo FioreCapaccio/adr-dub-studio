@@ -894,6 +894,39 @@ void Project::removeCue (int id)
     changed();
 }
 
+int Project::mergeCues (const std::vector<int>& ids)
+{
+    std::vector<AdrCue> sel;
+    for (auto& c : session.cues) if (std::find (ids.begin(), ids.end(), c.id) != ids.end()) sel.push_back (c);
+    if (sel.size() < 2) return 0;
+    std::sort (sel.begin(), sel.end(), [] (const AdrCue& a, const AdrCue& b) { return a.inPos < b.inPos; });
+    auto distinct = [&sel] (juce::String AdrCue::*field, const juce::String& sep)
+    {
+        juce::StringArray parts;
+        for (auto& c : sel) { auto s = (c.*field).trim(); if (s.isNotEmpty() && ! parts.contains (s, true)) parts.add (s); }
+        return parts.joinIntoString (sep);
+    };
+    AdrCue m = sel.front();
+    m.character = distinct (&AdrCue::character, " / ");
+    m.scene = distinct (&AdrCue::scene, " / ");
+    m.reel = distinct (&AdrCue::reel, " / ");
+    m.dialogue = distinct (&AdrCue::dialogue, " ");
+    m.notes = distinct (&AdrCue::notes, " | ");
+    for (auto& c : sel) { m.inPos = juce::jmin (m.inPos, c.inPos); m.outPos = juce::jmax (m.outPos, c.outPos); m.status = juce::jmin (m.status, c.status); }
+
+    beginEdit();
+    std::set<int> gone;
+    for (size_t i = 1; i < sel.size(); ++i) gone.insert (sel[i].id);
+    session.cues.erase (std::remove_if (session.cues.begin(), session.cues.end(), [&gone] (const AdrCue& c) { return gone.count (c.id) > 0; }), session.cues.end());
+    if (auto* k = findCue (m.id)) *k = m;
+    for (auto& t : session.tracks)
+        for (auto& c : t.clips)
+            if (gone.count (c.cueId) > 0) { c.cueId = 0; c.takeNo = 0; }
+    if (gone.count (selectedCueId) > 0) selectedCueId = m.id;
+    changed();
+    return m.id;
+}
+
 void Project::editCue (int id, const std::function<void (AdrCue&)>& change)
 {
     if (auto* c = findCue (id))

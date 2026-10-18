@@ -1468,3 +1468,7 @@ language: English
 "punti" = "points"
 "punti sono stati limitati dal massimo della corsia (+6 dB): abbassa il fader della traccia e rifai." = "points were limited by the lane maximum (+6 dB): lower the track fader and run it again."
 "Le tracce sono in modalita' lettura: la curva si vede e si modifica nella corsia VOL. Per togliere tutto: Modifica > Annulla." = "The tracks are in read mode: the curve shows in the VOL lane and can be edited there. To remove it all: Edit > Undo."
+"UNISCI" = "MERGE"
+"Unisce i cue selezionati (Cmd/Ctrl o Maiusc + clic) in uno solo: entrata del primo, uscita dell'ultimo, battute e note riunite" = "Merges the selected cues (Cmd/Ctrl or Shift + click) into one: in point of the first, out point of the last, lines and notes combined"
+"Unisci cue" = "Merge cues"
+"Seleziona almeno due cue (Cmd/Ctrl o Maiusc + clic sulle righe)." = "Select at least two cues (Cmd/Ctrl or Shift + click on the rows)."

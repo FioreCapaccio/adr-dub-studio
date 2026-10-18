@@ -674,6 +674,8 @@ public:
     int addCue (const AdrCue& cue);                                   // un solo passo di undo
     int addCues (std::vector<AdrCue> cues, bool replaceExisting);     // importazione
     void removeCue (int id);
+    /** Fonde due o piu' cue in uno solo (il primo in ordine di tempo): entrata minima, uscita massima, battute e note unite, stato meno avanzato. I clip degli altri cue restano sulla timeline come clip normali. Un solo undo; ritorna l'id del cue risultante (0 se non unisce). */
+    int mergeCues (const std::vector<int>& ids);
     void editCue (int id, const std::function<void (AdrCue&)>& change);
     AdrCue* findCue (int id) noexcept;
     const AdrCue* findCue (int id) const noexcept;

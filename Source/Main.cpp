@@ -135,6 +135,7 @@ private:
         stepLicense();
         stepStems();
         stepLeveler();
+        stepCueMerge();
         stepTrackFolders();
         stepEditing();
         stepPdc();
@@ -2680,6 +2681,33 @@ private:
                 });
             });
         });
+    }
+
+    // unione di piu' cue in uno solo
+    void stepCueMerge()
+    {
+        fc::Project p (formats, 48000.0);
+        auto a = std::make_shared<fc::Asset>(); a->name = "t"; a->audio.setSize (2, 48000); a->audio.clear(); a->buildPeaks();
+        auto mk = [&] (int n, const char* who, const char* dia, int64_t in, int64_t out, int st)
+        {
+            fc::AdrCue c; c.number = n; c.character = who; c.dialogue = dia; c.inPos = in; c.outPos = out; c.status = st; c.notes = n == 2 ? "urgente" : "";
+            return p.addCue (c);
+        };
+        const int c2 = mk (2, "Marco", "Seconda", 96000, 144000, 1), c1 = mk (1, "Marco", "Prima", 0, 48000, 2), c3 = mk (3, "Anna", "Terza", 300000, 330000, 0);
+        fc::Clip cl; cl.id = 1; cl.asset = a; cl.length = 48000; cl.cueId = c2; cl.takeNo = 1; cl.start = 96000;
+        p.edit().tracks[0].clips.push_back (cl);
+        expect (p.mergeCues ({ c1 }) == 0, "unione cue: serve almeno una coppia");
+        const int m = p.mergeCues ({ c2, c1 });
+        const auto& cues = p.getSession().cues;
+        const auto* k = p.findCue (m);
+        expect (m == c1 && cues.size() == 2 && k != nullptr && k->inPos == 0 && k->outPos == 144000 && k->dialogue == "Prima Seconda" && k->character == "Marco" && k->notes == "urgente" && k->status == 1,
+                "unione cue: entrata minima, uscita massima, battute riunite, stato meno avanzato");
+        expect (p.getSession().tracks[0].clips[0].cueId == 0 && p.findCue (c2) == nullptr, "unione cue: il take dell'altro cue resta come clip normale");
+        p.undo();
+        expect (p.getSession().cues.size() == 3 && p.getSession().tracks[0].clips[0].cueId == c2, "unione cue: un solo passo di undo");
+        const int m2 = p.mergeCues ({ c1, c3 });
+        const auto* k2 = p.findCue (m2);
+        expect (k2 != nullptr && k2->character == "Marco / Anna" && k2->outPos == 330000, "unione cue: personaggi diversi riuniti");
     }
 
     // piu' registrazioni dello stesso cue: valutare, scartare, tenere la migliore

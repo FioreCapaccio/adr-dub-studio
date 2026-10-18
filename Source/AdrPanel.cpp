@@ -125,6 +125,7 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     table.setColour (juce::ListBox::outlineColourId, border);
     table.setOutlineThickness (1);
     table.setRowHeight (26);
+    table.setMultipleSelectionEnabled (true);
     auto& h = table.getHeader();
     h.addColumn ("#", 1, 44, 36, 80, juce::TableHeaderComponent::notResizableOrSortable);
     h.addColumn (TRANS ("Stato"), 2, 110, 80, 160, juce::TableHeaderComponent::notSortable);
@@ -137,7 +138,7 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     h.addColumn (TRANS ("Dialogo"), 9, 300, 120, 2000, juce::TableHeaderComponent::notSortable);
     addAndMakeVisible (table);
 
-    for (auto* b : { &importBtn, &addBtn, &delBtn, &settingsBtn, &csvBtn, &ptBtn, &bwfBtn, &recBtn, &prevBtn, &nextBtn, &auditionBtn, &originalBtn, &activateBtn, &deleteTakeBtn, &keepBtn, &rejectBtn, &purgeBtn })
+    for (auto* b : { &importBtn, &addBtn, &delBtn, &joinBtn, &settingsBtn, &csvBtn, &ptBtn, &bwfBtn, &recBtn, &prevBtn, &nextBtn, &auditionBtn, &originalBtn, &activateBtn, &deleteTakeBtn, &keepBtn, &rejectBtn, &purgeBtn })
     {
         b->setWantsKeyboardFocus (false);
         addAndMakeVisible (*b);
@@ -196,6 +197,14 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     importBtn.onClick = [this] { if (actions.importFile) actions.importFile(); };
     addBtn.onClick = [this] { if (actions.addCue) actions.addCue(); };
     delBtn.onClick = [this] { if (project.selectedCueId != 0) project.removeCue (project.selectedCueId); };
+    joinBtn.setTooltip (TRANS ("Unisce i cue selezionati (Cmd/Ctrl o Maiusc + clic) in uno solo: entrata del primo, uscita dell'ultimo, battute e note riunite"));
+    joinBtn.onClick = [this]
+    {
+        std::vector<int> ids;
+        const auto rows = table.getSelectedRows();
+        for (int i = 0; i < rows.size(); ++i) if (const auto* c = cueAtRow (rows[i])) ids.push_back (c->id);
+        if (project.mergeCues (ids) == 0) juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Unisci cue"), TRANS ("Seleziona almeno due cue (Cmd/Ctrl o Maiusc + clic sulle righe)."));
+    };
     settingsBtn.onClick = [this] { if (actions.settings) actions.settings(); };
     csvBtn.onClick = [this] { if (actions.exportCsv) actions.exportCsv(); };
     ptBtn.onClick = [this] { if (actions.exportProTools) actions.exportProTools(); };
@@ -341,7 +350,8 @@ void AdrPanel::refresh()
     rebuildShown();
     table.updateContent();
     const int row = selectedRow();
-    if (row >= 0) table.selectRow (row, false, true); else table.deselectAllRows();
+    if (row >= 0) { if (! table.isRowSelected (row)) table.selectRow (row, false, true); }   // non toglie la selezione multipla
+    else table.deselectAllRows();
     loading = false;
 
     // elenco delle tracce
@@ -602,7 +612,7 @@ void AdrPanel::resized()
     auto r = getLocalBounds().reduced (10);
     auto bar = r.removeFromTop (34);
     auto place = [&bar] (juce::Component& c, int w) { c.setBounds (bar.removeFromLeft (w)); bar.removeFromLeft (6); };
-    place (importBtn, 100); place (addBtn, 72); place (delBtn, 80); place (settingsBtn, 118);
+    place (importBtn, 100); place (addBtn, 72); place (delBtn, 80); place (joinBtn, 80); place (settingsBtn, 118);
     place (csvBtn, 110); place (ptBtn, 150); place (bwfBtn, 160);
     r.removeFromTop (8);
     auto fr = r.removeFromTop (26);
