@@ -9,6 +9,7 @@
 #include "BatchRename.h"
 #include "DirectorMix.h"
 #include "Manual.h"
+#include "LicenseUi.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
 #include "Relink.h"
@@ -365,6 +366,8 @@ MainComponent::MainComponent()
     timeline->zoomToFit();
     updateTitle();
     checkRecovery();
+    juce::Component::SafePointer<MainComponent> self (this);
+    juce::MessageManager::callAsync ([self] { if (self != nullptr) self->startupChecks(); });
 }
 
 MainComponent::~MainComponent()
@@ -626,6 +629,13 @@ void MainComponent::toggleVideoFullscreen()
 
 void MainComponent::timerCallback()
 {
+    if (++licenseTick >= 60)   // ogni 2 s ripresenta il blocco se la finestra e' stata chiusa; ogni 30 s rilegge lo stato (la prova puo' scadere a programma aperto)
+    {
+        static int slow = 0;
+        licenseTick = 0;
+        if (++slow % 15 == 0 && license::eulaAccepted()) licenseStatus = license::current();   // la prova parte dopo le condizioni d'uso
+        if (! license::allowed (licenseStatus) && licenseWin == nullptr && eulaWin == nullptr) showLicenseDialog (true);
+    }
     engine.cue.custom = project->directorMix;
     const int64_t pos = engine.getPosition();
     if (pos != lastShownPos)
@@ -721,6 +731,7 @@ void MainComponent::toggleTransport()
 {
     if (engine.isRecording()) { finishRecording(); return; }
     if (engine.isPlaying()) { stopPlayback(); return; }
+    if (! requireLicense()) return;
     playStartPos = engine.getPosition();   // da qui si ripartira' dopo lo stop
     startedFromPlay = true;
     mixer->resetPeaks();
@@ -760,6 +771,7 @@ void MainComponent::armSelectedTrack()
 void MainComponent::startRecording()
 {
     if (engine.isRecording()) return;
+    if (! requireLicense()) return;
 
     bool any = false;
     for (auto& t : project->getSession().tracks) any |= t.live->armed.load();
@@ -1240,6 +1252,7 @@ void MainComponent::importVideoDialog()
 
 void MainComponent::exportVideoDialog()
 {
+    if (! requireLicense()) return;
     auto video = project->getSession().video;
     if (video == nullptr) { showError (TRANS ("Importa prima un video.")); return; }
     if (videoJob != nullptr || exportJob != nullptr) return;
@@ -1314,6 +1327,7 @@ void MainComponent::exportVideoDialog()
 
 void MainComponent::exportDialog()
 {
+    if (! requireLicense()) return;
     if (project->contentEnd() <= 0) { showError (TRANS ("La sessione e' vuota: importa prima dell'audio.")); return; }
     if (exportJob != nullptr || videoJob != nullptr) return;
 
@@ -1339,6 +1353,7 @@ void MainComponent::exportDialog()
 
 void MainComponent::batchExportDialog()
 {
+    if (! requireLicense()) return;
     if (project->contentEnd() <= 0) { showError (TRANS ("La sessione e' vuota: importa prima dell'audio.")); return; }
     if (exportJob != nullptr || videoJob != nullptr) return;
     juce::Component::SafePointer<MainComponent> safe (this);
@@ -1524,7 +1539,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther });
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1634,6 +1649,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdManual:        i.setInfo (TRANS ("Manuale utente"), "", TRANS ("Aiuto"), 0); i.addDefaultKeypress (juce::KeyPress::F1Key, 0); break;
         case cmdManualOther:   i.setInfo (lang::savedCode() == "en" ? juce::String (juce::CharPointer_UTF8 ("Manuale utente (italiano)")) : juce::String ("User manual (English)"), "", TRANS ("Aiuto"), 0); break;
         case cmdWorkflow:      i.setInfo (TRANS ("Flusso di lavoro del doppiaggio"), "", TRANS ("Aiuto"), 0); break;
+        case cmdLicense:       i.setInfo (TRANS ("Licenza...") + " (" + license::shortLabel (licenseStatus) + ")", "", TRANS ("Aiuto"), 0); break;
+        case cmdEula:          i.setInfo (TRANS ("Condizioni d'uso..."), "", TRANS ("Aiuto"), 0); break;
         case cmdScriptReader:  i.setInfo (TRANS ("Lettore copione per l'attore"), "", TRANS ("ADR"), 0); i.setTicked (scriptWindow != nullptr); break;
         case cmdCueMix:        i.setInfo (TRANS ("Cuffie dell'attore e talkback..."), "", TRANS ("ADR"), 0); i.setTicked (cueWindow != nullptr); break;
         case cmdAlignToGuide:  i.setInfo (TRANS ("Allinea alla guida (sincronia automatica)..."), "", TRANS ("Modifica"), 0); break;
@@ -1909,10 +1926,19 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdManual: case cmdManualOther:
         {
             const bool en = (lang::savedCode() == "en") == (info.commandID == cmdManual);
+            const juce::String l = en ? "en" : "it";
+            if (manualWindow == nullptr || manualLang != l)
+            {
+                manualWindow = manual::createWindow (l);   // nell'app; senza motore web di sistema ripiega sul browser
+                manualLang = l;
+            }
+            if (manualWindow != nullptr) { manualWindow->setVisible (true); manualWindow->toFront (true); break; }
             juce::String err;
-            if (! manual::open (en ? "en" : "it", err)) showError (err);
+            if (! manual::open (l, err)) showError (err);
             break;
         }
+        case cmdLicense:       showLicenseDialog (false); break;
+        case cmdEula:          showEulaDialog (false); break;
         case cmdWorkflow:      workflowDialog(); break;
         case cmdScriptReader:  toggleScriptWindow(); break;
         case cmdCueMix:        toggleCueWindow(); break;
@@ -2149,7 +2175,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc }); break;
         case 8:
         {
-            add ({ cmdManual, cmdManualOther, 0, cmdWorkflow, cmdShortcuts, cmdKeyEditor });
+            add ({ cmdManual, cmdManualOther, 0, cmdWorkflow, cmdShortcuts, cmdKeyEditor, 0, cmdLicense, cmdEula });
             m.addSeparator();
             juce::PopupMenu langs;
             langActions.clear();
@@ -2219,6 +2245,7 @@ void MainComponent::crossfadeDialog()
 
 void MainComponent::exportPackageDialog (bool tracksOnly)
 {
+    if (! requireLicense()) return;
     std::vector<int> ids;
     if (tracksOnly)
     {
@@ -2996,6 +3023,74 @@ private:
     juce::TextButton openBtn { TRANS ("Apri") }, delBtn { TRANS ("Elimina") };
 };
 } // namespace
+
+void MainComponent::startupChecks()
+{
+    if (! license::eulaAccepted()) { showEulaDialog (true); return; }
+    licenseStatus = license::current();
+    commandManager.commandStatusChanged();
+    if (! license::allowed (licenseStatus)) showLicenseDialog (true);
+}
+
+bool MainComponent::requireLicense()
+{
+    licenseStatus = license::current();
+    if (license::allowed (licenseStatus)) return true;
+    showLicenseDialog (true);
+    return false;
+}
+
+void MainComponent::showLicenseDialog (bool locked)
+{
+    if (licenseWin != nullptr) { licenseWin->toFront (true); return; }
+    licenseStatus = license::current();
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto* panel = new license::LicensePanel (locked,
+        [safe]
+        {
+            if (safe == nullptr) return;
+            safe->licenseStatus = license::current();
+            safe->commandManager.commandStatusChanged();
+            if (license::allowed (safe->licenseStatus) && safe->licenseWin != nullptr)
+                juce::MessageManager::callAsync ([safe] { if (safe != nullptr && safe->licenseWin != nullptr) safe->licenseWin->exitModalState (0); });
+        },
+        [safe] { juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->requestQuit(); }); },
+        [safe] { if (safe != nullptr) safe->showEulaDialog (false); });
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (panel);
+    lo.dialogTitle = TRANS ("Licenza");
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = ! locked;
+    lo.useNativeTitleBar = true;
+    lo.resizable = false;
+    licenseWin = lo.launchAsync();
+}
+
+void MainComponent::showEulaDialog (bool ask)
+{
+    if (eulaWin != nullptr) { eulaWin->toFront (true); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto* panel = new license::EulaPanel (ask, [safe] (bool accepted)
+    {
+        juce::MessageManager::callAsync ([safe, accepted]
+        {
+            if (safe == nullptr) return;
+            if (safe->eulaWin != nullptr) safe->eulaWin->exitModalState (0);
+            if (! accepted) { juce::JUCEApplication::getInstance()->quit(); return; }
+            if (! license::eulaAccepted()) { license::acceptEula(); safe->startupChecks(); }
+        });
+    });
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (panel);
+    lo.dialogTitle = TRANS ("Condizioni d'uso");
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = ! ask;
+    lo.useNativeTitleBar = true;
+    lo.resizable = true;
+    eulaWin = lo.launchAsync();
+}
 
 void MainComponent::versionsDialog()
 {

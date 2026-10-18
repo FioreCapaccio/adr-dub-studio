@@ -26,6 +26,7 @@
 #include "ExternalSync.h"
 #include "ThemeManager.h"
 #include "Lang.h"
+#include "License.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
 class DelayTestProcessor : public juce::AudioProcessor
@@ -129,6 +130,7 @@ private:
         stepConform();
         stepMtc();
         stepLang();
+        stepLicense();
         stepTrackFolders();
         stepEditing();
         stepPdc();
@@ -1733,6 +1735,65 @@ private:
     }
 
     // Mix del direttore: somma per traccia con livello proprio
+    // Licenza: firma Ed25519 (compatibile con il generatore di ADR Studio Suite), macchina, prodotto, scadenza, prova e orologio
+    void stepLicense()
+    {
+        using namespace fc::license;
+        const juce::String machine = "TESTMACHINE0000000000000000000A1";
+        const int64_t now = juce::Time (2026, 9, 18, 12, 0).toMilliseconds();   // 18 ottobre 2026
+        const juce::String valid = "eyJwYXlsb2FkIjp7ImxpY2Vuc2VJZCI6IjExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NSIsImZlYXR1cmVzIjpbImR1Yl9zdHVkaW8iXSwiZXhwaXJlc0F0IjpudWxsLCJtYWNoaW5lSWQiOiJURVNUTUFDSElORTAwMDAwMDAwMDAwMDAwMDAwMDBBMSIsInRpZXIiOiJmdWxsIiwiaXNzdWVkQXQiOiIyMDI2LTEwLTE4VDEwOjAwOjAwLjAwMFoiLCJpc3N1ZWRUbyI6Ik1hcmlvIFJvc3NpIn0sInNpZ25hdHVyZSI6IkY4bElSam0vQ1ZPenh3Tk5Za1FsRzV1SENxR04xaFd6SXRqK2RJdURSdWZ5Zk9rT3ZzVE0wQ0tSdU5RNGM2emFVTXhJaUdYSEFTbnFWbklQRDBYUkJnPT0ifQ==", unicode = "eyJwYXlsb2FkIjp7ImxpY2Vuc2VJZCI6IjExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NSIsImZlYXR1cmVzIjpbImR1Yl9zdHVkaW8iXSwiZXhwaXJlc0F0IjpudWxsLCJtYWNoaW5lSWQiOiJURVNUTUFDSElORTAwMDAwMDAwMDAwMDAwMDAwMDBBMSIsInRpZXIiOiJmdWxsIiwiaXNzdWVkQXQiOiIyMDI2LTEwLTE4VDEwOjAwOjAwLjAwMFoiLCJpc3N1ZWRUbyI6IlNvY2lldMOgIMOcbsOvIOKYgyBcInFcIiBcXCB4In0sInNpZ25hdHVyZSI6IkhYd3NmK0o4SDV0OG91TXlZb2Q0UG8ydmZsMW0vM0RzYnZEaHNaZVJzTnRiOFRhVHBpOGpkcTVjWktSbUhZQWNtTW5GUkI1ZlpLZEU5NytmQk9lR0RBPT0ifQ==", expired = "eyJwYXlsb2FkIjp7ImxpY2Vuc2VJZCI6IjExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NSIsImZlYXR1cmVzIjpbImR1Yl9zdHVkaW8iXSwiZXhwaXJlc0F0IjoiMjAyMC0wMS0wMVQyMzo1OTo1OS4wMDBaIiwibWFjaGluZUlkIjoiVEVTVE1BQ0hJTkUwMDAwMDAwMDAwMDAwMDAwMDAwQTEiLCJ0aWVyIjoiZnVsbCIsImlzc3VlZEF0IjoiMjAyNi0xMC0xOFQxMDowMDowMC4wMDBaIiwiaXNzdWVkVG8iOiJPbGQifSwic2lnbmF0dXJlIjoiaU9zOEZOS2s4aFJjeG1sNU9CZFlCT2JKc3ppNFNNdDVnUGJiSmpvQS9FM012M3JxTFpvbUg0SitndU55TzF6NmR5elBQTW1Bemc3WWIvYXo1K21FQlE9PSJ9", future = "eyJwYXlsb2FkIjp7ImxpY2Vuc2VJZCI6IjExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NSIsImZlYXR1cmVzIjpbImR1Yl9zdHVkaW8iXSwiZXhwaXJlc0F0IjoiMjA5OS0wMS0wMVQyMzo1OTo1OS4wMDBaIiwibWFjaGluZUlkIjoiVEVTVE1BQ0hJTkUwMDAwMDAwMDAwMDAwMDAwMDAwQTEiLCJ0aWVyIjoiZnVsbCIsImlzc3VlZEF0IjoiMjAyNi0xMC0xOFQxMDowMDowMC4wMDBaIiwiaXNzdWVkVG8iOiJGdXR1cmUifSwic2lnbmF0dXJlIjoieTcyT2dpNjByQXFYLzdTbWw2MjZwcnRHRWtweXJNT1JLZG5yeWlGTzZtOXJwM1YyeDA4am8zbE9tcXNNY0UrWU1zVm0rWXhVTkFEMXJTbmUyUVNnQ3c9PSJ9", suite = "eyJwYXlsb2FkIjp7ImxpY2Vuc2VJZCI6IjExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NSIsImZlYXR1cmVzIjpbInRyYW5zY3JpcHRpb24iLCJtaXhlciJdLCJleHBpcmVzQXQiOm51bGwsIm1hY2hpbmVJZCI6IlRFU1RNQUNISU5FMDAwMDAwMDAwMDAwMDAwMDAwMEExIiwidGllciI6ImZ1bGwiLCJpc3N1ZWRBdCI6IjIwMjYtMTAtMThUMTA6MDA6MDAuMDAwWiIsImlzc3VlZFRvIjoiU3VpdGUifSwic2lnbmF0dXJlIjoiWXY0SlNES0tuWE5sZzhneFMxQ1lWa21tNHJob2pxNVlsVWF1LzJ2Nk5XajcyZTdkeGUvV3lVUnU0MkF0RzlFcGpQTXFPR29kb1EvTjVzbm9lbnlhQVE9PSJ9";
+
+        auto v = verifyKey (valid, machine, now);
+        expect (v.valid && v.payload.issuedTo == "Mario Rossi" && v.payload.features.contains (kFeature), "licenza valida: " + v.code + " " + v.reason);
+        v = verifyKey (unicode, machine, now);
+        expect (v.valid, "licenza con accenti, virgolette e backslash: la stringa firmata coincide con JSON.stringify (" + v.code + ")");
+        v = verifyKey (valid, "ALTRAMACCHINA", now);
+        expect (! v.valid && v.code == "MACHINE_MISMATCH", "licenza di un altro computer rifiutata");
+        v = verifyKey (expired, machine, now);
+        expect (! v.valid && v.code == "EXPIRED", "licenza scaduta rifiutata");
+        v = verifyKey (future, machine, now);
+        expect (v.valid, "licenza con scadenza futura accettata (" + v.code + ")");
+        v = verifyKey (future, machine, juce::Time (2100, 0, 1, 0, 0).toMilliseconds());
+        expect (! v.valid && v.code == "EXPIRED", "la scadenza si controlla sull'orologio dato");
+        v = verifyKey (suite, machine, now);
+        expect (! v.valid && v.code == "WRONG_PRODUCT", "una licenza di ADR Studio Suite non vale per Dub Studio (firma buona, funzione assente)");
+
+        // manomissione: cambio il nome nel payload mantenendo la firma
+        juce::MemoryOutputStream mo;
+        juce::Base64::convertFromBase64 (mo, valid);
+        auto json = mo.toString().replace ("Mario Rossi", "Luigi Verdi");
+        v = verifyKey (juce::Base64::toBase64 (json.toRawUTF8(), json.getNumBytesAsUTF8()), machine, now);
+        expect (! v.valid && v.code == "INVALID_SIGNATURE", "licenza modificata a mano rifiutata");
+        json = mo.toString().replace ("\"expiresAt\":null", "\"expiresAt\":\"2099-01-01T00:00:00.000Z\"");
+        v = verifyKey (juce::Base64::toBase64 (json.toRawUTF8(), json.getNumBytesAsUTF8()), machine, now);
+        expect (! v.valid && v.code == "INVALID_SIGNATURE", "scadenza aggiunta o cambiata a mano rifiutata");
+        v = verifyKey ("non e' una licenza", machine, now);
+        expect (! v.valid && v.code == "FILE_CORRUPTED", "testo qualunque rifiutato");
+        v = verifyKey ({}, machine, now);
+        expect (! v.valid, "chiave vuota rifiutata");
+
+        // prova di 30 giorni e orologio a cricchetto
+        const int64_t day = 24LL * 3600 * 1000;
+        expect (trialDaysLeft (now, now) == 30 && trialDaysLeft (now, now + 10 * day + 5) == 20 && trialDaysLeft (now, now + 30 * day) == 0 && trialDaysLeft (now, now + 99 * day) == 0,
+                "prova: 30 giorni, poi scaduta");
+        expect (trialDaysLeft (now, now - 5 * day) == 30, "prova: un orologio indietro non regala giorni");
+        expect (ratchetNow (now - day, now) == now && ratchetNow (now - 60 * 1000, now) == now - 60 * 1000 && ratchetNow (now + day, now) == now + day,
+                "orologio riportato indietro: vale l'ultima ora vista, tolleranza di 5 minuti");
+
+        const auto id = machineId();
+        expect (id.length() == 32 && id == id.toUpperCase() && id.containsOnly ("0123456789ABCDEF"), "Machine ID: 32 esadecimali maiuscoli (" + id + ")");
+        // sul Mac dello sviluppatore deve coincidere con quello di ADR Studio Suite (stesso algoritmo)
+        const juce::File suiteLic ("/Volumes/NVME_500/ADR_Studio_Suite/fiore-macstudio-fe6ad0d5.lic");
+        if (suiteLic.existsAsFile())
+        {
+            juce::MemoryOutputStream so;
+            juce::Base64::convertFromBase64 (so, suiteLic.loadFileAsString().trim());
+            const auto sid = juce::JSON::parse (so.toString())["payload"]["machineId"].toString();
+            expect (sid == id, "Machine ID uguale a quello di ADR Studio Suite (" + sid + " / " + id + ")");
+        }
+        expect (eulaText ("it").contains ("ADR Dub Studio") && eulaText ("en").contains ("ADR Dub Studio"), "condizioni d'uso incorporate in italiano e inglese");
+    }
+
     void stepDirectorMix()
     {
         fc::Project p (formats, 48000.0);
@@ -4068,7 +4129,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.22.0"; }
+    const juce::String getApplicationVersion() override { return "2.23.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "License.h"
+
 #include "AdrPanel.h"
 #include "InfoLine.h"
 #include "AudioEngine.h"
@@ -203,6 +205,16 @@ private:
     void togglePoolWindow();
     void logicalEditorDialog();
     void batchRenameDialog();
+    // licenza (stesso schema di ADR Studio Suite): prova di 30 giorni, poi serve un file .lic firmato
+    void startupChecks();
+    bool requireLicense();                  // false (e finestra di blocco) se prova scaduta o licenza non valida
+    void showLicenseDialog (bool locked);
+    void showEulaDialog (bool ask);
+    juce::Component::SafePointer<juce::DialogWindow> licenseWin, eulaWin;
+    fc::license::Status licenseStatus;
+    int licenseTick = 0;
+    std::unique_ptr<juce::DocumentWindow> manualWindow;
+    juce::String manualLang;
 public:
     /** Apre le finestre principali e scrive in un file tutti i testi visibili (pulsanti, etichette, menu, suggerimenti): serve a controllare le traduzioni. */
     void dumpUiTexts (const juce::File& out);

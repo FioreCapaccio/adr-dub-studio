@@ -18,6 +18,10 @@ Questo programma e' software libero: puoi ridistribuirlo e modificarlo secondo i
 GNU Affero General Public License v3 (vedi [LICENSE](LICENSE)). E' costruito con [JUCE](https://juce.com),
 usato sotto licenza AGPLv3.
 
+### Prova e attivazione
+
+Il programma si prova gratis per 30 giorni; poi riproduzione, registrazione ed esportazione richiedono una licenza (**Aiuto > Licenza**: il Machine ID si copia da li', il file `.lic` si importa li'). Le licenze sono firmate Ed25519 con lo stesso generatore di ADR Studio Suite (`--product=dubstudio`) e verificate offline; il codice e' in `Source/License.*` (Ed25519: [Monocypher](https://monocypher.com), pubblico dominio / BSD-2).
+
 ## Video
 
 Su macOS il video usa AVFoundation. Su Windows usa **ffmpeg/ffprobe** (build LGPL di [BtbN](https://github.com/BtbN/FFmpeg-Builds), inclusi nello zip, oppure nel PATH): lettura, miniature, esportazione con il mix e anteprima.

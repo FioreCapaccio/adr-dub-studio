@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  APP_VERSION: "2.22.0"
+  APP_VERSION: "2.23.0"
 
 jobs:
   macos-universal:
@@ -42,8 +42,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: WebView2 SDK (manuale dentro l'app)
+        shell: pwsh
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.2592.51 -OutputDirectory webview2pkg
       - name: Configure
-        run: cmake -S . -B build -A x64
+        run: cmake -S . -B build -A x64 "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=${{ github.workspace }}/webview2pkg"
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Package (with ffmpeg for the video)

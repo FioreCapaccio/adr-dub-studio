@@ -1,0 +1,35 @@
+CONTRATTO DI LICENZA D'USO DEL SOFTWARE
+
+© 2024-2026 ADR Dub Studio. Tutti i diritti riservati.
+
+1. CONCESSIONE DI LICENZA
+ADR Dub Studio (il "Software") è concesso in licenza, non venduto. Ti viene concessa una licenza limitata, non esclusiva, non trasferibile per l'uso personale o aziendale interno, in conformità ai termini di questo contratto.
+
+2. RESTRIZIONI
+Non puoi:
+- Copiare, modificare, adattare, tradurre o creare opere derivate del Software
+- Effettuare ingegneria inversa, disassemblare, decompilare o cercare di derivare il codice sorgente
+- Noleggiare, prestare, vendere o trasferire la licenza ad altri
+- Rimuovere o alterare avvisi di copyright, marchi o avvisi legali
+- Usare il Software per fornire servizi a terzi senza autorizzazione esplicita
+
+3. ESCLUSIONE DI GARANZIE
+IL SOFTWARE È FORNITO "COSÌ COM'È" SENZA GARANZIE DI ALCUN TIPO, ESPRESSE O IMPLICITE, INCLUSE MA NON LIMITATE A GARANZIE DI COMMERCIABILITÀ, IDONEITÀ PER UNO SCOPO PARTICOLARE O NON VIOLAZIONE.
+
+4. LIMITAZIONE DI RESPONSABILITÀ
+IN NESSUN CASO L'AUTORE SARÀ RESPONSABILE PER DANNI DIRETTI, INDIRETTI, INCIDENTALI, SPECIALI, CONSEQUENZIALI O PUNITIVI, ANCHE SE AVVERTITO DELLA POSSIBILITÀ DI TALI DANNI, DERIVANTI DA:
+- L'USO O L'IMPOSSIBILITÀ DI USARE IL SOFTWARE
+- PERDITA DI DATI O CORRUZIONE DI FILE
+- INTERRUZIONI DI ATTIVITÀ
+- QUALSIASI ALTRA PERDITA ECONOMICA
+
+5. TERMINAZIONE
+Questa licenza è effettiva fino al suo termine. I tuoi diritti si estinguono automaticamente se violi i termini di questo contratto. Alla terminazione, devi cessare l'uso del Software e distruggere tutte le copie.
+
+6. LEGGE VIGENTE
+Questo contratto è regolato dalla legge italiana. Qualsiasi controversia sorgerà esclusivamente nella giurisdizione italiana.
+
+7. INTERO ACCORDO
+Questo contratto costituisce l'intero accordo tra te e l'autore riguardante il Software e sostituisce tutti i precedenti accordi scritti o orali.
+
+Accettando questa licenza, accetti di essere vincolato da tutti i termini e le condizioni sopra elencati.

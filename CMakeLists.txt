@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ArotronStudio VERSION 2.22.0 LANGUAGES C CXX)
+project(ArotronStudio VERSION 2.23.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,10 +21,16 @@ FetchContent_Declare(JUCE
     GIT_SHALLOW    ON)
 FetchContent_MakeAvailable(JUCE)
 
+# Windows: il manuale si mostra dentro l'app con WebView2 (SDK da NuGet: -DJUCE_WEBVIEW2_PACKAGE_LOCATION=<cartella>)
+if(WIN32)
+    set(_adr_wv2 NEEDS_WEBVIEW2 TRUE)
+endif()
+
 juce_add_gui_app(ArotronStudio
+    ${_adr_wv2}
     PRODUCT_NAME "ADR Dub Studio"
-    VERSION 2.22.0
-    BUNDLE_VERSION 2.22.0
+    VERSION 2.23.0
+    BUNDLE_VERSION 2.23.0
     COMPANY_NAME "Arotron"
     BUNDLE_ID "com.arotron.studio"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png"
@@ -42,6 +48,10 @@ target_link_libraries(ArotronStudio PRIVATE ArotronLang)
 # manuale utente (HTML con immagini, in italiano e inglese): si estrae e si apre dal menu Aiuto
 juce_add_binary_data(ArotronManual NAMESPACE ManualData HEADER_NAME ManualData.h SOURCES Resources/manual/manual_it.zip Resources/manual/manual_en.zip)
 target_link_libraries(ArotronStudio PRIVATE ArotronManual)
+
+# condizioni d'uso (testo del contratto, italiano e inglese)
+juce_add_binary_data(ArotronEula NAMESPACE EulaData HEADER_NAME EulaData.h SOURCES Resources/eula/eula_it.txt Resources/eula/eula_en.txt)
+target_link_libraries(ArotronStudio PRIVATE ArotronEula)
 
 target_sources(ArotronStudio PRIVATE
     Source/Main.cpp
@@ -80,6 +90,10 @@ target_sources(ArotronStudio PRIVATE
     Source/SampleEditor.cpp
     Source/Pool.cpp
     Source/Manual.cpp
+    Source/License.cpp
+    Source/LicenseUi.cpp
+    Source/third_party/monocypher/monocypher.c
+    Source/third_party/monocypher/monocypher-ed25519.c
     Source/LogicalEditor.cpp
     Source/EqEditor.cpp
     Source/MainComponent.cpp)
@@ -97,15 +111,19 @@ else()
     target_sources(ArotronStudio PRIVATE Source/VideoSupport.mm)
 endif()
 
+if(WIN32)
+    target_compile_definitions(ArotronStudio PRIVATE JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1)
+endif()
+
 target_compile_definitions(ArotronStudio PRIVATE
     JUCE_USE_CAMERA=0
-    JUCE_WEB_BROWSER=0
+    JUCE_WEB_BROWSER=1
     JUCE_USE_CURL=0
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=0
     JUCE_MODAL_LOOPS_PERMITTED=0
     JUCE_APPLICATION_NAME_STRING="ADR Dub Studio"
-    JUCE_APPLICATION_VERSION_STRING="2.22.0")
+    JUCE_APPLICATION_VERSION_STRING="2.23.0")
 
 if(ADR_FFMPEG_VIDEO)
     target_compile_definitions(ArotronStudio PRIVATE ADR_FFMPEG_VIDEO=1)
@@ -123,6 +141,7 @@ endif()
 target_link_libraries(ArotronStudio
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_cryptography
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
