@@ -10,6 +10,7 @@
 #include "DirectorMix.h"
 #include "Manual.h"
 #include "LicenseUi.h"
+#include "StemSeparatorUi.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
 #include "Relink.h"
@@ -263,6 +264,7 @@ MainComponent::MainComponent()
     timeline->onControlsChanged = [this] { settings().setValue ("trackControls", timeline->getControlMask()); settings().saveIfNeeded(); };
     timeline->onProcessRequest = [this] (int op) { processSelected (op); };
     timeline->onSilenceRequest = [this] { silenceDialog(); };
+    timeline->onSeparateRequest = [this] { separateStemsDialog(); };
     timeline->onCrossfadeRequest = [this] { crossfadeDialog(); };
     timeline->onFreezeRequest = [this] (const std::vector<int>& ids) { freezeTracks (ids); };
     timeline->onStretchCommit = [this] (int64_t id, double ratio, int64_t newStart)
@@ -1539,7 +1541,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty });
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1652,6 +1654,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdLicense:       i.setInfo (TRANS ("Licenza...") + " (" + license::shortLabel (licenseStatus) + ")", "", TRANS ("Aiuto"), 0); break;
         case cmdEula:          i.setInfo (TRANS ("Condizioni d'uso..."), "", TRANS ("Aiuto"), 0); break;
         case cmdThirdParty:    i.setInfo (TRANS ("Licenze di terze parti..."), "", TRANS ("Aiuto"), 0); break;
+        case cmdSeparateStems: i.setInfo (TRANS ("Separa dialoghi / musica / effetti..."), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
         case cmdScriptReader:  i.setInfo (TRANS ("Lettore copione per l'attore"), "", TRANS ("ADR"), 0); i.setTicked (scriptWindow != nullptr); break;
         case cmdCueMix:        i.setInfo (TRANS ("Cuffie dell'attore e talkback..."), "", TRANS ("ADR"), 0); i.setTicked (cueWindow != nullptr); break;
         case cmdAlignToGuide:  i.setInfo (TRANS ("Allinea alla guida (sincronia automatica)..."), "", TRANS ("Modifica"), 0); break;
@@ -1872,6 +1875,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrExportBwf:  exportAdrBwf(); break;
         case cmdAdrCueSheet:   exportCueSheet(); break;
         case cmdAlignToGuide:  alignSelectedToGuide(); break;
+        case cmdSeparateStems: separateStemsDialog(); break;
         case cmdAlignPhrases:  alignPhrasesSelected(); break;
         case cmdToolWarp:      timeline->setTool (Tool::Warp); break;
         case cmdToolScrub:     timeline->setTool (Tool::Scrub); break;
@@ -2172,7 +2176,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, cmdSeparateStems, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2:
             add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdRefTrack, cmdRefAB, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck });
             m.addSeparator();
@@ -3041,6 +3045,75 @@ private:
     juce::TextButton openBtn { TRANS ("Apri") }, delBtn { TRANS ("Elimina") };
 };
 } // namespace
+
+void MainComponent::separateStemsDialog()
+{
+    if (stemJob != nullptr) return;
+    stems::Request req;
+    req.rate = project->getSampleRate();
+    req.formats = &project->getFormats();
+    double totalSec = 0.0;
+    std::set<int64_t> seen;
+    for (auto id : project->selection)
+    {
+        auto* c = project->findClip (id);
+        if (c == nullptr || c->asset == nullptr || c->asset->offline || c->rejected || c->length <= 0 || ! seen.insert (id).second) continue;
+        stems::Request::ClipSrc s;
+        s.clipId = id;
+        s.name = c->name.isNotEmpty() ? c->name : c->asset->name;
+        s.asset = c->asset;
+        s.offset = c->offset;
+        s.length = juce::jmin (c->length, c->asset->length() - c->offset);
+        if (s.length <= 0) continue;
+        totalSec += (double) s.length / req.rate;
+        req.clips.push_back (std::move (s));
+    }
+    if (req.clips.empty()) { showError (TRANS ("Seleziona prima uno o piu' clip con l'audio da separare (di solito la Guida).")); return; }
+    req.folder = recordingsFolder (*project).getChildFile ("Separati");
+
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto dlg = std::make_shared<juce::Component::SafePointer<juce::DialogWindow>>();
+    auto* panel = new stems::OptionsPanel ((int) req.clips.size(), totalSec, ! stems::packReady(), stems::packDownloadMB(),
+        [safe, dlg, req] (stems::OptionsPanel::Choice ch) mutable
+        {
+            juce::MessageManager::callAsync ([safe, dlg, req, ch]() mutable
+            {
+                if (*dlg != nullptr) (*dlg)->exitModalState (0);
+                if (safe == nullptr) return;
+                req.mergeME = ch.mergeME;
+                req.highQuality = ch.highQuality;
+                req.muteSources = ch.muteSources;
+                const bool mute = ch.muteSources, merged = ch.mergeME;
+                safe->stemJob = std::make_unique<stems::Job> (std::move (req), [safe, mute, merged] (stems::Outcome o)
+                {
+                    juce::MessageManager::callAsync ([safe, o, mute, merged]
+                    {
+                        if (safe == nullptr) return;
+                        safe->stemJob.reset();
+                        if (! o.ok)
+                        {
+                            if (! o.cancelled) safe->showError (o.message);
+                            return;
+                        }
+                        const int made = safe->project->addStemTracks (o.sets, merged, mute);
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Separazione"),
+                                                                juce::String (made) + " " + TRANS ("tracce create (Dialoghi, M&E, Effetti). ") + o.message);
+                    });
+                });
+                safe->stemJob->launchThread();
+            });
+        },
+        [dlg] { juce::MessageManager::callAsync ([dlg] { if (*dlg != nullptr) (*dlg)->exitModalState (0); }); });
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (panel);
+    lo.dialogTitle = TRANS ("Separa dialoghi / musica / effetti");
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = false;
+    *dlg = lo.launchAsync();
+}
 
 void MainComponent::startupChecks()
 {

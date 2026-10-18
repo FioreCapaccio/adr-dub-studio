@@ -46,6 +46,7 @@ public:
     std::function<void()> onJoinRequest;
     std::function<void (int op)> onProcessRequest;   // Direct Offline Processing dal menu del clip (tools::Op)
     std::function<void()> onSilenceRequest;
+    std::function<void()> onSeparateRequest;
     std::function<void()> onCrossfadeRequest;          // Rileva / elimina i silenzi
     std::function<void (const std::vector<int>&)> onFreezeRequest;   // Freeze / Unfreeze delle tracce scelte   // JOIN dei clip selezionati
     std::function<void (bool toCue)> onStretchRequest;

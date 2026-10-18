@@ -367,6 +367,30 @@ bool separate (const float* const* channels, int numChannels, int64_t numSamples
     return true;
 }
 
+bool mixFiles (const juce::File& a, const juce::File& b, const juce::File& out, juce::String& error)
+{
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatReader> ra (wav.createReaderFor (a.createInputStream().release(), true)), rb (wav.createReaderFor (b.createInputStream().release(), true));
+    if (ra == nullptr || rb == nullptr || ra->numChannels != rb->numChannels) { error = TRANS ("File degli stem non validi."); return false; }
+    out.deleteFile();
+    std::unique_ptr<juce::FileOutputStream> os (out.createOutputStream());
+    std::unique_ptr<juce::AudioFormatWriter> w;
+    if (os != nullptr) w.reset (wav.createWriterFor (os.get(), ra->sampleRate, ra->numChannels, 24, {}, 0));
+    if (w == nullptr) { error = TRANS ("Impossibile scrivere ") + out.getFullPathName(); return false; }
+    os.release();
+    const int64_t total = juce::jmin (ra->lengthInSamples, rb->lengthInSamples);
+    juce::AudioBuffer<float> x ((int) ra->numChannels, 1 << 16), y ((int) ra->numChannels, 1 << 16);
+    for (int64_t pos = 0; pos < total; pos += x.getNumSamples())
+    {
+        const int n = (int) juce::jmin<int64_t> (x.getNumSamples(), total - pos);
+        ra->read (&x, 0, n, pos, true, true);
+        rb->read (&y, 0, n, pos, true, true);
+        for (int c = 0; c < x.getNumChannels(); ++c) juce::FloatVectorOperations::add (x.getWritePointer (c), y.getReadPointer (c), n);
+        w->writeFromAudioSampleBuffer (x, 0, n);
+    }
+    return true;
+}
+
 // ─── Scaricamento di modello e libreria ───
 namespace
 {

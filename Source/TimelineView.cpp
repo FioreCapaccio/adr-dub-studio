@@ -3085,6 +3085,7 @@ void TimelineView::showClipMenu (int64_t clipId)
         m.addSubMenu (TRANS ("Elaborazione (offline)"), proc);
     }
     m.addItem (10, TRANS ("Time-stretch..."));
+    m.addItem (40, TRANS ("Separa dialoghi / musica / effetti..."));
     m.addSeparator();
     if (auto* cl = project.findClip (clipId); cl != nullptr)
     {
@@ -3114,6 +3115,10 @@ void TimelineView::showClipMenu (int64_t clipId)
             case 8: if (c != nullptr) p.setActiveTake (c->cueId, c->takeNo); break;
             case 9: if (c != nullptr) p.deleteTake (c->cueId, c->takeNo); break;
             case 12: if (safe->onJoinRequest) safe->onJoinRequest(); break;
+            case 40:
+                if (p.selection.count (clipId) == 0) p.selection = { clipId };
+                if (safe->onSeparateRequest) safe->onSeparateRequest();
+                break;
             case 17: { int ti = -1; p.findClip (clipId, &ti); if (ti >= 0) { p.setSoloLane (p.getSession().tracks[(size_t) ti].id, safe->lanesOf (ti).index.count (clipId) ? safe->lanesOf (ti).index.at (clipId) : 0); safe->repaint(); } break; }
             case 20: if (safe->onSilenceRequest) safe->onSilenceRequest(); break;
             case 25: if (safe->onCrossfadeRequest) safe->onCrossfadeRequest(); break;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <array>
 #include <optional>
 
 #include <JuceHeader.h>
@@ -566,6 +567,11 @@ public:
     int trackIndexForId (int id) const noexcept;
     Track* findTrack (int id) noexcept;
     Clip* findClip (int64_t id, int* trackIndex = nullptr) noexcept;
+
+    // separazione in stem (Dialoghi / Musica / Effetti): vedi StemEngine.h
+    struct StemClipSet { int64_t clipId = 0; std::array<AssetPtr, 3> assets; };   // dialoghi, musica (o M&E), effetti; assets nulli = non creati
+    /** Per ogni traccia sorgente crea le tracce degli stem (ruoli Dialoghi, M&E, Effetti) con i clip nella stessa posizione; se 'muteSources' silenzia i clip originali. Un solo passo di undo. */
+    int addStemTracks (const std::vector<StemClipSet>& sets, bool mergedME, bool muteSources);
 
     // tracce
     int addTrack();

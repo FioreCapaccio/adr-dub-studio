@@ -1856,6 +1856,71 @@ private:
         }
         else std::cout << "     modello di separazione non scaricato: prova con il modello vero saltata" << std::endl;
         expect (packDownloadMB() > 0 || packReady(), "elenco dei file del motore");
+
+        if (const auto snap = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_STEMS", {}); snap.isNotEmpty())   // disegna la finestra delle opzioni su un file (senza toccare lo schermo)
+        {
+            fc::lang::apply (fc::lang::savedCode());   // lingua scelta con ADR_LANG
+            fc::stems::OptionsPanel panel (3, 842.0, true, 110, [] (fc::stems::OptionsPanel::Choice) {}, [] {});
+            auto img = panel.createComponentSnapshot (panel.getLocalBounds(), true, 2.0f);
+            juce::PNGImageFormat png;
+            juce::File (snap).deleteFile();
+            if (auto os = juce::File (snap).createOutputStream()) png.writeImageToStream (img, *os);
+            fc::lang::apply ("it");
+        }
+        // percorso completo (richiesta -> file -> tracce) con il modello vero, se scaricato
+        if (packReady())
+        {
+            fc::Project p (formats, 48000.0);
+            auto as = std::make_shared<fc::Asset>();
+            as->name = "prova";
+            as->audio.setSize (2, 10 * 48000);
+            for (int i = 0; i < 10 * 48000; ++i) { as->audio.setSample (0, i, 0.3f * std::sin (0.05f * (float) i)); as->audio.setSample (1, i, 0.2f * std::sin (0.07f * (float) i)); }
+            as->buildPeaks();
+            fc::Clip c;
+            c.id = 1; c.asset = as; c.start = 5000; c.offset = 48000; c.length = 6 * 48000; c.name = "Scena 1";
+            p.edit().tracks[0].clips = { c };
+            fc::stems::Request rq;
+            rq.rate = 48000.0;
+            rq.formats = &formats;
+            rq.mergeME = true;
+            rq.folder = dir.getChildFile ("richiesta");
+            rq.clips.push_back ({ 1, "Scena 1", as, 48000, 6 * 48000 });
+            double lastP = 0.0;
+            const auto out = fc::stems::process (rq, [&] (double v) { lastP = v; return true; }, [] (const juce::String&) {}, [] { return false; });
+            expect (out.ok, "percorso completo: separazione dei clip (" + out.message + ")");
+            if (out.ok)
+            {
+                expect (out.sets.size() == 1 && out.sets[0].assets[0] != nullptr && out.sets[0].assets[1] != nullptr && out.sets[0].assets[2] == nullptr, "percorso completo: Dialoghi e M&E (due stem)");
+                expect (out.sets[0].assets[0]->length() >= 6 * 48000 - 2 && lastP > 0.99, "percorso completo: lunghezza uguale al clip e avanzamento al 100%");
+                const size_t before = p.getSession().tracks.size();
+                expect (p.addStemTracks (out.sets, true, true) == 2 && p.getSession().tracks.size() == before + 2 && p.getSession().tracks[before + 1].name.contains ("M&E"), "percorso completo: due tracce Dialoghi e M&E");
+            }
+        }
+
+        // le tracce degli stem: ruoli, posizione dei clip, originali silenziati, un solo undo
+        {
+            fc::Project p (formats, 48000.0);
+            auto mk = [] { auto as = std::make_shared<fc::Asset>(); as->name = "x"; as->audio.setSize (2, 48000); as->buildPeaks(); return as; };
+            fc::Clip c;
+            c.id = 1; c.asset = mk(); c.start = 1000; c.length = 40000; c.name = "Guida"; c.fadeIn = 100;
+            p.edit().tracks[0].clips = { c };
+            const size_t before = p.getSession().tracks.size();
+            fc::Project::StemClipSet set;
+            set.clipId = 1;
+            set.assets = { mk(), mk(), mk() };
+            const int made = p.addStemTracks ({ set }, false, true);
+            const auto& tr = p.getSession().tracks;
+            expect (made == 3 && tr.size() == before + 3, "stem: create tre tracce nuove");
+            if (tr.size() == before + 3)
+            {
+                expect (tr[before].live->trackType.load() == fc::TrackDialogue && tr[before + 1].live->trackType.load() == fc::TrackME && tr[before + 2].live->trackType.load() == fc::TrackEffects, "stem: ruoli Dialoghi, M&E, Effetti");
+                expect (tr[before].clips.size() == 1 && tr[before].clips[0].start == 1000 && tr[before].clips[0].length == 40000 && tr[before].clips[0].fadeIn == 100 && tr[before].clips[0].cueId == 0, "stem: il clip sta dove stava l'originale");
+                expect (tr[0].clips[0].muted, "stem: l'originale e' silenziato");
+                expect (tr[before].name.startsWith (tr[0].name) && tr[before + 1].name.contains ("Musica"), "stem: i nomi derivano dalla traccia sorgente");
+            }
+            p.undo();
+            expect (p.getSession().tracks.size() == before && ! p.getSession().tracks[0].clips[0].muted, "stem: un solo undo toglie tutto");
+        }
     }
 
     // Licenza: firma Ed25519 (compatibile con il generatore di ADR Studio Suite), macchina, prodotto, scadenza, prova e orologio
@@ -4254,7 +4319,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.25.1"; }
+    const juce::String getApplicationVersion() override { return "2.26.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

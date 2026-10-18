@@ -1,6 +1,7 @@
 #pragma once
 
 #include "License.h"
+#include "StemSeparatorUi.h"
 
 #include "AdrPanel.h"
 #include "InfoLine.h"
@@ -215,6 +216,8 @@ private:
     int licenseTick = 0;
     bool nagDone = false;   // la schermata di avvio senza licenza si mostra una volta per avvio
     std::unique_ptr<juce::DocumentWindow> manualWindow;
+    void separateStemsDialog();
+    std::unique_ptr<stems::Job> stemJob;
     juce::String manualLang;
 public:
     /** Apre le finestre principali e scrive in un file tutti i testi visibili (pulsanti, etichette, menu, suggerimenti): serve a controllare le traduzioni. */

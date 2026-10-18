@@ -356,6 +356,63 @@ int Project::addTrackAs (const juce::String& name, int type, juce::Colour colour
     return id;
 }
 
+int Project::addStemTracks (const std::vector<StemClipSet>& sets, bool mergedME, bool muteSources)
+{
+    if (sets.empty()) return 0;
+    beginEdit();
+    std::map<int, std::array<int, 3>> stemTrack;   // traccia sorgente (id) -> id delle tracce create
+    int made = 0;
+    static constexpr int types[3] = { TrackDialogue, TrackME, TrackEffects };
+    for (auto& set : sets)
+    {
+        int ti = -1;
+        auto* src = findClip (set.clipId, &ti);
+        if (src == nullptr) continue;
+        const int srcTrackId = session.tracks[(size_t) ti].id;
+        const juce::String srcName = session.tracks[(size_t) ti].name;
+        const Clip srcCopy = *src;
+        auto it = stemTrack.find (srcTrackId);
+        if (it == stemTrack.end())
+        {
+            std::array<int, 3> ids { 0, 0, 0 };
+            for (int s = 0; s < 3; ++s)
+            {
+                if (set.assets[(size_t) s] == nullptr) continue;
+                const int id = addTrackInternal();
+                auto* t = findTrack (id);
+                t->name = srcName + " - " + (s == 1 && ! mergedME ? TRANS ("Musica") : trackTypeName (types[s]));
+                t->colour = trackTypeColour (types[s]);
+                applyTrackPreset (*t->live, types[s]);
+                t->live->outBus = roleOutBus (types[s]);
+                ids[(size_t) s] = id;
+                ++made;
+            }
+            it = stemTrack.emplace (srcTrackId, ids).first;
+        }
+        for (int s = 0; s < 3; ++s)
+        {
+            if (set.assets[(size_t) s] == nullptr || it->second[(size_t) s] == 0) continue;
+            auto* t = findTrack (it->second[(size_t) s]);
+            Clip c;
+            c.id = nextClipId++;
+            c.asset = set.assets[(size_t) s];
+            c.start = srcCopy.start;
+            c.offset = 0;
+            c.length = juce::jmin (srcCopy.length, c.asset->length());
+            c.fadeIn = srcCopy.fadeIn;
+            c.fadeOut = srcCopy.fadeOut;
+            c.name = srcCopy.name;
+            t->clips.push_back (c);
+        }
+        if (muteSources)
+            if (auto* sc = findClip (set.clipId); sc != nullptr && ! session.tracks[(size_t) ti].editLocked()) sc->muted = true;
+    }
+    if (made > 0 && ! stemTrack.empty())
+        for (auto& kv : stemTrack) for (int id : kv.second) if (id != 0) { selectedTrackId = id; break; }
+    changed();
+    return made;
+}
+
 void Project::setTrackOutBus (int trackId, int bus)
 {
     if (auto* t = findTrack (trackId))

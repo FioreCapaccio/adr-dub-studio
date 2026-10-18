@@ -42,6 +42,9 @@ bool separate (const float* const* channels, int numChannels, int64_t numSamples
                const std::array<juce::File, kStems>& outFiles, const CoreFn& core,
                const std::function<bool (float)>& progress, juce::String& error);
 
+/** Somma due file WAV (stessa lunghezza e canali) in uno: serve a unire Musica ed Effetti in un solo M&E. */
+bool mixFiles (const juce::File& a, const juce::File& b, const juce::File& out, juce::String& error);
+
 // ─── Modello e libreria: scaricamento una tantum ───
 juce::File packDir();
 bool packReady();
