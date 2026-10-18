@@ -4281,7 +4281,15 @@ public:
                     const std::array<juce::File, 3> files { dir.getChildFile ("dialoghi.wav"), dir.getChildFile ("musica.wav"), dir.getChildFile ("effetti.wav") };
                     fc::stems::OnnxCore core;
                     juce::String err;
-                    if (! core.load (err)) std::cout << "errore: " << err << std::endl;
+                    if (! fc::stems::packReady())
+                    {
+                        std::cout << "scarico il motore (" << fc::stems::packDownloadMB() << " MB)..." << std::endl;
+                        if (! fc::stems::downloadPack ([] (float p, const juce::String& f) { std::cout << "\r" << f << " " << (int) (p * 100) << "%   " << std::flush; return true; }, err))
+                            std::cout << "\nerrore: " << err << std::endl;
+                        else std::cout << std::endl;
+                    }
+                    if (! fc::stems::packReady()) {}
+                    else if (! core.load (err)) std::cout << "errore: " << err << std::endl;
                     else
                     {
                         fc::stems::Options o;
