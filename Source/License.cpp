@@ -286,7 +286,7 @@ juce::String describe (const Status& s)
     switch (s.state)
     {
         case State::Trial:        return TRANS ("Versione di prova") + " - " + juce::String (s.daysLeft) + " " + (s.daysLeft == 1 ? TRANS ("giorno rimasto") : TRANS ("giorni rimasti"));
-        case State::TrialExpired: return TRANS ("La prova gratuita e' scaduta. Per continuare a usare ADR Dub Studio serve una licenza.");
+        case State::TrialExpired: return TRANS ("La prova gratuita e' scaduta.");
         case State::Licensed:
         {
             auto t = TRANS ("Licenza valida") + (s.issuedTo.isNotEmpty() ? " - " + s.issuedTo : juce::String());

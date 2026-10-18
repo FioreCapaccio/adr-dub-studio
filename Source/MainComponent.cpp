@@ -634,7 +634,7 @@ void MainComponent::timerCallback()
         static int slow = 0;
         licenseTick = 0;
         if (++slow % 15 == 0 && license::eulaAccepted()) licenseStatus = license::current();   // la prova parte dopo le condizioni d'uso
-        if (! license::allowed (licenseStatus) && licenseWin == nullptr && eulaWin == nullptr) showLicenseDialog (true);
+        if (! license::allowed (licenseStatus) && ! nagDone && licenseWin == nullptr && eulaWin == nullptr) showLicenseDialog (true);
     }
     engine.cue.custom = project->directorMix;
     const int64_t pos = engine.getPosition();
@@ -3034,6 +3034,7 @@ void MainComponent::startupChecks()
 
 bool MainComponent::requireLicense()
 {
+    if (! license::kHardLock) return true;   // senza licenza il programma resta utilizzabile: c'e' solo la schermata di avvio
     licenseStatus = license::current();
     if (license::allowed (licenseStatus)) return true;
     showLicenseDialog (true);
@@ -3055,7 +3056,13 @@ void MainComponent::showLicenseDialog (bool locked)
                 juce::MessageManager::callAsync ([safe] { if (safe != nullptr && safe->licenseWin != nullptr) safe->licenseWin->exitModalState (0); });
         },
         [safe] { juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->requestQuit(); }); },
-        [safe] { if (safe != nullptr) safe->showEulaDialog (false); });
+        [safe] { if (safe != nullptr) safe->showEulaDialog (false); },
+        [safe]
+        {
+            if (safe == nullptr) return;
+            safe->nagDone = true;
+            juce::MessageManager::callAsync ([safe] { if (safe != nullptr && safe->licenseWin != nullptr) safe->licenseWin->exitModalState (0); });
+        });
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (panel);
     lo.dialogTitle = TRANS ("Licenza");

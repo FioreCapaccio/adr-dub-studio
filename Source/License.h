@@ -10,6 +10,10 @@ namespace fc::license
 /** Funzione che la licenza deve contenere per valere per ADR Dub Studio (le licenze della Suite non la hanno). */
 inline constexpr const char* kFeature = "dub_studio";
 inline constexpr int kTrialDays = 30;
+/** Dopo la prova (o con licenza scaduta o non valida): false = il programma funziona con tutte le funzioni ma all'avvio mostra una schermata
+    con un'attesa di kNagSeconds secondi (come REAPER); true = blocco di riproduzione, registrazione ed esportazione finche' non si importa una licenza. */
+inline constexpr bool kHardLock = false;
+inline constexpr int kNagSeconds = 5;
 
 enum class State { Trial, TrialExpired, Licensed, Expired, Invalid };
 

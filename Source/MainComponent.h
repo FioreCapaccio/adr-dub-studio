@@ -213,6 +213,7 @@ private:
     juce::Component::SafePointer<juce::DialogWindow> licenseWin, eulaWin;
     fc::license::Status licenseStatus;
     int licenseTick = 0;
+    bool nagDone = false;   // la schermata di avvio senza licenza si mostra una volta per avvio
     std::unique_ptr<juce::DocumentWindow> manualWindow;
     juce::String manualLang;
 public:

@@ -18,7 +18,7 @@ Tutti i diritti riservati. L'uso e' regolato dalle Condizioni d'uso (**Aiuto > C
 
 ### Prova e attivazione
 
-Il programma si prova gratis per 30 giorni; poi riproduzione, registrazione ed esportazione richiedono una licenza (**Aiuto > Licenza**: il Machine ID si copia da li', il file `.lic` si importa li'). Le licenze sono firmate Ed25519 con lo stesso generatore di ADR Studio Suite (`--product=dubstudio`) e verificate offline; il codice e' in `Source/License.*` (Ed25519: [Monocypher](https://monocypher.com), pubblico dominio / BSD-2).
+Il programma si prova gratis per 30 giorni; poi continua a funzionare con tutte le funzioni, ma all'avvio mostra una schermata con 5 secondi di attesa finche' non si importa una licenza (**Aiuto > Licenza**: il Machine ID si copia da li', il file `.lic` si importa li'). Le licenze sono firmate Ed25519 con lo stesso generatore di ADR Studio Suite (`--product=dubstudio`) e verificate offline; il codice e' in `Source/License.*` (Ed25519: [Monocypher](https://monocypher.com), pubblico dominio / BSD-2).
 
 ## Video
 

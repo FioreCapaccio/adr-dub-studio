@@ -2,8 +2,8 @@
 
 namespace fc::license
 {
-LicensePanel::LicensePanel (bool lockedIn, std::function<void()> onChanged, std::function<void()> onQuit, std::function<void()> onTerms)
-    : locked (lockedIn), changed (std::move (onChanged)), quit (std::move (onQuit))
+LicensePanel::LicensePanel (bool lockedIn, std::function<void()> onChanged, std::function<void()> onQuit, std::function<void()> onTerms, std::function<void()> onContinue)
+    : locked (lockedIn), changed (std::move (onChanged)), quit (std::move (onQuit)), proceed (std::move (onContinue))
 {
     title.setText ("ADR Dub Studio", juce::dontSendNotification);
     title.setFont (theme::font (20.0f, true));
@@ -29,9 +29,24 @@ LicensePanel::LicensePanel (bool lockedIn, std::function<void()> onChanged, std:
 
     for (juce::Component* c : std::initializer_list<juce::Component*> { &title, &status, &msg, &idLabel, &idBox, &copyBtn, &importBtn, &pasteBtn, &termsBtn })
         addAndMakeVisible (c);
-    if (locked) addAndMakeVisible (quitBtn);
+    continueBtn.onClick = [this] { proceeded = true; if (proceed) proceed(); };
+    if (locked && kHardLock) addAndMakeVisible (quitBtn);
+    if (locked && ! kHardLock)
+    {
+        addAndMakeVisible (continueBtn);
+        waiting = kNagSeconds;
+        continueBtn.setEnabled (false);
+        continueBtn.setButtonText (TRANS ("Continua") + " (" + juce::String (waiting) + ")");
+        startTimer (1000);
+    }
     setSize (560, 330);   // lo stato puo' andare su due righe
     refresh();
+}
+
+// chiudere la finestra con la X dopo l'attesa vale come premere Continua
+LicensePanel::~LicensePanel()
+{
+    if (locked && ! kHardLock && ! proceeded && waiting <= 0 && proceed) proceed();
 }
 
 void LicensePanel::refresh()
@@ -39,7 +54,8 @@ void LicensePanel::refresh()
     const auto s = current();
     status.setText (describe (s), juce::dontSendNotification);
     status.setColour (juce::Label::textColourId, allowed (s) ? theme::green : theme::accent);
-    msg.setText (locked ? TRANS ("Per continuare serve una licenza. Invia il Machine ID per riceverla, poi importa il file .lic. Le sessioni gia' salvate restano al sicuro: non vengono toccate.")
+    msg.setText (locked && ! kHardLock ? TRANS ("Il programma continua a funzionare con tutte le funzioni. Se ti e' utile, acquista una licenza: invia il Machine ID per riceverla, poi importa il file .lic.")
+              : locked ? TRANS ("Per continuare serve una licenza. Invia il Machine ID per riceverla, poi importa il file .lic. Le sessioni gia' salvate restano al sicuro: non vengono toccate.")
                         : TRANS ("Per attivare il programma importa il file .lic ricevuto: e' valido solo su questo computer."),
                 juce::dontSendNotification);
 }
@@ -64,10 +80,19 @@ void LicensePanel::resized()
     r.removeFromTop (10);
     auto b2 = r.removeFromTop (30);
     termsBtn.setBounds (b2.removeFromLeft (170));
-    if (locked) quitBtn.setBounds (b2.removeFromRight (100));
+    if (locked && kHardLock) quitBtn.setBounds (b2.removeFromRight (100));
+    if (locked && ! kHardLock) continueBtn.setBounds (b2.removeFromRight (130));
 }
 
 void LicensePanel::paint (juce::Graphics& g) { g.fillAll (theme::panel); }
+
+void LicensePanel::timerCallback()
+{
+    if (--waiting > 0) { continueBtn.setButtonText (TRANS ("Continua") + " (" + juce::String (waiting) + ")"); return; }
+    stopTimer();
+    continueBtn.setButtonText (TRANS ("Continua"));
+    continueBtn.setEnabled (true);
+}
 
 void LicensePanel::importFile()
 {
