@@ -12,7 +12,7 @@ struct Request
     struct ClipSrc { int64_t clipId = 0; juce::String name; AssetPtr asset; int64_t offset = 0, length = 0; };
     std::vector<ClipSrc> clips;
     double rate = 48000.0;
-    bool highQuality = false, mergeME = false, muteSources = true;
+    bool highQuality = false, mergeME = false, muteSources = true, splitVoices = false;
     juce::File folder;
     juce::AudioFormatManager* formats = nullptr;
 };
@@ -45,7 +45,7 @@ private:
 class OptionsPanel : public juce::Component
 {
 public:
-    struct Choice { bool mergeME = false, highQuality = false, muteSources = true; };
+    struct Choice { bool mergeME = false, highQuality = false, muteSources = true, splitVoices = false; };
     OptionsPanel (int numClips, double totalSeconds, bool needsDownload, int downloadMB, std::function<void (Choice)> onStart, std::function<void()> onCancel);
     void resized() override;
     void paint (juce::Graphics&) override;
@@ -53,7 +53,8 @@ public:
 private:
     juce::Label title, info, note;
     juce::ToggleButton three { TRANS ("Tre stem: Dialoghi, Musica, Effetti") }, two { TRANS ("Due stem: Dialoghi, M&E (musica ed effetti insieme)") },
-                       hq { TRANS ("Qualita' alta (piu' lenta: sovrapposizione maggiore)") }, mute { TRANS ("Silenzia i clip originali") };
+                       hq { TRANS ("Qualita' alta (piu' lenta: sovrapposizione maggiore)") }, mute { TRANS ("Silenzia i clip originali") },
+                       voices { TRANS ("Dividi i dialoghi in voce maschile e voce femminile (dal tono)") };
     juce::TextButton go { TRANS ("Separa") }, cancel { TRANS ("Annulla") };
     std::function<void (Choice)> start;
     std::function<void()> cancelFn;

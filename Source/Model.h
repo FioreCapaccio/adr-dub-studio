@@ -5,6 +5,7 @@
 #include <optional>
 
 #include <JuceHeader.h>
+#include "VoiceGender.h"
 #include "Lang.h"
 #include "Timecode.h"
 #include "ParamEq.h"
@@ -569,9 +570,12 @@ public:
     Clip* findClip (int64_t id, int* trackIndex = nullptr) noexcept;
 
     // separazione in stem (Dialoghi / Musica / Effetti): vedi StemEngine.h
-    struct StemClipSet { int64_t clipId = 0; std::array<AssetPtr, 3> assets; };   // dialoghi, musica (o M&E), effetti; assets nulli = non creati
+    struct StemClipSet { int64_t clipId = 0; std::array<AssetPtr, 3> assets; std::vector<gender::VoiceSeg> voices; };   // dialoghi, musica (o M&E), effetti; assets nulli = non creati; voices = voce maschile/femminile dello stem Dialoghi (vuoto = una traccia sola)
     /** Per ogni traccia sorgente crea le tracce degli stem (ruoli Dialoghi, M&E, Effetti) con i clip nella stessa posizione; se 'muteSources' silenzia i clip originali. Un solo passo di undo. */
     int addStemTracks (const std::vector<StemClipSet>& sets, bool mergedME, bool muteSources);
+    /** Divide l'audio dei clip in due tracce, voce maschile e femminile (segmenti relativi all'inizio dell'audio del clip, da gender::analyse). Un solo passo di undo; ritorna le tracce create. */
+    struct VoiceSet { int64_t clipId = 0; std::vector<gender::VoiceSeg> voices; };
+    int addVoiceTracks (const std::vector<VoiceSet>& sets, bool muteSources);
 
     // tracce
     int addTrack();

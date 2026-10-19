@@ -47,6 +47,7 @@ public:
     std::function<void (int op)> onProcessRequest;   // Direct Offline Processing dal menu del clip (tools::Op)
     std::function<void()> onSilenceRequest;
     std::function<void()> onSeparateRequest;
+    std::function<void()> onSplitVoicesRequest;
     std::function<void()> onCrossfadeRequest;          // Rileva / elimina i silenzi
     std::function<void (const std::vector<int>&)> onLevelRequest;   // Livella il volume delle tracce scelte
     std::function<void (const std::vector<int>&)> onFreezeRequest;   // Freeze / Unfreeze delle tracce scelte   // JOIN dei clip selezionati

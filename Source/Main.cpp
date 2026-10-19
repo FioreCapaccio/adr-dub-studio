@@ -29,6 +29,7 @@
 #include "License.h"
 #include "StemEngine.h"
 #include "Leveler.h"
+#include "VoiceGender.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
 class DelayTestProcessor : public juce::AudioProcessor
@@ -136,6 +137,7 @@ private:
         stepStems();
         stepLeveler();
         stepCueMerge();
+        stepVoices();
         stepTrackFolders();
         stepEditing();
         stepPdc();
@@ -2683,6 +2685,104 @@ private:
         });
     }
 
+    // riconoscimento delle voci maschile / femminile dal tono
+    void stepVoices()
+    {
+        namespace g = fc::gender;
+        const double sr = 48000.0;
+        // parlato sintetico: armoniche con vibrato leggero e inviluppo; f0 = 0 -> pausa (silenzio), f0 < 0 -> rumore (non sonoro)
+        auto build = [&] (const std::vector<std::pair<double, double>>& parts)
+        {
+            std::vector<float> x;
+            juce::Random rnd (7);
+            double phase = 0.0;
+            for (auto& pt : parts)
+            {
+                const int n = (int) (pt.second * sr);
+                for (int i = 0; i < n; ++i)
+                {
+                    float v = 0.0f;
+                    if (pt.first > 0.0)
+                    {
+                        const double f = pt.first * (1.0 + 0.03 * std::sin (2.0 * juce::MathConstants<double>::pi * 5.0 * i / sr));
+                        phase += 2.0 * juce::MathConstants<double>::pi * f / sr;
+                        for (int k = 1; k <= 20; ++k) v += (float) (std::sin (k * phase) / std::pow (k, 1.2));
+                        const double env = juce::jmin (1.0, juce::jmin (i, n - i) / (0.03 * sr));
+                        v *= (float) (0.12 * env);
+                    }
+                    else if (pt.first < 0.0)
+                        v = 0.1f * (rnd.nextFloat() - 0.5f);
+                    x.push_back (v);
+                }
+            }
+            return x;
+        };
+        auto at = [&] (const g::VoiceSeg& s) { return (double) s.start / sr; };
+        {   // maschile 110, femminile 220, maschile 120, femminile 210 con pause
+            auto x = build ({ { 0, 0.3 }, { 110, 1.5 }, { 0, 0.5 }, { 220, 1.2 }, { 0, 0.4 }, { 120, 1.0 }, { 0, 0.6 }, { 210, 1.5 }, { 0, 0.3 } });
+            const auto s = g::analyse (x.data(), (int64_t) x.size(), sr);
+            expect (s.size() == 4 && ! s[0].female && s[1].female && ! s[2].female && s[3].female, "voci: maschile, femminile, maschile, femminile riconosciuti (" + juce::String ((int) s.size()) + " parti)");
+            if (s.size() == 4)
+            {
+                expect (std::abs (at (s[1]) - 2.05) < 0.1 && std::abs (at (s[2]) - 3.7) < 0.1 && std::abs (at (s[3]) - 5.2) < 0.1, "voci: tagli a meta' delle pause (" + juce::String (at (s[1]), 2) + " " + juce::String (at (s[2]), 2) + " " + juce::String (at (s[3]), 2) + " s)");
+                int64_t sum = 0; bool contiguous = s[0].start == 0;
+                for (size_t i = 0; i < s.size(); ++i) { sum += s[i].length; if (i > 0) contiguous = contiguous && s[i].start == s[i - 1].start + s[i - 1].length; }
+                expect (contiguous && sum == (int64_t) x.size(), "voci: i segmenti coprono tutto l'audio senza buchi");
+                expect (std::abs (s[0].f0 - 110.0f) < 6.0f && std::abs (s[1].f0 - 220.0f) < 10.0f && ! s[0].uncertain && ! s[1].uncertain, "voci: tono misurato " + juce::String (s[0].f0, 0) + " / " + juce::String (s[1].f0, 0) + " Hz");
+            }
+            expect (g::hasBoth (s), "voci: entrambi i generi trovati");
+        }
+        {   // donna con voce bassa (160 Hz) e uomo (100 Hz): la soglia si adatta
+            auto x = build ({ { 0, 0.3 }, { 100, 1.2 }, { 0, 0.5 }, { 160, 1.2 }, { 0, 0.5 }, { 100, 1.0 }, { 0, 0.3 } });
+            const auto s = g::analyse (x.data(), (int64_t) x.size(), sr);
+            expect (s.size() == 3 && ! s[0].female && s[1].female && ! s[2].female, "voci: voce femminile grave (160 Hz) distinta dall'uomo (" + juce::String ((int) s.size()) + " parti)");
+        }
+        {   // un solo parlatore che alza e abbassa il tono: nessuna divisione
+            auto x = build ({ { 0, 0.3 }, { 100, 1.2 }, { 0, 0.4 }, { 130, 1.2 }, { 0, 0.4 }, { 95, 1.0 }, { 0, 0.3 } });
+            const auto s = g::analyse (x.data(), (int64_t) x.size(), sr);
+            expect (! g::hasBoth (s) && s.size() == 1, "voci: un solo parlatore non viene diviso (" + juce::String ((int) s.size()) + " parti)");
+        }
+        {   // un fruscio senza tono tra due voci non crea una terza parte
+            auto x = build ({ { 0, 0.3 }, { 110, 1.2 }, { 0, 0.3 }, { -1, 0.5 }, { 0, 0.3 }, { 220, 1.2 }, { 0, 0.3 } });
+            const auto s = g::analyse (x.data(), (int64_t) x.size(), sr);
+            int64_t sum = 0; for (auto& v : s) sum += v.length;
+            expect (s.size() == 2 && sum == (int64_t) x.size(), "voci: un rumore senza tono si unisce a una voce vicina (" + juce::String ((int) s.size()) + " parti)");
+        }
+        {   // silenzio: nessun segmento
+            std::vector<float> x ((size_t) (2 * sr), 0.0f);
+            expect (g::analyse (x.data(), (int64_t) x.size(), sr).empty(), "voci: nel silenzio non c'e' nulla da dividere");
+        }
+        {   // progetto: due tracce, clip con gli offset giusti, un solo undo; anche nella separazione
+            auto x = build ({ { 0, 0.3 }, { 110, 1.5 }, { 0, 0.5 }, { 220, 1.2 }, { 0, 0.4 }, { 120, 1.0 }, { 0, 0.6 }, { 210, 1.5 }, { 0, 0.3 } });
+            fc::Project p (formats, sr);
+            auto as = std::make_shared<fc::Asset>(); as->name = "v";
+            as->audio.setSize (2, (int) x.size());
+            for (int i = 0; i < (int) x.size(); ++i) { as->audio.setSample (0, i, x[(size_t) i]); as->audio.setSample (1, i, x[(size_t) i]); }
+            as->buildPeaks();
+            fc::Clip c; c.id = 5001; c.asset = as; c.start = 48000; c.offset = 24000; c.length = (int64_t) x.size() - 24000 - 24000;
+            p.edit().tracks[0].clips = { c };
+            const size_t tracks0 = p.getSession().tracks.size();
+            const auto segs = g::analyse (as->audio, c.offset, c.length, sr);
+            const int made = p.addVoiceTracks ({ { c.id, segs } }, true);
+            const auto& T = p.getSession().tracks;
+            expect (made == 2 && T.size() == tracks0 + 2 && T[tracks0].clips.size() == 2 && T[tracks0 + 1].clips.size() == 2 && T[0].clips[0].muted, "voci: due tracce con i clip di ciascuna voce, originale silenziato");
+            bool ok = true; int64_t covered = 0;
+            for (size_t t = tracks0; t < T.size(); ++t) for (auto& cl : T[t].clips) { ok = ok && cl.offset >= c.offset && cl.offset + cl.length <= c.offset + c.length && cl.start - cl.offset == c.start - c.offset; covered += cl.length; }
+            expect (ok && covered == c.length, "voci: i clip puntano all'audio giusto e insieme coprono il clip (" + juce::String (covered) + ")");
+            p.undo();
+            expect (p.getSession().tracks.size() == tracks0 && ! p.getSession().tracks[0].clips[0].muted, "voci: un solo passo di undo");
+
+            fc::Project::StemClipSet set;
+            set.clipId = c.id;
+            set.assets = { as, as, as };
+            set.voices = g::analyse (as->audio, 0, as->length(), sr);
+            fc::Clip full = c; full.offset = 0; full.length = as->length();
+            p.edit().tracks[0].clips = { full };
+            const int m2 = p.addStemTracks ({ set }, false, true);
+            expect (m2 == 4 && p.getSession().tracks.size() == tracks0 + 4, "voci: nella separazione nascono Dialoghi maschile e femminile, Musica ed Effetti (" + juce::String (m2) + " tracce)");
+        }
+    }
+
     // unione di piu' cue in uno solo
     void stepCueMerge()
     {
@@ -4450,7 +4550,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.27.0"; }
+    const juce::String getApplicationVersion() override { return "2.28.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -4497,6 +4597,29 @@ public:
                         rc = ok ? 0 : 1;
                     }
                 }
+            }
+            setApplicationReturnValue (rc);
+            quit();
+            return;
+        }
+        if (commandLine.contains ("--gender"))   // ADR Dub Studio --gender audio.wav: stampa i segmenti di voce maschile / femminile (prova del riconoscimento)
+        {
+            auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--gender", false, false), true);
+            args.removeEmptyStrings();
+            juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+            std::unique_ptr<juce::AudioFormatReader> r (args.isEmpty() ? nullptr : fm.createReaderFor (juce::File (args[0])));
+            int rc = 1;
+            if (r == nullptr) std::cout << "uso: --gender audio.wav" << std::endl;
+            else
+            {
+                juce::AudioBuffer<float> buf ((int) r->numChannels, (int) r->lengthInSamples);
+                r->read (&buf, 0, (int) r->lengthInSamples, 0, true, true);
+                const auto segs = fc::gender::analyse (buf, 0, r->lengthInSamples, r->sampleRate);
+                for (auto& s : segs)
+                    std::cout << juce::String ((double) s.start / r->sampleRate, 2) << " - " << juce::String ((double) (s.start + s.length) / r->sampleRate, 2) << " s  "
+                              << (s.female ? "FEMMINILE" : "maschile ") << "  F0 " << juce::String (s.f0, 0) << " Hz" << (s.uncertain ? "  (incerta)" : "") << std::endl;
+                rc = 0;
             }
             setApplicationReturnValue (rc);
             quit();

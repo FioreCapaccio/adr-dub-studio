@@ -3088,6 +3088,7 @@ void TimelineView::showClipMenu (int64_t clipId)
     }
     m.addItem (10, TRANS ("Time-stretch..."));
     m.addItem (40, TRANS ("Separa dialoghi / musica / effetti..."));
+    m.addItem (41, TRANS ("Dividi le voci in maschile e femminile..."));
     m.addSeparator();
     if (auto* cl = project.findClip (clipId); cl != nullptr)
     {
@@ -3117,6 +3118,10 @@ void TimelineView::showClipMenu (int64_t clipId)
             case 8: if (c != nullptr) p.setActiveTake (c->cueId, c->takeNo); break;
             case 9: if (c != nullptr) p.deleteTake (c->cueId, c->takeNo); break;
             case 12: if (safe->onJoinRequest) safe->onJoinRequest(); break;
+            case 41:
+                if (p.selection.count (clipId) == 0) p.selection = { clipId };
+                if (safe->onSplitVoicesRequest) safe->onSplitVoicesRequest();
+                break;
             case 40:
                 if (p.selection.count (clipId) == 0) p.selection = { clipId };
                 if (safe->onSeparateRequest) safe->onSeparateRequest();

@@ -219,6 +219,8 @@ private:
     std::unique_ptr<juce::DocumentWindow> manualWindow;
     void separateStemsDialog();
     void levelTrackDialog (std::vector<int> ids = {});
+    void splitVoicesDialog();
+    std::unique_ptr<juce::ThreadWithProgressWindow> voiceJob;
     std::unique_ptr<level::Job> levelJob;
     std::unique_ptr<stems::Job> stemJob;
     juce::String manualLang;

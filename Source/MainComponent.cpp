@@ -265,6 +265,7 @@ MainComponent::MainComponent()
     timeline->onProcessRequest = [this] (int op) { processSelected (op); };
     timeline->onSilenceRequest = [this] { silenceDialog(); };
     timeline->onSeparateRequest = [this] { separateStemsDialog(); };
+    timeline->onSplitVoicesRequest = [this] { splitVoicesDialog(); };
     timeline->onCrossfadeRequest = [this] { crossfadeDialog(); };
     timeline->onLevelRequest = [this] (const std::vector<int>& ids) { levelTrackDialog (ids); };
     timeline->onFreezeRequest = [this] (const std::vector<int>& ids) { freezeTracks (ids); };
@@ -1542,7 +1543,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack });
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack, cmdSplitVoices });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1656,6 +1657,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdEula:          i.setInfo (TRANS ("Condizioni d'uso..."), "", TRANS ("Aiuto"), 0); break;
         case cmdThirdParty:    i.setInfo (TRANS ("Licenze di terze parti..."), "", TRANS ("Aiuto"), 0); break;
         case cmdSeparateStems: i.setInfo (TRANS ("Separa dialoghi / musica / effetti..."), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
+        case cmdSplitVoices:   i.setInfo (TRANS ("Dividi le voci in maschile e femminile..."), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
         case cmdScriptReader:  i.setInfo (TRANS ("Lettore copione per l'attore"), "", TRANS ("ADR"), 0); i.setTicked (scriptWindow != nullptr); break;
         case cmdCueMix:        i.setInfo (TRANS ("Cuffie dell'attore e talkback..."), "", TRANS ("ADR"), 0); i.setTicked (cueWindow != nullptr); break;
         case cmdAlignToGuide:  i.setInfo (TRANS ("Allinea alla guida (sincronia automatica)..."), "", TRANS ("Modifica"), 0); break;
@@ -1878,6 +1880,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAdrCueSheet:   exportCueSheet(); break;
         case cmdAlignToGuide:  alignSelectedToGuide(); break;
         case cmdSeparateStems: separateStemsDialog(); break;
+        case cmdSplitVoices:   splitVoicesDialog(); break;
         case cmdAlignPhrases:  alignPhrasesSelected(); break;
         case cmdToolWarp:      timeline->setTool (Tool::Warp); break;
         case cmdToolScrub:     timeline->setTool (Tool::Scrub); break;
@@ -2179,7 +2182,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, cmdSeparateStems, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, cmdSeparateStems, cmdSplitVoices, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2:
             add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdRefTrack, cmdRefAB, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck, cmdLevelTrack });
             m.addSeparator();
@@ -3086,6 +3089,7 @@ void MainComponent::separateStemsDialog()
                 req.mergeME = ch.mergeME;
                 req.highQuality = ch.highQuality;
                 req.muteSources = ch.muteSources;
+                req.splitVoices = ch.splitVoices;
                 const bool mute = ch.muteSources, merged = ch.mergeME;
                 safe->stemJob = std::make_unique<stems::Job> (std::move (req), [safe, mute, merged] (stems::Outcome o)
                 {
@@ -3819,6 +3823,82 @@ void MainComponent::autoDuckDialog()
         juce::AlertWindow::showMessageBoxAsync (n > 0 ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon, TRANS ("Ducking automatico"),
             n > 0 ? TRANS ("Automazione del volume scritta su ") + juce::String (n) + (n == 1 ? TRANS (" traccia") : TRANS (" tracce")) + TRANS (".\nLe tracce sono in modalita' lettura: la curva si vede e si modifica nella corsia VOL.\n\nPer togliere tutto: Modifica > Annulla.")
                   : TRANS ("Non ho trovato parlato sopra la soglia, oppure non ci sono tracce M&E / Effetti (o una traccia selezionata) su cui scrivere."));
+    }), true);
+}
+
+namespace
+{
+/** Riconoscimento delle voci (maschile / femminile) sui clip scelti, in un thread con barra di avanzamento. */
+class VoiceJob : public juce::ThreadWithProgressWindow
+{
+public:
+    struct Src { int64_t clipId; AssetPtr asset; int64_t offset, length; };
+    VoiceJob (std::vector<Src> s, double r, std::function<void (std::vector<Project::VoiceSet>, bool)> d)
+        : juce::ThreadWithProgressWindow (TRANS ("Riconoscimento delle voci..."), true, true), srcs (std::move (s)), rate (r), done (std::move (d)) {}
+    void run() override
+    {
+        for (size_t i = 0; i < srcs.size(); ++i)
+        {
+            setProgress ((double) i / (double) srcs.size());
+            if (threadShouldExit()) { cancelled = true; return; }
+            Project::VoiceSet vs;
+            vs.clipId = srcs[i].clipId;
+            vs.voices = gender::analyse (srcs[i].asset->audio, srcs[i].offset, srcs[i].length, rate);
+            sets.push_back (std::move (vs));
+        }
+    }
+    void threadComplete (bool) override { if (done) done (std::move (sets), cancelled); }
+
+private:
+    std::vector<Src> srcs;
+    double rate;
+    std::function<void (std::vector<Project::VoiceSet>, bool)> done;
+    std::vector<Project::VoiceSet> sets;
+    bool cancelled = false;
+};
+} // namespace
+
+void MainComponent::splitVoicesDialog()
+{
+    if (voiceJob != nullptr) return;
+    std::vector<VoiceJob::Src> srcs;
+    for (auto id : project->selection)
+    {
+        auto* c = project->findClip (id);
+        if (c == nullptr || c->asset == nullptr || c->asset->offline || c->muted || c->rejected || c->length <= 0) continue;
+        const int64_t len = juce::jmin (c->length, c->asset->length() - c->offset);
+        if (len > 0) srcs.push_back ({ id, c->asset, c->offset, len });
+    }
+    if (srcs.empty()) { showError (TRANS ("Seleziona prima uno o piu' clip di dialogo (non silenziati) da dividere.")); return; }
+
+    auto* aw = new juce::AlertWindow (TRANS ("Dividi le voci in maschile e femminile"),
+        TRANS ("Riconosce dal tono se parla una voce maschile o femminile, frase per frase, e crea due tracce: Voce maschile e Voce femminile. Funziona meglio sui dialoghi gia' separati dalla musica. Non divide due persone che parlano insieme; le frasi incerte hanno un punto interrogativo nel nome del clip."),
+        juce::MessageBoxIconType::NoIcon);
+    aw->addComboBox ("mute", { TRANS ("Silenzia i clip originali"), TRANS ("Lascia i clip originali") }, TRANS ("Clip originali"));
+    aw->addButton (TRANS ("Dividi"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    aw->enterModalState (true, juce::ModalCallbackFunction::create ([safe, aw, srcs] (int r)
+    {
+        if (r != 1 || safe == nullptr) return;
+        const bool mute = aw->getComboBoxComponent ("mute") == nullptr || aw->getComboBoxComponent ("mute")->getSelectedItemIndex() == 0;
+        safe->voiceJob = std::make_unique<VoiceJob> (srcs, safe->project->getSampleRate(), [safe, mute] (std::vector<Project::VoiceSet> sets, bool cancelled)
+        {
+            juce::MessageManager::callAsync ([safe, sets = std::move (sets), cancelled, mute]
+            {
+                if (safe == nullptr) return;
+                safe->voiceJob.reset();
+                if (cancelled) return;
+                int unsure = 0, segs = 0;
+                for (auto& s : sets) for (auto& v : s.voices) { ++segs; unsure += v.uncertain ? 1 : 0; }
+                const int made = safe->project->addVoiceTracks (sets, mute);
+                if (made == 0) { safe->showError (TRANS ("Non ho trovato voci di genere diverso: i clip hanno una voce sola (o il tono non e' riconoscibile).")); return; }
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Voci"),
+                    juce::String (made) + " " + TRANS ("tracce create (voce maschile e femminile).") + "\n"
+                    + juce::String (segs) + " " + TRANS ("parti, di cui") + " " + juce::String (unsure) + " " + TRANS ("incerte (hanno un ? nel nome del clip): controllale e, se serve, trascinale sull'altra traccia."));
+            });
+        });
+        safe->voiceJob->launchThread();
     }), true);
 }
 

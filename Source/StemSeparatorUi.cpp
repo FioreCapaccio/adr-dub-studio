@@ -88,6 +88,11 @@ Outcome process (const Request& reqIn, const std::function<bool (double)>& setPr
             if (set.assets[(size_t) s] == nullptr) { outcome.message = e2; return outcome; }
             written.add (finals[(size_t) s].getFullPathName());
         }
+        if (req.splitVoices && set.assets[0] != nullptr)
+        {
+            setStatusMessage (TRANS ("Riconoscimento delle voci..."));
+            set.voices = gender::analyse (set.assets[0]->audio, 0, juce::jmin (c.length, set.assets[0]->length()), req.rate);
+        }
         outcome.sets.push_back (std::move (set));
     }
     outcome.ok = true;
@@ -123,10 +128,10 @@ OptionsPanel::OptionsPanel (int numClips, double totalSeconds, bool needsDownloa
     two.setRadioGroupId (7001);
     three.setToggleState (true, juce::dontSendNotification);
     mute.setToggleState (true, juce::dontSendNotification);
-    go.onClick = [this] { Choice c; c.mergeME = two.getToggleState(); c.highQuality = hq.getToggleState(); c.muteSources = mute.getToggleState(); if (start) start (c); };
+    go.onClick = [this] { Choice c; c.mergeME = two.getToggleState(); c.highQuality = hq.getToggleState(); c.muteSources = mute.getToggleState(); c.splitVoices = voices.getToggleState(); if (start) start (c); };
     cancel.onClick = [this] { if (cancelFn) cancelFn(); };
-    for (juce::Component* c : std::initializer_list<juce::Component*> { &title, &info, &note, &three, &two, &hq, &mute, &go, &cancel }) addAndMakeVisible (c);
-    setSize (560, 330);
+    for (juce::Component* c : std::initializer_list<juce::Component*> { &title, &info, &note, &three, &two, &hq, &mute, &voices, &go, &cancel }) addAndMakeVisible (c);
+    setSize (560, 360);
 }
 
 void OptionsPanel::paint (juce::Graphics& g) { g.fillAll (theme::panel); }
@@ -141,6 +146,7 @@ void OptionsPanel::resized()
     two.setBounds (r.removeFromTop (26));
     hq.setBounds (r.removeFromTop (26));
     mute.setBounds (r.removeFromTop (26));
+    voices.setBounds (r.removeFromTop (26));
     r.removeFromTop (8);
     note.setBounds (r.removeFromTop (44));
     auto row = r.removeFromBottom (32);

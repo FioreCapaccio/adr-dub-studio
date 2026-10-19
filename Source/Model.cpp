@@ -356,11 +356,41 @@ int Project::addTrackAs (const juce::String& name, int type, juce::Colour colour
     return id;
 }
 
+namespace
+{
+/** Clip dei segmenti di voce su due tracce (0 maschile, 1 femminile). Le posizioni dei segmenti sono relative a 'assetOffset' (inizio dell'audio analizzato nell'asset). */
+void placeVoiceClips (Track* tracks[2], int64_t& nextId, const AssetPtr& asset, int64_t assetOffset, int64_t timelineStart, int64_t limit,
+                      const std::vector<gender::VoiceSeg>& voices, const Clip& src, int64_t fadeSamples)
+{
+    for (size_t k = 0; k < voices.size(); ++k)
+    {
+        auto& v = voices[k];
+        Clip c;
+        c.id = nextId++;
+        c.asset = asset;
+        c.offset = assetOffset + v.start;
+        c.length = juce::jmin (v.length, limit - v.start, asset->length() - c.offset);
+        if (c.length <= 0) continue;
+        c.start = timelineStart + v.start;
+        c.fadeIn = k == 0 ? src.fadeIn : juce::jmin<int64_t> (fadeSamples, c.length / 2);
+        c.fadeOut = k + 1 == voices.size() ? src.fadeOut : juce::jmin<int64_t> (fadeSamples, c.length / 2);
+        c.name = (v.uncertain ? juce::String ("? ") : juce::String()) + (src.name.isNotEmpty() ? src.name : asset->name);
+        tracks[v.female ? 1 : 0]->clips.push_back (c);
+    }
+}
+} // namespace
+
 int Project::addStemTracks (const std::vector<StemClipSet>& sets, bool mergedME, bool muteSources)
 {
     if (sets.empty()) return 0;
     beginEdit();
-    std::map<int, std::array<int, 3>> stemTrack;   // traccia sorgente (id) -> id delle tracce create
+    std::map<int, std::array<int, 4>> stemTrack;   // traccia sorgente (id) -> id delle tracce create (dialoghi/maschile, musica, effetti, dialoghi femminili)
+    std::set<int> splitSrc;                         // tracce sorgente con voci divise
+    for (auto& set : sets)
+    {
+        int ti = -1;
+        if (findClip (set.clipId, &ti) != nullptr && gender::hasBoth (set.voices)) splitSrc.insert (session.tracks[(size_t) ti].id);
+    }
     int made = 0;
     static constexpr int types[3] = { TrackDialogue, TrackME, TrackEffects };
     for (auto& set : sets)
@@ -371,21 +401,26 @@ int Project::addStemTracks (const std::vector<StemClipSet>& sets, bool mergedME,
         const int srcTrackId = session.tracks[(size_t) ti].id;
         const juce::String srcName = session.tracks[(size_t) ti].name;
         const Clip srcCopy = *src;
+        const bool split = splitSrc.count (srcTrackId) > 0;
         auto it = stemTrack.find (srcTrackId);
         if (it == stemTrack.end())
         {
-            std::array<int, 3> ids { 0, 0, 0 };
+            std::array<int, 4> ids { 0, 0, 0, 0 };
             for (int s = 0; s < 3; ++s)
             {
                 if (set.assets[(size_t) s] == nullptr) continue;
-                const int id = addTrackInternal();
-                auto* t = findTrack (id);
-                t->name = srcName + " - " + (s == 1 && ! mergedME ? TRANS ("Musica") : trackTypeName (types[s]));
-                t->colour = trackTypeColour (types[s]);
-                applyTrackPreset (*t->live, types[s]);
-                t->live->outBus = roleOutBus (types[s]);
-                ids[(size_t) s] = id;
-                ++made;
+                for (int sex = 0; sex < (s == 0 && split ? 2 : 1); ++sex)
+                {
+                    const int id = addTrackInternal();
+                    auto* t = findTrack (id);
+                    t->name = srcName + " - " + (s == 1 && ! mergedME ? TRANS ("Musica") : trackTypeName (types[s]));
+                    if (s == 0 && split) t->name += sex == 0 ? TRANS (" voce maschile") : TRANS (" voce femminile");
+                    t->colour = trackTypeColour (types[s]);
+                    applyTrackPreset (*t->live, types[s]);
+                    t->live->outBus = roleOutBus (types[s]);
+                    ids[sex == 1 ? 3 : (size_t) s] = id;
+                    ++made;
+                }
             }
             it = stemTrack.emplace (srcTrackId, ids).first;
         }
@@ -393,12 +428,33 @@ int Project::addStemTracks (const std::vector<StemClipSet>& sets, bool mergedME,
         {
             if (set.assets[(size_t) s] == nullptr || it->second[(size_t) s] == 0) continue;
             auto* t = findTrack (it->second[(size_t) s]);
+            const int64_t len = juce::jmin (srcCopy.length, set.assets[(size_t) s]->length());
+            if (s == 0 && split)
+            {
+                auto* female = findTrack (it->second[3]);
+                Track* pair[2] = { t, female };
+                if (gender::hasBoth (set.voices))
+                    placeVoiceClips (pair, nextClipId, set.assets[0], 0, srcCopy.start, len, set.voices, srcCopy, (int64_t) (sampleRate * 0.01));
+                else   // questo clip ha una voce sola: tutto sulla traccia del suo genere
+                {
+                    Clip c;
+                    c.id = nextClipId++;
+                    c.asset = set.assets[0];
+                    c.start = srcCopy.start;
+                    c.length = len;
+                    c.fadeIn = srcCopy.fadeIn;
+                    c.fadeOut = srcCopy.fadeOut;
+                    c.name = srcCopy.name;
+                    pair[! set.voices.empty() && set.voices.front().female ? 1 : 0]->clips.push_back (c);
+                }
+                continue;
+            }
             Clip c;
             c.id = nextClipId++;
             c.asset = set.assets[(size_t) s];
             c.start = srcCopy.start;
             c.offset = 0;
-            c.length = juce::jmin (srcCopy.length, c.asset->length());
+            c.length = len;
             c.fadeIn = srcCopy.fadeIn;
             c.fadeOut = srcCopy.fadeOut;
             c.name = srcCopy.name;
@@ -411,6 +467,49 @@ int Project::addStemTracks (const std::vector<StemClipSet>& sets, bool mergedME,
         for (auto& kv : stemTrack) for (int id : kv.second) if (id != 0) { selectedTrackId = id; break; }
     changed();
     return made;
+}
+
+int Project::addVoiceTracks (const std::vector<VoiceSet>& sets, bool muteSources)
+{
+    bool any = false;
+    for (auto& s : sets) any = any || gender::hasBoth (s.voices);
+    if (! any) return 0;
+    beginEdit();
+    std::map<int, std::array<int, 2>> made;   // traccia sorgente -> tracce maschile / femminile
+    int count = 0;
+    for (auto& set : sets)
+    {
+        int ti = -1;
+        auto* src = findClip (set.clipId, &ti);
+        if (src == nullptr || src->asset == nullptr || ! gender::hasBoth (set.voices)) continue;
+        const int srcTrackId = session.tracks[(size_t) ti].id;
+        const juce::String srcName = session.tracks[(size_t) ti].name;
+        const Clip srcCopy = *src;
+        auto it = made.find (srcTrackId);
+        if (it == made.end())
+        {
+            std::array<int, 2> ids { 0, 0 };
+            for (int sex = 0; sex < 2; ++sex)
+            {
+                const int id = addTrackInternal();
+                auto* t = findTrack (id);
+                t->name = srcName + (sex == 0 ? TRANS (" - voce maschile") : TRANS (" - voce femminile"));
+                t->colour = trackTypeColour (TrackDialogue);
+                applyTrackPreset (*t->live, TrackDialogue);
+                t->live->outBus = roleOutBus (TrackDialogue);
+                ids[(size_t) sex] = id;
+                ++count;
+            }
+            it = made.emplace (srcTrackId, ids).first;
+        }
+        Track* pair[2] = { findTrack (it->second[0]), findTrack (it->second[1]) };
+        placeVoiceClips (pair, nextClipId, srcCopy.asset, srcCopy.offset, srcCopy.start, srcCopy.length, set.voices, srcCopy, (int64_t) (sampleRate * 0.01));
+        if (muteSources)
+            if (auto* sc = findClip (set.clipId); sc != nullptr && ! session.tracks[(size_t) ti].editLocked()) sc->muted = true;
+    }
+    if (! made.empty()) selectedTrackId = made.begin()->second[0];
+    changed();
+    return count;
 }
 
 void Project::setTrackOutBus (int trackId, int bus)
