@@ -6,7 +6,7 @@ namespace fc
 {
 struct ExportOptions
 {
-    juce::String format = "wav";      // "wav", "aiff", "flac"
+    juce::String format = "wav";      // "wav", "aiff", "flac", "mp3" (MP3: 320 kbps, al massimo 48 kHz)
     int bitDepth = 24;                // 16, 24, 32 (32 = float nei WAV, intero negli AIFF; i FLAC arrivano a 24)
     double outRate = 0.0;             // 0 = come la sessione
     bool loopRange = false;           // esporta solo la regione di loop
@@ -44,5 +44,8 @@ ExportResult exportSession (const Session& session, double projectRate, const Ex
 /** Freeze: rende l'audio di una traccia con guadagno in ingresso, EQ, compressore e plug-in (prima del fader), come file WAV a 32 bit float. */
 bool renderTrackProcessed (const Session& source, int trackId, double rate, int64_t totalSamples, const juce::File& dest,
                            const std::function<bool (double)>& progress, juce::String& error);
+
+/** Codifica un WAV in MP3 (CBR, kbps) con l'encoder LAME dentro l'app o, se manca, con ffmpeg. */
+bool encodeMp3 (const juce::File& wav, const juce::File& mp3, int kbps, juce::String& error);
 
 } // namespace fc

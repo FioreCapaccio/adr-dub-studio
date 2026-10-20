@@ -22,7 +22,8 @@ Index / Indice
  11. Microsoft WebView2 loader (Windows version only)    - BSD-3-Clause
  12. ONNX Runtime (downloaded engine)                    - MIT
  13. Bandit v2 separation model (downloaded engine)      - CC BY-SA 4.0
- 14. Other notes / Altre note
+ 14. LAME MP3 encoder (macOS version)                 - LGPL
+ 15. Other notes / Altre note
 
 ==============================================================================
 1. JUCE framework
@@ -776,7 +777,25 @@ La separazione in dialoghi / musica / effetti usa i pesi multilingua di Bandit v
 (convertito in ONNX, pesi in mezza precisione) e' distribuito con la stessa licenza, si scarica al primo uso ed e' un file separato dal programma.
 
 ==============================================================================
-14. Other notes / Altre note
+14. LAME MP3 encoder (macOS version / versione macOS)
+https://lame.sourceforge.io - LAME 3.100, GNU Lesser General Public License (LGPL) version 2
+==============================================================================
+
+The macOS version includes the unmodified "lame" command-line encoder (Contents/MacOS/lame), built
+from the official LAME 3.100 source (lame-3.100.tar.gz, SHA-256
+ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e). It is a separate program run only
+to export MP3 files; ADR Dub Studio is not linked to it. You can replace it with your own build of LAME.
+The source code is available at https://lame.sourceforge.io and, on request, from the author of
+ADR Dub Studio. The Windows version exports MP3 through FFmpeg (libmp3lame, LGPL, see section 10).
+
+La versione macOS comprende l'encoder "lame" da riga di comando, non modificato (Contents/MacOS/lame),
+compilato dal sorgente ufficiale di LAME 3.100. E' un programma separato usato solo per esportare in
+MP3; ADR Dub Studio non vi e' collegato e lo si puo' sostituire con una propria build. Il sorgente e'
+su https://lame.sourceforge.io e, su richiesta, presso l'autore di ADR Dub Studio. La versione Windows
+esporta in MP3 con FFmpeg (libmp3lame, LGPL, sezione 10).
+
+==============================================================================
+15. Other notes / Altre note
 
 ==============================================================================
 

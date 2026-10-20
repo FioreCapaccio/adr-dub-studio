@@ -1657,7 +1657,14 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdEula:          i.setInfo (TRANS ("Condizioni d'uso..."), "", TRANS ("Aiuto"), 0); break;
         case cmdThirdParty:    i.setInfo (TRANS ("Licenze di terze parti..."), "", TRANS ("Aiuto"), 0); break;
         case cmdSeparateStems: i.setInfo (TRANS ("Separa dialoghi / musica / effetti..."), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
-        case cmdSplitVoices:   i.setInfo (TRANS ("Dividi le voci in maschile e femminile..."), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
+        case cmdSplitVoices:
+        {
+            bool stem = false;
+            for (auto id : project->selection) if (const auto* c = project->findClip (id); c != nullptr && Project::isDialogueStem (*c)) { stem = true; break; }
+            i.setInfo (TRANS ("Dividi le voci in maschile e femminile..."), "", TRANS ("Modifica"), 0);
+            i.setActive (stem);
+            break;
+        }
         case cmdScriptReader:  i.setInfo (TRANS ("Lettore copione per l'attore"), "", TRANS ("ADR"), 0); i.setTicked (scriptWindow != nullptr); break;
         case cmdCueMix:        i.setInfo (TRANS ("Cuffie dell'attore e talkback..."), "", TRANS ("ADR"), 0); i.setTicked (cueWindow != nullptr); break;
         case cmdAlignToGuide:  i.setInfo (TRANS ("Allinea alla guida (sincronia automatica)..."), "", TRANS ("Modifica"), 0); break;
@@ -3865,14 +3872,14 @@ void MainComponent::splitVoicesDialog()
     for (auto id : project->selection)
     {
         auto* c = project->findClip (id);
-        if (c == nullptr || c->asset == nullptr || c->asset->offline || c->muted || c->rejected || c->length <= 0) continue;
+        if (c == nullptr || c->asset == nullptr || c->asset->offline || c->muted || c->rejected || c->length <= 0 || ! Project::isDialogueStem (*c)) continue;
         const int64_t len = juce::jmin (c->length, c->asset->length() - c->offset);
         if (len > 0) srcs.push_back ({ id, c->asset, c->offset, len });
     }
-    if (srcs.empty()) { showError (TRANS ("Seleziona prima uno o piu' clip di dialogo (non silenziati) da dividere.")); return; }
+    if (srcs.empty()) { showError (TRANS ("Le voci si dividono solo sui Dialoghi gia' separati: prima usa Modifica > Separa dialoghi / musica / effetti, poi seleziona i clip della traccia Dialoghi.")); return; }
 
     auto* aw = new juce::AlertWindow (TRANS ("Dividi le voci in maschile e femminile"),
-        TRANS ("Riconosce dal tono se parla una voce maschile o femminile, frase per frase, e crea due tracce: Voce maschile e Voce femminile. Funziona meglio sui dialoghi gia' separati dalla musica. Non divide due persone che parlano insieme; le frasi incerte hanno un punto interrogativo nel nome del clip."),
+        TRANS ("Riconosce dal tono se parla una voce maschile o femminile, frase per frase, e crea due tracce: Voce maschile e Voce femminile. Lavora sui Dialoghi separati (parlato pulito). Non divide due persone che parlano insieme; le frasi incerte hanno un punto interrogativo nel nome del clip."),
         juce::MessageBoxIconType::NoIcon);
     aw->addComboBox ("mute", { TRANS ("Silenzia i clip originali"), TRANS ("Lascia i clip originali") }, TRANS ("Clip originali"));
     aw->addButton (TRANS ("Dividi"), 1, juce::KeyPress (juce::KeyPress::returnKey));

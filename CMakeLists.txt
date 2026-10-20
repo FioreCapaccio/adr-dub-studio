@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ArotronStudio VERSION 2.28.0 LANGUAGES C CXX)
+project(ArotronStudio VERSION 2.29.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,8 +24,8 @@ endif()
 juce_add_gui_app(ArotronStudio
     ${_adr_wv2}
     PRODUCT_NAME "ADR Dub Studio"
-    VERSION 2.28.0
-    BUNDLE_VERSION 2.28.0
+    VERSION 2.29.0
+    BUNDLE_VERSION 2.29.0
     COMPANY_NAME "Arotron"
     BUNDLE_ID "com.arotron.studio"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png"
@@ -115,6 +115,15 @@ if(WIN32)
     target_compile_definitions(ArotronStudio PRIVATE JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1)
 endif()
 
+# Esportazione MP3: l'encoder LAME (LGPL) e' un programma separato dentro l'app (Contents/MacOS/lame), compilato da tools/build-lame.sh.
+# Su Windows si usa ffmpeg.exe (con libmp3lame), gia' accanto all'app.
+if(APPLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/bin/lame")
+    add_custom_command(TARGET ArotronStudio POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/third_party/bin/lame" "$<TARGET_BUNDLE_CONTENT_DIR:ArotronStudio>/MacOS/lame")
+elseif(APPLE)
+    message(WARNING "third_party/bin/lame manca: lancia tools/build-lame.sh per avere l'esportazione MP3")
+endif()
+
 target_compile_definitions(ArotronStudio PRIVATE
     JUCE_USE_CAMERA=0
     JUCE_WEB_BROWSER=1
@@ -123,7 +132,7 @@ target_compile_definitions(ArotronStudio PRIVATE
     JUCE_PLUGINHOST_AU=0
     JUCE_MODAL_LOOPS_PERMITTED=0
     JUCE_APPLICATION_NAME_STRING="ADR Dub Studio"
-    JUCE_APPLICATION_VERSION_STRING="2.28.0")
+    JUCE_APPLICATION_VERSION_STRING="2.29.0")
 
 if(ADR_FFMPEG_VIDEO)
     target_compile_definitions(ArotronStudio PRIVATE ADR_FFMPEG_VIDEO=1)

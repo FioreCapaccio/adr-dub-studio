@@ -111,8 +111,11 @@ bool convertTemp (const juce::File& temp, double rate, const ExportOptions& o, d
     std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (temp));
     if (reader == nullptr) { error = TRANS ("File temporaneo non leggibile."); return false; }
 
-    const double outRate = o.outRate > 0.0 ? o.outRate : rate;
-    auto writer = makeWriter (o.format, dest, outRate, o.bitDepth, error);
+    const bool mp3 = o.format == "mp3";   // si scrive un WAV a 16 bit e poi lo si codifica
+    double outRate = o.outRate > 0.0 ? o.outRate : rate;
+    if (mp3) outRate = juce::jmin (outRate, 48000.0);
+    const juce::File out16 = mp3 ? juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("arotron_mp3", ".wav") : dest;
+    auto writer = makeWriter (mp3 ? juce::String ("wav") : o.format, out16, outRate, mp3 ? 16 : o.bitDepth, error);
     if (writer == nullptr) return false;
 
     const int64_t inTotal = reader->lengthInSamples;
@@ -131,7 +134,7 @@ bool convertTemp (const juce::File& temp, double rate, const ExportOptions& o, d
 
     std::vector<float> pending[2];
     juce::Random rng (0x5eed);
-    const bool dither = o.dither && o.bitDepth == 16;
+    const bool dither = o.dither && (mp3 || o.bitDepth == 16);
     const float lsb = 1.0f / 32768.0f;
 
     juce::AudioBuffer<float> in (2, 4096), out (2, 4096);
@@ -209,12 +212,19 @@ bool convertTemp (const juce::File& temp, double rate, const ExportOptions& o, d
         {
             error = TRANS ("Esportazione annullata.");
             writer.reset();
+            out16.deleteFile();
             dest.deleteFile();
             return false;
         }
     }
     writer.reset();
     limiterGr = grMax;
+    if (mp3)
+    {
+        const bool ok = encodeMp3 (out16, dest, 320, error);
+        out16.deleteFile();
+        return ok;
+    }
     return true;
 }
 
@@ -443,6 +453,44 @@ ExportResult exportSession (const Session& session, double rate, const ExportOpt
     if (res.peakDb > 0.0) msg << TRANS ("\nATTENZIONE: il picco supera 0 dBFS, il file puo' distorcere.");
     res.message = msg;
     return res;
+}
+
+bool encodeMp3 (const juce::File& wav, const juce::File& mp3, int kbps, juce::String& error)
+{
+    const auto dir = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory();
+   #if JUCE_WINDOWS
+    const juce::File lames[] = { dir.getChildFile ("lame.exe") };
+    const juce::String ffmpegs[] = { dir.getChildFile ("ffmpeg.exe").getFullPathName(), dir.getChildFile ("ffmpeg").getChildFile ("ffmpeg.exe").getFullPathName(), "ffmpeg" };
+   #else
+    const juce::File lames[] = { dir.getChildFile ("lame"), juce::File ("/opt/homebrew/bin/lame"), juce::File ("/usr/local/bin/lame") };
+    const juce::String ffmpegs[] = { "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg" };
+   #endif
+    juce::StringArray cmd;
+    for (auto& f : lames)
+        if (f.existsAsFile()) { cmd = { f.getFullPathName(), "--quiet", "--noreplaygain", "-q", "2", "-b", juce::String (kbps), wav.getFullPathName(), mp3.getFullPathName() }; break; }
+    if (cmd.isEmpty())
+        for (auto& f : ffmpegs)
+            if (! juce::File::isAbsolutePath (f) || juce::File (f).existsAsFile())
+            {
+                cmd = { f, "-v", "error", "-y", "-i", wav.getFullPathName(), "-c:a", "libmp3lame", "-b:a", juce::String (kbps) + "k", mp3.getFullPathName() };
+                break;
+            }
+    mp3.deleteFile();
+    juce::ChildProcess p;
+    if (cmd.isEmpty() || ! p.start (cmd, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr))
+    {
+        error = TRANS ("Non trovo l'encoder MP3 (lame o ffmpeg).");
+        return false;
+    }
+    const auto log = p.readAllProcessOutput();
+    p.waitForProcessToFinish (600000);
+    if (p.getExitCode() != 0 || mp3.getSize() <= 0)
+    {
+        error = TRANS ("Codifica MP3 non riuscita: ") + log.trim().substring (0, 300);
+        mp3.deleteFile();
+        return false;
+    }
+    return true;
 }
 
 } // namespace fc

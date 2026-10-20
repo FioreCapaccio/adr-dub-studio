@@ -101,7 +101,7 @@ ExportDialog::ExportDialog (bool loop, int64_t loopStart, int64_t loopEnd, bool 
     label (rangeLbl, TRANS ("INTERVALLO")); label (normLbl, TRANS ("NORMALIZZAZIONE")); label (valueLbl, TRANS ("VALORE")); label (ceilLbl, TRANS ("TETTO TRUE-PEAK"));
 
     for (int i = 0; i < numPresets; ++i) preset.addItem (juce::translate (presets[i].name), i + 1);
-    format.addItem (TRANS ("WAV"), 1); format.addItem (TRANS ("AIFF"), 2); format.addItem (TRANS ("FLAC"), 3);
+    format.addItem (TRANS ("WAV"), 1); format.addItem (TRANS ("AIFF"), 2); format.addItem (TRANS ("FLAC"), 3); format.addItem (TRANS ("MP3 (320 kbps)"), 4);
     depth.addItem (TRANS ("16 bit"), 1); depth.addItem (TRANS ("24 bit"), 2); depth.addItem (TRANS ("32 bit"), 3);
     rate.addItem (TRANS ("Come la sessione"), 1); rate.addItem (TRANS ("44,1 kHz"), 2); rate.addItem (TRANS ("48 kHz"), 3); rate.addItem (TRANS ("88,2 kHz"), 4); rate.addItem (TRANS ("96 kHz"), 5);
     range.addItem (TRANS ("Tutta la sessione"), 1); range.addItem (TRANS ("Regione di loop"), 2);
@@ -150,7 +150,7 @@ void ExportDialog::applyPreset (int idx)
     if (idx < 0 || idx >= numPresets || idx == customPreset) return;
     const auto& p = presets[idx];
     applying = true;
-    format.setSelectedId (juce::String (p.fmt) == "aiff" ? 2 : (juce::String (p.fmt) == "flac" ? 3 : 1), juce::dontSendNotification);
+    format.setSelectedId (juce::String (p.fmt) == "aiff" ? 2 : (juce::String (p.fmt) == "flac" ? 3 : (juce::String (p.fmt) == "mp3" ? 4 : 1)), juce::dontSendNotification);
     depth.setSelectedId (p.depth == 16 ? 1 : (p.depth == 24 ? 2 : 3), juce::dontSendNotification);
     rate.setSelectedId (p.rate == 0.0 ? 1 : (p.rate == 44100.0 ? 2 : (p.rate == 48000.0 ? 3 : (p.rate == 88200.0 ? 4 : 5))), juce::dontSendNotification);
     norm.setSelectedId (p.norm + 1, juce::dontSendNotification);
@@ -182,6 +182,12 @@ void ExportDialog::updateEnabled()
     // FLAC non supporta 32 bit
     depth.setItemEnabled (3, format.getSelectedId() != 3);
     if (format.getSelectedId() == 3 && depth.getSelectedId() == 3) depth.setSelectedId (2, juce::dontSendNotification);
+    // MP3: 320 kbps, profondita' fissa, al massimo 48 kHz
+    const bool mp3 = format.getSelectedId() == 4;
+    depth.setEnabled (! mp3);
+    rate.setItemEnabled (4, ! mp3);
+    rate.setItemEnabled (5, ! mp3);
+    if (mp3 && rate.getSelectedId() >= 4) rate.setSelectedId (3, juce::dontSendNotification);
 
     juce::String s;
     if (isDelivery) s = TRANS ("In una sola esportazione: il MIX (con il bus master) e uno stem per ogni bus di ruolo (Dialoghi, M&E, Effetti), tutti con lo stesso guadagno, piu' un rapporto HTML con picco, true-peak e loudness di ogni file. Scegli la cartella di destinazione.");
@@ -190,7 +196,8 @@ void ExportDialog::updateEnabled()
     else if (n == 2) s = TRANS ("Il programma viene misurato e riportato all'obiettivo. Se questo fa superare il tetto di true-peak interviene un limiter trasparente.");
     else if (n == 1) s = TRANS ("Il guadagno viene regolato in modo che il picco massimo arrivi al valore indicato.");
     else s = TRANS ("Nessuna modifica di livello: il file e' il mix cosi' come lo senti.");
-    if (depth.getSelectedId() == 1) s << TRANS (" A 16 bit viene aggiunto un leggero dither per evitare la distorsione di quantizzazione.");
+    if (mp3) s << TRANS (" MP3 a 320 kbps (compresso, per ascolto e revisione; non per la consegna). Oltre 48 kHz si esporta a 48 kHz.");
+    else if (depth.getSelectedId() == 1) s << TRANS (" A 16 bit viene aggiunto un leggero dither per evitare la distorsione di quantizzazione.");
     summary.setText (s, juce::dontSendNotification);
     exportBtn.setButtonText (isStem || isDelivery ? TRANS ("Scegli cartella...") : TRANS ("Esporta..."));
 }
@@ -198,7 +205,7 @@ void ExportDialog::updateEnabled()
 ExportOptions ExportDialog::collect() const
 {
     ExportOptions o;
-    o.format = format.getSelectedId() == 2 ? "aiff" : (format.getSelectedId() == 3 ? "flac" : "wav");
+    o.format = format.getSelectedId() == 2 ? "aiff" : (format.getSelectedId() == 3 ? "flac" : (format.getSelectedId() == 4 ? "mp3" : "wav"));
     o.bitDepth = depth.getSelectedId() == 1 ? 16 : (depth.getSelectedId() == 2 ? 24 : 32);
     static const double rates[] = { 0.0, 44100.0, 48000.0, 88200.0, 96000.0 };
     o.outRate = rates[juce::jlimit (0, 4, rate.getSelectedId() - 1)];

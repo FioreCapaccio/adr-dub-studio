@@ -11,19 +11,23 @@ permissions:
   contents: write
 
 env:
-  APP_VERSION: "2.28.0"
+  APP_VERSION: "2.29.0"
 
 jobs:
   macos-universal:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+      - name: "LAME (encoder MP3, eseguibile universale)"
+        run: ./tools/build-lame.sh
       - name: "Configure (universal arm64 + x86_64)"
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
       - name: Build
         run: cmake --build build --config Release --parallel 4
       - name: Check architectures
-        run: lipo -info "build/ArotronStudio_artefacts/Release/ADR Dub Studio.app/Contents/MacOS/ADR Dub Studio"
+        run: |
+          lipo -info "build/ArotronStudio_artefacts/Release/ADR Dub Studio.app/Contents/MacOS/ADR Dub Studio"
+          lipo -info "build/ArotronStudio_artefacts/Release/ADR Dub Studio.app/Contents/MacOS/lame"
       - name: Sign (ad-hoc) and zip
         run: |
           APP="build/ArotronStudio_artefacts/Release/ADR Dub Studio.app"
@@ -64,6 +68,7 @@ jobs:
           # condizioni d'uso al posto della licenza open source (UTF-8 con BOM, cosi' Inno Setup legge bene gli accenti)
           foreach ($l in 'it','en') { [IO.File]::WriteAllText("pkg/EULA_$l.txt", (Get-Content -Raw -Encoding utf8 "Resources/eula/eula_$l.txt"), (New-Object Text.UTF8Encoding $true)) }
           Set-Content -Path pkg/FFMPEG.txt -Value "ffmpeg.exe e ffprobe.exe sono FFmpeg (https://ffmpeg.org), build LGPL di https://github.com/BtbN/FFmpeg-Builds , usati per leggere e esportare i video."
+          if (-not ((& pkg/ffmpeg.exe -hide_banner -encoders) -match "libmp3lame")) { throw "ffmpeg senza libmp3lame: l'esportazione MP3 non funzionerebbe" }
           Compress-Archive -Path pkg/* -DestinationPath ADR-Dub-Studio-${{ env.APP_VERSION }}-Windows-x64-portable.zip
       - name: Build the installer (Inno Setup)
         shell: pwsh

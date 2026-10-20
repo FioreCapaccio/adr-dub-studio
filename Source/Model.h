@@ -575,6 +575,8 @@ public:
     int addStemTracks (const std::vector<StemClipSet>& sets, bool mergedME, bool muteSources);
     /** Divide l'audio dei clip in due tracce, voce maschile e femminile (segmenti relativi all'inizio dell'audio del clip, da gender::analyse). Un solo passo di undo; ritorna le tracce create. */
     struct VoiceSet { int64_t clipId = 0; std::vector<gender::VoiceSeg> voices; };
+    /** Il clip e' uno stem Dialoghi creato dalla separazione (file "..._dialoghi.wav"): solo su questi si riconoscono le voci, perche' il tono si misura bene solo sul parlato pulito. */
+    static bool isDialogueStem (const Clip& c) { return c.asset != nullptr && c.asset->file.getFileName().endsWithIgnoreCase ("_dialoghi.wav"); }
     int addVoiceTracks (const std::vector<VoiceSet>& sets, bool muteSources);
 
     // tracce

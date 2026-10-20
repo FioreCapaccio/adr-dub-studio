@@ -3,3 +3,5 @@ build/
 *.autosave
 build-ff/
 dist/
+third_party/bin/
+test-media/

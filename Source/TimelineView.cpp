@@ -3088,7 +3088,7 @@ void TimelineView::showClipMenu (int64_t clipId)
     }
     m.addItem (10, TRANS ("Time-stretch..."));
     m.addItem (40, TRANS ("Separa dialoghi / musica / effetti..."));
-    m.addItem (41, TRANS ("Dividi le voci in maschile e femminile..."));
+    if (auto* cl = project.findClip (clipId); cl != nullptr && Project::isDialogueStem (*cl)) m.addItem (41, TRANS ("Dividi le voci in maschile e femminile..."));
     m.addSeparator();
     if (auto* cl = project.findClip (clipId); cl != nullptr)
     {

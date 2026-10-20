@@ -3928,6 +3928,21 @@ private:
         fc::ExportOptions st; st.bitDepth = 24; st.stems = true;
         const auto rs = go (st, dir.getChildFile ("stems"));
         expect (rs.ok && rs.files.size() == 4, "export: gli stem per traccia saltano la Guida (" + juce::String (rs.files.size()) + " file)");
+        {   // MP3 a 320 kbps (encoder LAME dentro l'app o ffmpeg): si rilegge, durata e picco come il WAV
+            fc::ExportOptions m3; m3.format = "mp3"; m3.excludeGuide = true;
+            const auto mf = dir.getChildFile ("mix.mp3");
+            const auto rm = go (m3, mf);
+            float pk = -120.0f;
+            const float lu = rm.ok ? measureFileLufs (formats, mf, &pk) : -100.0f;
+            std::unique_ptr<juce::AudioFormatReader> rd (formats.createReaderFor (mf));
+            const double secs = rd != nullptr ? (double) rd->lengthInSamples / rd->sampleRate : 0.0;
+            expect (rm.ok && mf.getSize() > 50000 && std::abs (pk - juce::Decibels::gainToDecibels (0.38f)) < 0.6f && secs > 2.45 && secs < 2.6,
+                    "export MP3: file di " + juce::String (mf.getSize() / 1024) + " KB, " + juce::String (secs, 2) + " s, picco " + juce::String (pk, 2) + " dB, " + juce::String (lu, 1) + " LUFS " + rm.message);
+            fc::ExportOptions hi = m3; hi.outRate = 96000.0;
+            const auto r96 = go (hi, dir.getChildFile ("mix96.mp3"));
+            std::unique_ptr<juce::AudioFormatReader> rd96 (formats.createReaderFor (dir.getChildFile ("mix96.mp3")));
+            expect (r96.ok && rd96 != nullptr && rd96->sampleRate == 48000.0, "export MP3: oltre 48 kHz si esporta a 48 kHz");
+        }
         dir.deleteRecursively();
     }
 
@@ -4550,7 +4565,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.28.0"; }
+    const juce::String getApplicationVersion() override { return "2.29.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
