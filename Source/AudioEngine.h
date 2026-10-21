@@ -172,6 +172,21 @@ public:
     /** Chiude i file e restituisce le registrazioni fatte. */
     std::vector<TakeResult> stopRecording();
     bool isRecording() const noexcept { return recording.load(); }
+    /** Forma d'onda della registrazione in corso, per disegnarla mentre si forma: min/max di blocchi di kBucket campioni (canali uniti).
+        Scritta dal thread audio, letta dall'interfaccia: 'count' dice quanti blocchi sono pronti. */
+    struct LivePeaks
+    {
+        static constexpr int kBucket = 256;
+        int trackId = 0;
+        std::atomic<int64_t> startPos { -1 };
+        std::vector<int16_t> mn, mx;          // capacita' fissa (circa 3 ore), allocata all'inizio
+        std::atomic<int> count { 0 };
+        float accMin = 0.0f, accMax = 0.0f;   // blocco in corso (solo thread audio)
+        int accN = 0;
+        void add (const float* a, const float* b, int n) noexcept;
+    };
+    /** Le registrazioni in corso (thread messaggi). */
+    const std::vector<std::shared_ptr<LivePeaks>>& getLivePeaks() const noexcept { return livePeaks; }
     int64_t getRecordStart() const noexcept { return recStart.load(); }
     /** Ritardo (campioni) tra cio' che l'esecutore sente e cio' che registra: dispositivo in ingresso e uscita piu' plug-in. */
     int64_t recordLatency() const;
@@ -224,7 +239,9 @@ private:
         int64_t latency = 0;
         std::atomic<int64_t> written { 0 };
         std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> writer;
+        std::shared_ptr<LivePeaks> peaks;
     };
+    std::vector<std::shared_ptr<LivePeaks>> livePeaks;
 
     void processChunk (int n, const float* const* in, int numIn, int inOffset);
     void processChunkMain (int n, const float* const* in, int numIn, int inOffset);

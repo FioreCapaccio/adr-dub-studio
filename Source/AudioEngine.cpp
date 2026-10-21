@@ -450,6 +450,27 @@ bool AudioEngine::ensureInput()
     return err.isEmpty() && numInputs.load() > 0;
 }
 
+void AudioEngine::LivePeaks::add (const float* a, const float* b, int n) noexcept
+{
+    int c = count.load (std::memory_order_relaxed);
+    for (int i = 0; i < n; ++i)
+    {
+        const float lo = juce::jmin (a[i], b[i]), hi = juce::jmax (a[i], b[i]);
+        if (accN == 0) { accMin = lo; accMax = hi; }
+        else { accMin = juce::jmin (accMin, lo); accMax = juce::jmax (accMax, hi); }
+        if (++accN == kBucket)
+        {
+            if ((size_t) c < mn.size())
+            {
+                mn[(size_t) c] = (int16_t) juce::jlimit (-32767.0f, 32767.0f, accMin * 32767.0f);
+                mx[(size_t) c] = (int16_t) juce::jlimit (-32767.0f, 32767.0f, accMax * 32767.0f);
+                count.store (++c, std::memory_order_release);
+            }
+            accN = 0;
+        }
+    }
+}
+
 juce::String AudioEngine::startRecording (const std::vector<TakeSpec>& specs)
 {
     if (recording.load()) return TRANS ("Registrazione gia' in corso.");
@@ -482,8 +503,15 @@ juce::String AudioEngine::startRecording (const std::vector<TakeSpec>& specs)
         if (w == nullptr) return TRANS ("Impossibile creare il file WAV di registrazione.");
         os.release();
         t->writer = std::make_unique<juce::AudioFormatWriter::ThreadedWriter> (w.release(), writerThread, 262144);
+        t->peaks = std::make_shared<LivePeaks>();
+        t->peaks->trackId = sp.trackId;
+        const size_t cap = (size_t) (rate * 3.0 * 3600.0 / LivePeaks::kBucket) + 1;   // tre ore (oltre, resta il blocco rosso)
+        t->peaks->mn.assign (cap, 0);
+        t->peaks->mx.assign (cap, 0);
         made.push_back (std::move (t));
     }
+    livePeaks.clear();
+    for (auto& t : made) livePeaks.push_back (t->peaks);
 
     dropped = 0;
     recStart = -1;
@@ -511,6 +539,7 @@ std::vector<TakeResult> AudioEngine::stopRecording()
         const juce::SpinLock::ScopedLockType l (recLock);
         old = std::move (takes);
         takes.clear();
+        livePeaks.clear();
     }
 
     std::vector<TakeResult> results;
@@ -766,10 +795,12 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
                 if (t->startPos < 0)
                 {
                     t->startPos = pos + from;
+                    if (t->peaks != nullptr) t->peaks->startPos = pos + from;
                     int64_t expected = -1;
                     recStart.compare_exchange_strong (expected, pos + from);
                 }
                 if (t->writer->write (part, to - from)) t->written += (to - from); else ++dropped;
+                if (t->peaks != nullptr) t->peaks->add (part[0], part[1], to - from);
             }
     }
 

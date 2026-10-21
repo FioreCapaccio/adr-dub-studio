@@ -239,13 +239,13 @@ void TimelineView::timerCallback()
     if (pos == lastPos) return;
     lastPos = pos;
 
-    if (followEnabled && engine.isPlaying() && drag == Drag::None)
+    if (followEnabled && drag == Drag::None)   // anche da fermo: se la testina salta fuori dalla vista (Vai all'inizio, alla fine, a un marker) la vista la segue
     {
         const float x = sampleToX (pos);
         const auto lanes = laneArea();
         if (x > (float) lanes.getRight() - 30.0f || x < (float) headerW)
         {
-            scrollX = (double) pos - lanes.getWidth() * spp * 0.1;
+            scrollX = juce::jmax (0.0, (double) pos - lanes.getWidth() * spp * 0.1);
             updateScrollBars();
             repaint();
             lastPlayheadX = -100.0f;
@@ -1235,6 +1235,27 @@ void TimelineView::paintBody (juce::Graphics& g)
                 juce::Rectangle<float> rr (rx0, (float) laneTop (i) + 4.0f, juce::jmax (2.0f, rx1 - rx0), (float) heightOf (i) - 8.0f);
                 g.setColour (accent.withAlpha (0.26f));
                 g.fillRoundedRectangle (rr, 5.0f);
+                // forma d'onda che si forma mentre si registra
+                for (auto& lp : engine.getLivePeaks())
+                {
+                    const int cnt = lp->count.load (std::memory_order_acquire);
+                    const int64_t st = lp->startPos.load();
+                    if (lp->trackId != s.tracks[(size_t) i].id || cnt <= 0 || st < 0) continue;
+                    const float mid = rr.getCentreY(), half = rr.getHeight() * 0.5f - 3.0f;
+                    const float wx0 = juce::jmax ((float) lanes.getX(), sampleToX (st));
+                    const float wx1 = juce::jmin ((float) lanes.getRight(), sampleToX (st + (int64_t) cnt * AudioEngine::LivePeaks::kBucket));
+                    g.setColour (accent.brighter (0.3f).withAlpha (0.9f));
+                    for (int px = (int) wx0; px < (int) wx1; ++px)
+                    {
+                        const int64_t s0 = xToSample ((float) px) - st, s1 = xToSample ((float) px + 1.0f) - st;
+                        int b0 = (int) juce::jlimit<int64_t> (0, cnt - 1, s0 / AudioEngine::LivePeaks::kBucket);
+                        const int b1 = (int) juce::jlimit<int64_t> (b0 + 1, cnt, s1 / AudioEngine::LivePeaks::kBucket + 1);
+                        int lo = 0, hi = 0;
+                        for (; b0 < b1; ++b0) { lo = juce::jmin (lo, (int) lp->mn[(size_t) b0]); hi = juce::jmax (hi, (int) lp->mx[(size_t) b0]); }
+                        const float y0 = mid - half * (float) hi / 32767.0f, y1 = mid - half * (float) lo / 32767.0f;
+                        g.drawVerticalLine (px, y0, juce::jmax (y0 + 1.0f, y1));
+                    }
+                }
                 g.setColour (accent);
                 g.drawRoundedRectangle (rr, 5.0f, 1.5f);
                 g.setFont (font (11.0f, true));

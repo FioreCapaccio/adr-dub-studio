@@ -29,6 +29,7 @@
 #include "License.h"
 #include "StemEngine.h"
 #include "Leveler.h"
+#include "TimelineView.h"
 #include "VoiceGender.h"
 
 /** Processore di prova: ritarda il segnale di N campioni e dichiara quella latenza. */
@@ -138,6 +139,7 @@ private:
         stepLeveler();
         stepCueMerge();
         stepVoices();
+        stepLivePeaks();
         stepTrackFolders();
         stepEditing();
         stepPdc();
@@ -2685,6 +2687,21 @@ private:
         });
     }
 
+    // forma d'onda della registrazione in corso
+    void stepLivePeaks()
+    {
+        fc::AudioEngine::LivePeaks lp;
+        lp.mn.assign (8, 0); lp.mx.assign (8, 0);
+        std::vector<float> a (1000), b (1000);
+        for (int i = 0; i < 1000; ++i) { a[(size_t) i] = 0.5f * std::sin (0.05f * (float) i); b[(size_t) i] = 0.25f * a[(size_t) i]; }
+        lp.add (a.data(), b.data(), 300);
+        lp.add (a.data() + 300, b.data() + 300, 700);
+        expect (lp.count.load() == 3 && std::abs (lp.mx[0] / 32767.0f - 0.5f) < 0.01f && std::abs (lp.mn[1] / 32767.0f + 0.5f) < 0.01f, "registrazione: picchi in tempo reale per blocchi di 256 campioni (" + juce::String (lp.count.load()) + ")");
+        std::vector<float> z (4096, 0.1f);
+        lp.add (z.data(), z.data(), 4096);
+        expect (lp.count.load() == 8, "registrazione: oltre la capacita' i picchi si fermano senza scrivere fuori");
+    }
+
     // riconoscimento delle voci maschile / femminile dal tono
     void stepVoices()
     {
@@ -4361,6 +4378,19 @@ private:
             eng.audioDeviceIOCallbackWithContext (ins, 2, outs, 2, block, juce::AudioIODeviceCallbackContext());
         }
         expect (eng.getRecordStart() == startPos, "inizio registrazione sulla testina: " + juce::String ((juce::int64) eng.getRecordStart()));
+        expect (eng.getLivePeaks().size() == 1 && eng.getLivePeaks()[0]->count.load() == block * blocks / fc::AudioEngine::LivePeaks::kBucket
+                    && eng.getLivePeaks()[0]->startPos.load() == startPos, "registrazione: la forma d'onda si forma durante la registrazione");
+        if (const auto snap = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_REC", {}); snap.isNotEmpty())   // timeline durante la registrazione, su file
+        {
+            s.tracks.back().live->armed = true;
+            fc::TimelineView tv (*project, eng);
+            tv.setSize (1400, 500);
+            auto img = tv.createComponentSnapshot (tv.getLocalBounds(), true, 1.0f);
+            juce::PNGImageFormat png;
+            juce::File (snap).deleteFile();
+            if (auto os = juce::File (snap).createOutputStream()) png.writeImageToStream (img, *os);
+            s.tracks.back().live->armed = false;
+        }
         eng.stop();
         const auto results = eng.stopRecording();
         expect (results.size() == 1 && results[0].length == block * blocks && results[0].startPos == startPos,
@@ -4565,7 +4595,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.29.0"; }
+    const juce::String getApplicationVersion() override { return "2.30.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
