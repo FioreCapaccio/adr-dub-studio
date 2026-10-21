@@ -179,6 +179,35 @@ Plan planGains (const Frames& fr, const Settings& st)
         p.gainDb[i] = g;
     }
 
+    // 4) pause: il volume scende a pauseDb e risale prima della frase (rampe lineari in dB)
+    if (st.lowerPauses)
+    {
+        const int minPause = (int) std::lround (st.minPauseSec / kHopSec), hold = (int) std::lround (st.pauseHoldSec / kHopSec);
+        const int fall = juce::jmax (1, (int) std::lround (st.pauseFallSec / kHopSec)), rise = juce::jmax (1, (int) std::lround (st.pauseRiseSec / kHopSec));
+        std::vector<float> w (n, 0.0f);   // 0 = livello della frase, 1 = livello delle pause
+        size_t i = 0;
+        while (i < n)
+        {
+            if (active[i]) { ++i; continue; }
+            size_t j = i;
+            while (j < n && ! active[j]) ++j;   // pausa [i, j)
+            const bool atStart = i == 0, atEnd = j == n;
+            if ((int) (j - i) >= minPause)
+            {
+                const int a = (int) i + (atStart ? 0 : hold);   // inizio della discesa
+                for (int k = (int) i; k < (int) j; ++k)
+                {
+                    const float down = atStart ? 1.0f : juce::jlimit (0.0f, 1.0f, (float) (k - a + 1) / (float) fall);
+                    const float up = atEnd ? 1.0f : juce::jlimit (0.0f, 1.0f, (float) ((int) j - k) / (float) rise);
+                    w[(size_t) k] = juce::jmin (down, up);   // pausa corta: discesa e risalita si toccano e si scende meno
+                }
+            }
+            i = j;
+        }
+        for (size_t k = 0; k < n; ++k)
+            if (w[k] > 0.0f) p.gainDb[k] = p.gainDb[k] * (1.0f - w[k]) + (float) st.pauseDb * w[k];
+    }
+
     std::vector<float> after;
     for (size_t i = 0; i < n; ++i) if (active[i]) after.push_back (fr.lufs[i] + p.gainDb[i]);
     p.spreadAfter = stddev (after);

@@ -3919,12 +3919,14 @@ void MainComponent::levelTrackDialog (std::vector<int> wanted)
     if (ids.empty()) { showError (TRANS ("Seleziona una o piu' tracce con dei clip da livellare.")); return; }
 
     auto* aw = new juce::AlertWindow (TRANS ("Livella il volume della traccia"),
-        TRANS ("Analizza il loudness e scrive un'automazione del volume che rende uniforme il livello percepito (annullabile). Le pause non vengono alzate."), juce::MessageBoxIconType::NoIcon);
+        TRANS ("Analizza il loudness e scrive un'automazione del volume che rende uniforme il livello percepito (annullabile). Nelle pause il volume si abbassa per ridurre fruscio e rumori."), juce::MessageBoxIconType::NoIcon);
     aw->addComboBox ("target", { TRANS ("Automatico (livello mediano del parlato)"), "-16 LUFS", "-20 LUFS", "-23 LUFS (EBU R128)", "-24 LUFS", "-27 LUFS (dialoghi Netflix)" }, TRANS ("Obiettivo"));
     aw->addTextEditor ("boost", "9", TRANS ("Massimo aumento (dB)"));
     aw->addTextEditor ("cut", "9", TRANS ("Massima riduzione (dB)"));
     aw->addComboBox ("react", { TRANS ("Lenta"), TRANS ("Media"), TRANS ("Rapida") }, TRANS ("Velocita' di reazione"));
     if (auto* c = aw->getComboBoxComponent ("react")) c->setSelectedItemIndex (1, juce::dontSendNotification);
+    aw->addComboBox ("pause", { TRANS ("Abbassa di 6 dB"), TRANS ("Abbassa di 12 dB"), TRANS ("Abbassa di 20 dB"), TRANS ("Lascia il livello della frase") }, TRANS ("Nelle pause"));
+    if (auto* c = aw->getComboBoxComponent ("pause")) c->setSelectedItemIndex (1, juce::dontSendNotification);
     aw->addButton (TRANS ("Livella"), 1, juce::KeyPress (juce::KeyPress::returnKey));
     aw->addButton (TRANS ("Annulla"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<MainComponent> safe (this);
@@ -3944,6 +3946,10 @@ void MainComponent::levelTrackDialog (std::vector<int> wanted)
         rq.settings.maxBoostDb = juce::jlimit (0.0, 24.0, std::abs (num ("boost")));
         rq.settings.maxCutDb = juce::jlimit (0.0, 24.0, std::abs (num ("cut")));
         rq.settings.reaction = aw->getComboBoxComponent ("react") != nullptr ? aw->getComboBoxComponent ("react")->getSelectedItemIndex() : 1;
+        const int pz = aw->getComboBoxComponent ("pause") != nullptr ? aw->getComboBoxComponent ("pause")->getSelectedItemIndex() : 1;
+        static const double pauseLevels[] = { -6.0, -12.0, -20.0 };
+        rq.settings.lowerPauses = pz >= 0 && pz <= 2;
+        rq.settings.pauseDb = pauseLevels[juce::jlimit (0, 2, pz)];
         if (safe->project->exportOut > safe->project->exportIn && safe->project->exportIn >= 0) { rq.from = safe->project->exportIn; rq.to = safe->project->exportOut; }
         const int64_t from = rq.from, to = rq.to;
         safe->levelJob = std::make_unique<level::Job> (std::move (rq), [safe, from, to] (level::Outcome o)

@@ -19,6 +19,11 @@ struct Settings
     double peakCeilingDb = -1.0;   // l'aumento non porta i picchi oltre questo livello
     double deadbandDb = 0.7;       // differenze piu' piccole non muovono il guadagno
     double toleranceDb = 0.4;      // semplificazione della curva
+    bool lowerPauses = true;       // nelle pause il volume scende a pauseDb (rispetto al fader); false = resta quello dell'ultima frase
+    double pauseDb = -12.0;        // livello nelle pause: abbassa fruscio e rumori senza creare buchi
+    double minPauseSec = 0.6;      // solo le pause vere (non i silenzi tra le parole)
+    double pauseHoldSec = 0.25;    // attesa dopo la fine della frase (code e riverbero)
+    double pauseFallSec = 0.3, pauseRiseSec = 0.25;   // discesa nella pausa e risalita prima della frase
 };
 
 inline constexpr double kHopSec = 0.1;     // passo

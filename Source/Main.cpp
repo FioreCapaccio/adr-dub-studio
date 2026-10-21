@@ -3816,11 +3816,30 @@ private:
         expect (cv.plan.spreadBefore > 3.0 && cv.plan.spreadAfter < 1.5, "livellatore: variazione di livello da " + juce::String (cv.plan.spreadBefore, 1) + " a " + juce::String (cv.plan.spreadAfter, 1) + " dB");
         float lo = 99.0f, hi = -99.0f;
         for (auto& pt : cv.points) { lo = juce::jmin (lo, pt.second); hi = juce::jmax (hi, pt.second); }
-        expect (lo >= -9.01f && hi <= 9.01f, "livellatore: guadagno entro +/-9 dB (" + juce::String (lo, 1) + " .. " + juce::String (hi, 1) + ")");
+        expect (lo >= -12.01f && hi <= 9.01f, "livellatore: guadagno entro +9 dB e -12 dB nelle pause (" + juce::String (lo, 1) + " .. " + juce::String (hi, 1) + ")");
         expect ((int) cv.points.size() <= 45 && cv.points.size() >= 4, "livellatore: pochi punti, modificabili (" + juce::String ((int) cv.points.size()) + " in 15 s)");
         float pmin = 99.0f, pmax = -99.0f;
-        for (int f = 143; f <= 149 && f < (int) cv.plan.gainDb.size(); ++f) { pmin = juce::jmin (pmin, cv.plan.gainDb[(size_t) f]); pmax = juce::jmax (pmax, cv.plan.gainDb[(size_t) f]); }
-        expect (pmax - pmin < 0.5f, "livellatore: nelle pause il guadagno resta fermo (" + juce::String (pmax - pmin, 2) + " dB)");
+        for (int f = 148; f <= 149 && f < (int) cv.plan.gainDb.size(); ++f) { pmin = juce::jmin (pmin, cv.plan.gainDb[(size_t) f]); pmax = juce::jmax (pmax, cv.plan.gainDb[(size_t) f]); }
+        expect (std::abs (pmin + 12.0f) < 0.3f && std::abs (pmax + 12.0f) < 0.3f, "livellatore: nelle pause il volume scende a -12 dB (" + juce::String (pmin, 1) + " .. " + juce::String (pmax, 1) + " dB)");
+        {   // stesso audio senza abbassare le pause: nelle frasi il guadagno e' identico (l'attacco non viene tagliato), nelle pause resta quello della frase
+            lv::Request r2 = rq;
+            r2.snapshot = p.getSession().cloneDetached();
+            r2.settings.lowerPauses = false;
+            const auto o2 = lv::process (r2, [] (double) { return true; }, [] (const juce::String&) {});
+            if (o2.ok && o2.curves.size() == 1 && o2.curves[0].plan.gainDb.size() == cv.plan.gainDb.size())
+            {
+                const auto& g2 = o2.curves[0].plan.gainDb;
+                float diffSpeech = 0.0f;
+                const double sp[][2] = { { 0.6, 3.4 }, { 4.6, 7.4 }, { 8.6, 11.4 }, { 12.1, 13.9 } };   // dentro le frasi
+                for (auto& r : sp) for (int f = (int) (r[0] * 10); f <= (int) (r[1] * 10); ++f) diffSpeech = juce::jmax (diffSpeech, std::abs (g2[(size_t) f] - cv.plan.gainDb[(size_t) f]));
+                float hmin = 99.0f, hmax = -99.0f;
+                for (int f = 146; f <= 149; ++f) { hmin = juce::jmin (hmin, g2[(size_t) f]); hmax = juce::jmax (hmax, g2[(size_t) f]); }
+                expect (diffSpeech < 0.01f, "livellatore: abbassare le pause non cambia il guadagno dentro le frasi (" + juce::String (diffSpeech, 3) + " dB)");
+                expect (hmax - hmin < 0.3f && hmin > -9.5f, "livellatore: con 'Lascia il livello della frase' nelle pause il guadagno resta fermo");
+                expect (cv.plan.gainDb[41] < juce::jmin (g2[41], cv.plan.gainDb[30], cv.plan.gainDb[50]) - 3.0f, "livellatore: anche nella pausa di 1 s tra due frasi il volume scende (" + juce::String (cv.plan.gainDb[41], 1) + " dB)");
+            }
+            else expect (false, "livellatore: seconda analisi senza abbassare le pause");
+        }
 
         // applicazione: valori scritti = curva, un solo undo, punti fuori dall'intervallo conservati
         fc::AutoPoint keepA, keepB;
@@ -4595,7 +4614,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.30.0"; }
+    const juce::String getApplicationVersion() override { return "2.31.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
