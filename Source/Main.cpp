@@ -3841,6 +3841,45 @@ private:
             else expect (false, "livellatore: seconda analisi senza abbassare le pause");
         }
 
+        {   // come una registrazione vera: fruscio della stanza a circa -45 dBFS ovunque e frasi con tono (armoniche a 120 Hz) a livelli diversi
+            juce::Random rnd (3);
+            const int len = (int) (8.0 * sr);
+            std::vector<float> L ((size_t) len);
+            double ph = 0.0;
+            const struct { double a, b; float amp; } ph2[] = { { 1.0, 3.4, 0.25f }, { 4.0, 5.4, 0.08f } };
+            for (int i = 0; i < len; ++i)
+            {
+                float v = 0.012f * (rnd.nextFloat() * 2.0f - 1.0f);   // fondo
+                const double t = i / sr;
+                for (auto& f : ph2)
+                    if (t >= f.a && t < f.b)
+                    {
+                        ph += 2.0 * juce::MathConstants<double>::pi * 120.0 * (1.0 + 0.04 * std::sin (2.0 * juce::MathConstants<double>::pi * 3.0 * t)) / sr;
+                        float h = 0.0f;
+                        for (int k = 1; k <= 15; ++k) h += (float) (std::sin (k * ph) / k);
+                        v += f.amp * 0.6f * h * (float) juce::jmin (1.0, juce::jmin (t - f.a, f.b - t) / 0.05);
+                    }
+                L[(size_t) i] = v;
+            }
+            lv::Analyser an (sr);
+            an.process (L.data(), L.data(), len);
+            an.finish();
+            const auto fr = lv::framesFrom (an);
+            const auto pl = lv::planGains (fr, {});
+            float noiseMax = -99.0f; int speechFrames = 0, noiseActive = 0;
+            for (size_t f = 0; f < pl.gainDb.size(); ++f)
+            {
+                const double t = (double) f * lv::kHopSec;
+                const bool inSpeech = (t > 1.2 && t < 3.2) || (t > 4.2 && t < 5.2);
+                const bool inNoise = t < 0.6 || (t > 6.0);
+                if (inSpeech && pl.active[f]) ++speechFrames;
+                if (inNoise) { noiseMax = juce::jmax (noiseMax, pl.gainDb[f]); if (pl.active[f]) ++noiseActive; }
+            }
+            expect (noiseActive == 0 && speechFrames >= 28, "livellatore: il fruscio della stanza e' pausa, le frasi sono parlato (" + juce::String (noiseActive) + " frame di rumore presi per voce, " + juce::String (speechFrames) + " di parlato)");
+            expect (noiseMax < -11.5f, "livellatore: nei vuoti con solo fruscio il volume scende invece di salire (massimo " + juce::String (noiseMax, 1) + " dB)");
+            expect (pl.gainDb[(size_t) 47] > pl.gainDb[(size_t) 20] + 6.0f, "livellatore: la frase piano viene alzata rispetto a quella forte (" + juce::String (pl.gainDb[20], 1) + " / " + juce::String (pl.gainDb[47], 1) + " dB)");
+        }
+
         // applicazione: valori scritti = curva, un solo undo, punti fuori dall'intervallo conservati
         fc::AutoPoint keepA, keepB;
         keepA.id = p.nextAutoPointId(); keepA.pos = (int64_t) (1.0 * sr); keepA.db = -3.0f;
@@ -4614,7 +4653,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.31.0"; }
+    const juce::String getApplicationVersion() override { return "2.32.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -4663,6 +4702,32 @@ public:
                 }
             }
             setApplicationReturnValue (rc);
+            quit();
+            return;
+        }
+        if (commandLine.contains ("--level"))   // ADR Dub Studio --level audio.wav: livello, voce, parlato/pausa e guadagno del livellatore ogni 100 ms (prova)
+        {
+            auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--level", false, false), true);
+            args.removeEmptyStrings();
+            juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+            std::unique_ptr<juce::AudioFormatReader> r (args.isEmpty() ? nullptr : fm.createReaderFor (juce::File (args[0])));
+            if (r == nullptr) std::cout << "uso: --level audio.wav" << std::endl;
+            else
+            {
+                juce::AudioBuffer<float> buf ((int) r->numChannels, (int) r->lengthInSamples);
+                r->read (&buf, 0, (int) r->lengthInSamples, 0, true, true);
+                fc::level::Analyser an (r->sampleRate);
+                an.process (buf.getReadPointer (0), buf.getReadPointer (buf.getNumChannels() - 1), buf.getNumSamples());
+                an.finish();
+                const auto fr = fc::level::framesFrom (an);
+                const auto pl = fc::level::planGains (fr, {});
+                for (size_t i = 0; i < fr.lufs.size(); ++i)
+                    std::cout << juce::String ((double) i * 0.1, 1) << " s  " << juce::String (fr.lufs[i], 1) << " LUFS  " << (fr.voiced[i] ? "voce " : "     ")
+                              << (pl.active.size() > i && pl.active[i] ? "PARLATO " : "pausa   ") << juce::String (pl.gainDb.size() > i ? pl.gainDb[i] : 0.0f, 1) << " dB" << std::endl;
+                std::cout << "mediana del parlato " << juce::String (pl.speechMedian, 1) << " LUFS, variazione " << juce::String (pl.spreadBefore, 1) << " -> " << juce::String (pl.spreadAfter, 1) << " dB" << std::endl;
+            }
+            setApplicationReturnValue (r == nullptr ? 1 : 0);
             quit();
             return;
         }

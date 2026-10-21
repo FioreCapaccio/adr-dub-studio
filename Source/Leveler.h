@@ -14,8 +14,9 @@ struct Settings
     double maxBoostDb = 9.0;       // massimo aumento
     double maxCutDb = 9.0;         // massima riduzione
     int reaction = 1;              // 0 lenta, 1 media, 2 rapida
-    double gateAbsLufs = -50.0;    // sotto questo livello e' pausa: il guadagno resta fermo
-    double gateRelLu = 20.0;       // e cosi' sotto (mediana del parlato - questo)
+    double gateAbsLufs = -50.0;    // sotto questo livello e' pausa
+    double gateRelLu = 30.0;       // e cosi' sotto il parlato forte (90 percentile - questo)
+    double floorMarginDb = 20.0;   // senza tono, conta come parlato solo cio' che sta almeno cosi' sopra il fondo (10 percentile)
     double peakCeilingDb = -1.0;   // l'aumento non porta i picchi oltre questo livello
     double deadbandDb = 0.7;       // differenze piu' piccole non muovono il guadagno
     double toleranceDb = 0.4;      // semplificazione della curva
@@ -38,6 +39,7 @@ public:
     void finish();
     const std::vector<double>& energy() const { return e; }       // media dei quadrati K-weighted, canali sommati
     const std::vector<float>& peak() const { return pk; }         // picco lineare del blocco
+    const std::vector<char>& voiced() const { return vo; }        // nel blocco c'e' una voce (tono 60-500 Hz): il rumore di fondo non ne ha
 
 private:
     int subLen;
@@ -48,18 +50,25 @@ private:
     std::array<std::array<Filt, 2>, 2> filt;   // [canale][shelf, passa-alto]
     std::vector<double> e;
     std::vector<float> pk;
+    std::vector<char> vo;
+    double rate;
+    Filt lp;                       // passa-basso prima di scendere a 16 kHz per il tono
+    std::vector<float> blk;        // blocco in corso (mono, filtrato)
+    void endBlock();
 };
 
 /** Livello a finestre (LUFS) e picco (dBFS) dei frame di 100 ms, dalla finestra di 400 ms centrata sul frame. */
 struct Frames
 {
     std::vector<float> lufs, peakDb;
+    std::vector<char> voiced;
 };
 Frames framesFrom (const Analyser&);
 
 struct Plan
 {
     std::vector<float> gainDb;        // guadagno per frame (liscio, con attacco e rilascio)
+    std::vector<char> active;         // frame riconosciuti come parlato (gli altri sono pause)
     double speechMedian = -100.0;     // livello mediano del parlato (LUFS)
     double targetUsed = -23.0;
     double spreadBefore = 0.0, spreadAfter = 0.0;   // deviazione standard del livello dei frame con parlato (dB)

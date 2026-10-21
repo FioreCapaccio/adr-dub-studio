@@ -216,6 +216,8 @@ std::vector<VoiceSeg> analyse (const juce::AudioBuffer<float>& b, int64_t offset
     return analyse (mono.data(), length, sampleRate, st);
 }
 
+float yinPitch16k (const float* x) { return yinPitch (x); }
+
 bool hasBoth (const std::vector<VoiceSeg>& v)
 {
     bool m = false, f = false;

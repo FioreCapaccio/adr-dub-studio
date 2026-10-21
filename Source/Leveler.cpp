@@ -1,14 +1,21 @@
 #include "Leveler.h"
 #include "Loudness.h"
 #include "ExportEngine.h"
+#include "VoiceGender.h"
 #include <algorithm>
 #include <cmath>
 
 namespace fc::level
 {
-Analyser::Analyser (double sampleRate)
+Analyser::Analyser (double sampleRate) : rate (sampleRate)
 {
     subLen = juce::jmax (1, (int) std::lround (sampleRate * kHopSec));
+    {
+        const double fc = juce::jmin (3500.0, sampleRate * 0.45), w0 = 2.0 * juce::MathConstants<double>::pi * fc / sampleRate;
+        const double c = std::cos (w0), al = std::sin (w0) / (2.0 * 0.7071), a0 = 1.0 + al;
+        lp = { (1.0 - c) / 2.0 / a0, (1.0 - c) / a0, (1.0 - c) / 2.0 / a0, -2.0 * c / a0, (1.0 - al) / a0 };
+    }
+    blk.reserve ((size_t) subLen + 16);
     for (int c = 0; c < 2; ++c)
     {
         Loudness::Biquad shelf, hp;
@@ -33,13 +40,31 @@ void Analyser::process (const float* l, const float* r, int n)
         const double yr = run (filt[1][1], run (filt[1][0], (double) r[i]));
         acc += yl * yl + yr * yr;
         blockPeak = juce::jmax (blockPeak, std::abs (l[i]), std::abs (r[i]));
+        blk.push_back ((float) run (lp, 0.5 * ((double) l[i] + (double) r[i])));
         if (++count >= subLen)
         {
             e.push_back (acc / (double) count);
             pk.push_back (blockPeak);
+            endBlock();
             acc = 0.0; count = 0; blockPeak = 0.0f;
         }
     }
+}
+
+void Analyser::endBlock()
+{
+    // tono del blocco: a 16 kHz, due frame YIN (inizio e meta'); voce se almeno uno ha un tono
+    const int m = (int) ((double) blk.size() * 16000.0 / rate);
+    bool v = false;
+    if (m >= gender::kYinSpan)
+    {
+        std::vector<float> x ((size_t) m);
+        for (int j = 0; j < m; ++j) x[(size_t) j] = blk[(size_t) juce::jmin ((int) blk.size() - 1, (int) ((double) j * rate / 16000.0))];
+        for (int start : { 0, juce::jmin (m / 2, m - gender::kYinSpan) })
+            v = v || gender::yinPitch16k (x.data() + start) > 0.0f;
+    }
+    vo.push_back (v ? 1 : 0);
+    blk.clear();
 }
 
 void Analyser::finish()
@@ -48,7 +73,9 @@ void Analyser::finish()
     {
         e.push_back (acc / (double) count);
         pk.push_back (blockPeak);
+        endBlock();
     }
+    blk.clear();
     acc = 0.0; count = 0; blockPeak = 0.0f;
 }
 
@@ -58,6 +85,7 @@ Frames framesFrom (const Analyser& a)
     const int n = (int) a.energy().size();
     f.lufs.resize ((size_t) n);
     f.peakDb.resize ((size_t) n);
+    f.voiced.assign ((size_t) n, 0);
     for (int i = 0; i < n; ++i)
     {
         // finestra di 4 blocchi centrata sul confine tra il blocco i-1 e i: blocchi i-2 .. i+1 (dove esistono)
@@ -72,6 +100,8 @@ Frames framesFrom (const Analyser& a)
             if (k >= 0 && k < n && a.energy()[(size_t) k] >= top * 0.01) { sum += a.energy()[(size_t) k]; ++cnt; }
         f.lufs[(size_t) i] = (float) Loudness::energyToLufs (cnt > 0 ? sum / cnt : 0.0);
         f.peakDb[(size_t) i] = juce::Decibels::gainToDecibels (pk, -120.0f);
+        for (int k = k0; k < k1; ++k)
+            if (k >= 0 && k < n && (size_t) k < a.voiced().size() && a.voiced()[(size_t) k]) f.voiced[(size_t) i] = 1;
     }
     return f;
 }
@@ -119,15 +149,36 @@ Plan planGains (const Frames& fr, const Settings& st)
     p.gainDb.assign (n, 0.0f);
     if (n == 0) return p;
 
-    // 1) frame con parlato: sopra il gate assoluto, poi sopra (mediana - gate relativo)
-    std::vector<float> cand;
-    for (auto v : fr.lufs) if (v > (float) st.gateAbsLufs) cand.push_back (v);
-    if (cand.empty()) return p;
-    const double med0 = median (cand);
+    // 1) parlato: sopra il gate (assoluto e 30 LU sotto il parlato forte) e con una voce vicina (tono entro 0,3 s);
+    //    senza tono conta solo se sta ben sopra il fondo. Cosi' il fruscio e il rumore della stanza restano pause e non vengono alzati.
+    std::vector<float> all;
+    for (auto v : fr.lufs) if (v > -90.0f) all.push_back (v);
+    if (all.empty()) return p;
+    std::sort (all.begin(), all.end());
+    const float p10 = all[(size_t) ((double) (all.size() - 1) * 0.10)], p90 = all[(size_t) ((double) (all.size() - 1) * 0.90)];
+    const float gate = juce::jmax ((float) st.gateAbsLufs, p90 - (float) st.gateRelLu);
+    const bool floorClear = p90 - p10 >= 20.0f;   // c'e' un fondo ben distinto dal parlato
+    std::vector<char> nearVoice (n, 0);
+    int voicedLoud = 0, loud = 0;
+    for (size_t i = 0; i < n; ++i)
+    {
+        if (fr.lufs[i] > gate) { ++loud; if (i < fr.voiced.size() && fr.voiced[i]) ++voicedLoud; }
+        if (i < fr.voiced.size() && fr.voiced[i])
+            for (size_t k = (size_t) juce::jmax (0, (int) i - 2); k <= juce::jmin (n - 1, i + 2); ++k) nearVoice[k] = 1;
+    }
+    const bool useVoice = voicedLoud >= juce::jmax (3, loud / 30);   // traccia di parlato (su effetti o musica senza tono si usa solo il livello)
     std::vector<char> active (n, 0);
     std::vector<float> speech;
     for (size_t i = 0; i < n; ++i)
-        if (fr.lufs[i] > (float) st.gateAbsLufs && fr.lufs[i] > (float) (med0 - st.gateRelLu)) { active[i] = 1; speech.push_back (fr.lufs[i]); }
+    {
+        const float v = fr.lufs[i];
+        const bool voiced = i < fr.voiced.size() && fr.voiced[i];
+        const bool aboveFloor = ! floorClear || v > p10 + (float) st.floorMarginDb;        // ben sopra il fondo: parlato anche senza tono
+        const bool nearFloor = floorClear && v < p10 + 0.5f * (float) st.floorMarginDb;    // vicino al fondo: rumore, anche accanto a una voce
+        const bool speechLike = useVoice ? (voiced || (nearVoice[i] && ! nearFloor) || (floorClear && aboveFloor)) : aboveFloor;
+        if (v > gate && speechLike) { active[i] = 1; speech.push_back (v); }
+    }
+    p.active = active;
     p.activeFrames = (int) speech.size();
     p.speechMedian = median (speech);
     p.targetUsed = st.autoTarget ? p.speechMedian : st.targetLufs;
@@ -152,13 +203,14 @@ Plan planGains (const Frames& fr, const Settings& st)
         for (size_t i = 0; i < n && ! active[i]; ++i) want[i] = want[std::find (active.begin(), active.end(), 1) - active.begin()];
 
     // nella pausa subito prima di una frase (ultimo mezzo secondo) il guadagno si porta gia' al valore della frase: cosi' all'attacco e' a posto
+    std::vector<char> leadIn (n, 0);
     {
         constexpr size_t lead = 5;
         size_t nextActive = n;
         for (size_t i = n; i-- > 0;)
         {
             if (active[i]) nextActive = i;
-            else if (nextActive < n && nextActive - i <= lead) want[i] = want[nextActive];
+            else if (nextActive < n && nextActive - i <= lead) { want[i] = want[nextActive]; leadIn[i] = 1; }
         }
     }
 
@@ -169,6 +221,7 @@ Plan planGains (const Frames& fr, const Settings& st)
     bool moving = false;   // isteresi: si parte quando la differenza supera la zona morta, ci si ferma quando e' quasi annullata
     for (size_t i = 0; i < n; ++i)
     {
+        if (i > 0 && ! active[i] && ! leadIn[i]) { p.gainDb[i] = g; moving = false; continue; }   // nella pausa il guadagno resta dov'era (non insegue le code della frase)
         const float d = want[i];
         if (! moving && std::abs (d - g) >= (float) st.deadbandDb) moving = true;
         if (moving)

@@ -30,6 +30,10 @@ std::vector<VoiceSeg> analyse (const float* mono, int64_t numSamples, double sam
 /** Come analyse() su piu' canali (si fa la media). */
 std::vector<VoiceSeg> analyse (const juce::AudioBuffer<float>&, int64_t offset, int64_t length, double sampleRate, const Settings& = {});
 
+/** Tono (Hz) di un frame di 32 ms a 16 kHz (servono kYinSpan campioni); 0 se non e' sonoro (rumore, silenzio, consonanti sorde). */
+inline constexpr int kYinSpan = 512 + 267;
+float yinPitch16k (const float* x);
+
 /** Ci sono entrambi i generi? Se no, non ha senso dividere. */
 bool hasBoth (const std::vector<VoiceSeg>&);
 } // namespace fc::gender
