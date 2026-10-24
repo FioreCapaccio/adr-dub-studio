@@ -5,3 +5,5 @@ build-ff/
 dist/
 third_party/bin/
 test-media/
+build-uni/
+build-deps/

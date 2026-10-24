@@ -140,6 +140,7 @@ private:
         stepCueMerge();
         stepVoices();
         stepLivePeaks();
+        stepAdrMonitor();
         stepTrackFolders();
         stepEditing();
         stepPdc();
@@ -2687,6 +2688,29 @@ private:
         });
     }
 
+    // registrazione di un cue: in cuffia solo la guida e l'originale, non i take gia' registrati
+    void stepAdrMonitor()
+    {
+        fc::Project p (formats, 48000.0);
+        p.addTrack();
+        auto& tr = p.edit().tracks;
+        auto dc = [] (float v) { auto a = std::make_shared<fc::Asset>(); a->name = "x"; a->audio.setSize (2, 48000); for (int c = 0; c < 2; ++c) juce::FloatVectorOperations::fill (a->audio.getWritePointer (c), v, 48000); a->buildPeaks(); return a; };
+        for (auto& t : tr) { t.live->eq.enabled = false; t.live->comp.enabled = false; t.live->limiterOn = false; t.live->volumeDb = 0.0f; t.live->pan = 0.0f; }
+        fc::AdrCue cue; cue.number = 1; cue.inPos = 0; cue.outPos = 48000;
+        const int cid = p.addCue (cue);
+        fc::Clip guide; guide.id = 1; guide.asset = dc (0.2f); guide.length = 48000;
+        fc::Clip take; take.id = 2; take.asset = dc (0.1f); take.length = 48000; take.cueId = cid; take.takeNo = 1;
+        tr[0].clips = { guide };
+        tr[1].clips = { take };
+        const auto& s = p.getSession();
+        juce::AudioBuffer<float> buf (2, 4096);
+        auto level = [&] (bool exclude) { fc::Mixer m; m.excludeTakes = exclude; buf.clear(); m.render (s, 10000, buf, 0, 4096); return buf.getMagnitude (0, 2000, 1000); };
+        const float normal = level (false), rec = level (true);
+        expect (rec > 0.01f && std::abs (rec / normal - 2.0f / 3.0f) < 0.02f, "ADR: registrando un cue si sente la guida senza i take gia' registrati (" + juce::String (normal, 3) + " -> " + juce::String (rec, 3) + ")");
+        fc::AudioEngine eng;
+        expect (! eng.isExcludingTakes(), "ADR: fuori dalla registrazione i take si sentono normalmente");
+    }
+
     // forma d'onda della registrazione in corso
     void stepLivePeaks()
     {
@@ -4653,7 +4677,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.32.0"; }
+    const juce::String getApplicationVersion() override { return "2.33.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

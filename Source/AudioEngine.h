@@ -39,6 +39,7 @@ public:
     juce::AudioBuffer<float>* cueSum = nullptr;   // se non nullo: somma delle tracce per il mix delle cuffie (post-fader, con cueDb di ogni traccia), stessa disposizione di 'out'
     std::vector<float> lastCue;
     bool referenceMode = false;   // confronto A/B: suonano solo le tracce di riferimento
+    bool excludeTakes = false;    // registrazione di un cue ADR: non suonano i take ADR (in cuffia e in uscita solo la guida e l'audio originale)
 
     /** Compensazione di latenza dei plug-in: le tracce con meno latenza vengono ritardate fino alla piu' lenta. */
     void setPdcEnabled (bool on) noexcept { pdcEnabled = on; }
@@ -167,6 +168,9 @@ public:
     /** Ascolto di un solo clip (0 = normale): vale per la riproduzione, non per l'esportazione. */
     void setAuditionClip (int64_t clipId) { auditionClip = clipId; }
     void setReferenceMode (bool on) { referenceMode = on; }
+    /** Durante la registrazione di un cue: si sente l'originale, non i take gia' registrati (di nessun cue). */
+    void setExcludeTakes (bool on) { excludeTakes = on; }
+    bool isExcludingTakes() const noexcept { return excludeTakes.load(); }
     bool isReferenceMode() const noexcept { return referenceMode.load(); }
     int64_t getAuditionClip() const noexcept { return auditionClip.load(); }
     /** Chiude i file e restituisce le registrazioni fatte. */
@@ -257,6 +261,7 @@ private:
     static constexpr int kMaxBeeps = 8;
     std::atomic<int64_t> auditionClip { 0 };
     std::atomic<bool> referenceMode { false };
+    std::atomic<bool> excludeTakes { false };
     std::atomic<int64_t> punchIn { -1 }, punchOut { -1 };
     std::atomic<int64_t> beepPos[kMaxBeeps];
     std::atomic<int> beepCount { 0 };

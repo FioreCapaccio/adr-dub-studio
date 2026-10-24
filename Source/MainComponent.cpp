@@ -806,6 +806,7 @@ void MainComponent::startRecording()
 void MainComponent::finishRecording()
 {
     engine.stop();
+    engine.setExcludeTakes (false);
     engine.clearPunch();
     engine.clearBeeps();
     const int drops = engine.getDroppedBlocks();
@@ -2723,6 +2724,7 @@ void MainComponent::recordAdrCue (int cueId)
     engine.setBeeps (beeps);
     adrRecCue = cueId;
     adrRecStop = punchOut + (int64_t) (project->adrPostRoll * rate);
+    engine.setExcludeTakes (true);   // l'attore sente la guida e l'audio originale, non i take gia' registrati
     project->selectedCueId = cueId;
     updateAdrViewer();
     engine.play();

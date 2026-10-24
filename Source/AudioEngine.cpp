@@ -166,7 +166,7 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
             scratch.clear (0, chunk);
             scratch.clear (1, 0, chunk);
             const bool frozen = t.frozen != nullptr;
-            if (audible && frozen && auditionClip == 0)   // Freeze: suona l'audio gia' elaborato al posto dei clip
+            if (audible && frozen && auditionClip == 0 && ! excludeTakes)   // Freeze: suona l'audio gia' elaborato al posto dei clip
             {
                 Clip fc;
                 fc.asset = t.frozen;
@@ -175,7 +175,7 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
             }
             else if (audible)
                 for (auto& c : t.clips)
-                    if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! c.rejected && ! (auditionClip < 0 && c.cueId != 0))) && (t.soloLane < 0 || c.lane == t.soloLane) && c.end() > cpos && c.start < cpos + chunk)
+                    if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! c.rejected && ! ((auditionClip < 0 || excludeTakes) && c.cueId != 0))) && (t.soloLane < 0 || c.lane == t.soloLane) && c.end() > cpos && c.start < cpos + chunk)
                         renderClip (c, cpos, chunk);
 
             if (audible)   // guadagno in ingresso (a rampa): alimenta EQ e compressore al livello giusto
@@ -817,6 +817,7 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
         if (looping && pos < le) seg = (int) juce::jmin<int64_t> (seg, le - pos);
         mixer.auditionClip = auditionClip.load();
         mixer.referenceMode = referenceMode.load();
+        mixer.excludeTakes = excludeTakes.load();
         mixer.cueSum = (cue.enabled.load() && cue.custom.load()) ? &cueSumBuf : nullptr;
         mixer.render (*current, pos, master, outPos, seg);
         pos += seg;
