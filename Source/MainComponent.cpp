@@ -650,6 +650,8 @@ void MainComponent::timerCallback()
     const bool playing = engine.isPlaying();
 
     viewer.sync ((double) (pos - (playing ? engine.getPdcLatency() : 0)) / project->getSampleRate(), playing);   // il video segue cio' che si sente
+    if (playing || wasPlayingForAdr) updateAdrViewer();   // il testo del dialogo segue la testina (e da fermo torna al cue selezionato)
+    wasPlayingForAdr = playing;
     inMeter.setLevels (engine.inPeakL.exchange (0.0f), engine.inPeakR.exchange (0.0f));
 
     // un ingresso audio che non risponde (di un'altra scheda o un driver virtuale) ferma il tempo del motore: la testina resta ferma mentre il play e' acceso
@@ -2462,10 +2464,21 @@ void MainComponent::showAdrWindow()
     commandManager.commandStatusChanged();
 }
 
+int MainComponent::cueAtPlayhead() const
+{
+    const double rate = project->getSampleRate();
+    return adrCueAt (project->getSession().cues, engine.getPosition() - engine.getPdcLatency(), (int64_t) ((project->adrBeeps > 0 ? project->adrBeeps : 3) * rate));
+}
+
 void MainComponent::updateAdrViewer()
 {
     VideoViewer::AdrInfo info;
-    if (const auto* c = project->findCue (project->selectedCueId))
+    // in riproduzione (non in registrazione o in ascolto di un take) il testo segue la testina, come un sottotitolo; da fermo resta il cue selezionato
+    const bool follow = engine.isPlaying() && adrRecCue == 0 && engine.getAuditionClip() == 0;
+    const int cueId = follow ? cueAtPlayhead() : project->selectedCueId;
+    if (cueId == 0 && ! project->getSession().cues.empty())
+        info.active = true;   // tra una battuta e l'altra (o senza cue scelto) la striscia resta, vuota: il video non cambia dimensione tra play e stop
+    if (const auto* c = project->findCue (cueId))
     {
         const double rate = project->getSampleRate();
         info.active = true;

@@ -371,6 +371,19 @@ struct AdrCue
     int activeTake = 0;             // numero del take che suona (0 = nessuno)
 };
 
+/** Il cue sotto la posizione (se si sovrappongono, quello iniziato per ultimo); se nessuno, il prossimo che comincia entro 'lead' campioni; 0 = nessuno. */
+inline int adrCueAt (const std::vector<AdrCue>& cues, int64_t pos, int64_t lead)
+{
+    int current = 0, next = 0;
+    int64_t currentIn = -1, nextIn = std::numeric_limits<int64_t>::max();
+    for (auto& c : cues)
+    {
+        if (c.inPos <= pos && pos <= c.outPos && c.inPos >= currentIn) { current = c.id; currentIn = c.inPos; }
+        else if (c.inPos > pos && c.inPos - pos <= lead && c.inPos < nextIn) { next = c.id; nextIn = c.inPos; }
+    }
+    return current != 0 ? current : next;
+}
+
 inline juce::String adrStatusName (int s)
 {
     static const char* n[] = { TRX ("Da registrare"), TRX ("Registrato"), TRX ("Approvato"), TRX ("Da rifare") };

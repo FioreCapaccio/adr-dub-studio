@@ -2703,6 +2703,15 @@ private:
     // registrazione di un cue: in cuffia solo la guida e l'originale, non i take gia' registrati
     void stepAdrMonitor()
     {
+        {   // in riproduzione il testo sotto il video segue la testina, come un sottotitolo
+            std::vector<fc::AdrCue> cs (4);
+            const int64_t in[] = { 1000, 5000, 5000, 20000 }, out[] = { 3000, 8000, 7000, 22000 };
+            for (int i = 0; i < 4; ++i) { cs[(size_t) i].id = i + 1; cs[(size_t) i].inPos = in[i]; cs[(size_t) i].outPos = out[i]; }
+            const int64_t lead = 3000;
+            expect (fc::adrCueAt (cs, 2000, lead) == 1 && fc::adrCueAt (cs, 3500, lead) == 2 && fc::adrCueAt (cs, 6000, lead) == 3 && fc::adrCueAt (cs, 7500, lead) == 2
+                        && fc::adrCueAt (cs, 12000, lead) == 0 && fc::adrCueAt (cs, 18000, lead) == 4 && fc::adrCueAt (cs, 30000, lead) == 0,
+                    "ADR: il dialogo sul video segue la testina (cue in corso, prossimo in arrivo, vuoto tra le battute)");
+        }
         fc::Project p (formats, 48000.0);
         p.addTrack();
         auto& tr = p.edit().tracks;
@@ -4689,7 +4698,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.34.0"; }
+    const juce::String getApplicationVersion() override { return "2.35.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

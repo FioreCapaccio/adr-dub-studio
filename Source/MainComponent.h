@@ -110,6 +110,8 @@ private:
     void exportAdrProTools();
     void exportAdrBwf();
     void updateAdrViewer();
+    int cueAtPlayhead() const;
+    bool wasPlayingForAdr = false;   // in riproduzione: il cue sotto la testina, o il prossimo se sta per cominciare (0 = nessuno)
     void auditionTake (int cueId, int takeNo);
     void auditionOriginal (int cueId);
     void endAudition();
