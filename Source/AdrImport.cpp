@@ -261,6 +261,16 @@ static ImportResult parseEdl (const juce::StringArray& lines)
 }
 
 //==============================================================================
+static double subtitleTime (const juce::String& t);
+
+/** Tempo con i millesimi ("00:00:07.990", "00:07,990", trascrizioni e sottotitoli) invece del timecode a fotogrammi. */
+static bool isMillisTime (const juce::String& s)
+{
+    const auto t = s.trim();
+    const int dot = juce::jmax (t.lastIndexOfChar ('.'), t.lastIndexOfChar (','));
+    return dot > 0 && t.length() - dot - 1 == 3 && t.substring (dot + 1).containsOnly ("0123456789") && subtitleTime (t) >= 0.0;
+}
+
 static ImportResult parseTable (const juce::StringArray& lines)
 {
     ImportResult r;
@@ -289,7 +299,8 @@ static ImportResult parseTable (const juce::StringArray& lines)
                               || has ({ "tcin", "timecodein", "cuein", "tcstart", "timecodestart", "recordin", "inpoint", "starttime" }))) cIn = i;
         else if (cOut < 0 && (is ({ "out", "tcout", "timecodeout", "end", "endtc", "fine", "uscita", "cueout", "outtc", "recout", "recordout" })
                                || has ({ "tcout", "timecodeout", "cueout", "tcend", "timecodeend", "recordout", "outpoint", "endtime" }))) cOut = i;
-        else if (cDial < 0 && has ({ "dialog", "dialogo", "battuta", "line", "text", "testo" })) cDial = i;
+        else if (cDial < 0 && has ({ "dialog", "dialogo", "battuta", "line", "text", "testo", "transcri", "trascri", "subtitle", "sottotitol", "caption",
+                                     "didascal", "copione", "script", "speech", "parlato", "frase", "phrase", "sentence", "lyric" })) cDial = i;
         else if (cChar < 0 && has ({ "char", "personag", "actor", "attore", "ruolo", "role" })) cChar = i;
         else if (cScene < 0 && has ({ "scene", "scena" })) cScene = i;
         else if (cReel < 0 && has ({ "reel", "rullo", "rullino" })) cReel = i;
@@ -300,16 +311,42 @@ static ImportResult parseTable (const juce::StringArray& lines)
     }
     if (cDial < 0) cDial = cDesc;
     if (cIn < 0) return r;
+    if (cDial < 0)   // intestazione sconosciuta: la battuta e' la prima colonna libera che nella prima riga contiene testo (non un tempo o un numero)
+    {
+        juce::StringArray first;
+        for (int i = h + 1; i < lines.size() && first.isEmpty(); ++i) if (lines[i].trim().isNotEmpty()) first = splitFields (lines[i], delim);
+        for (int i = 0; i < first.size() && cDial < 0; ++i)
+        {
+            if (i == cIn || i == cOut || i == cNum || i == cChar || i == cScene || i == cReel || i == cNotes || i == cName) continue;
+            const auto v = first[i].trim();
+            if (v.isNotEmpty() && ! looksLikeTimecode (v) && ! v.containsOnly ("0123456789.,:;-+ ")) cDial = i;
+        }
+    }
+
+    // tempi con i millesimi: come i sottotitoli, secondi dall'inizio del video (campioni a 1000 Hz)
+    bool millis = false;
+    for (int i = h + 1; i < lines.size(); ++i)
+        if (lines[i].trim().isNotEmpty()) { const auto f = splitFields (lines[i], delim); millis = f.size() > cIn && isMillisTime (f[cIn]); break; }
+    if (millis) r.sampleRate = 1000.0;
 
     for (int i = h + 1; i < lines.size(); ++i)
     {
         if (lines[i].trim().isEmpty()) continue;
         const auto f = splitFields (lines[i], delim);
-        if (f.size() <= cIn || ! looksLikeTimecode (f[cIn])) continue;
+        if (f.size() <= cIn || ! (millis ? isMillisTime (f[cIn]) : looksLikeTimecode (f[cIn]))) continue;
         auto get = [&f] (int c) { return (c >= 0 && c < f.size()) ? f[c] : juce::String(); };
         ImportedCue c;
-        c.tcIn = f[cIn];
-        c.tcOut = looksLikeTimecode (get (cOut)) ? get (cOut) : juce::String();
+        if (millis)
+        {
+            const double t0 = subtitleTime (f[cIn]), t1 = isMillisTime (get (cOut)) ? subtitleTime (get (cOut)) : -1.0;
+            c.samplesIn = t0 * 1000.0;
+            if (t1 > t0) c.samplesOut = t1 * 1000.0;   // uscita mancante o prima dell'entrata: durata predefinita
+        }
+        else
+        {
+            c.tcIn = f[cIn];
+            c.tcOut = looksLikeTimecode (get (cOut)) ? get (cOut) : juce::String();
+        }
         c.number = get (cNum);
         c.character = get (cChar);
         c.scene = get (cScene);

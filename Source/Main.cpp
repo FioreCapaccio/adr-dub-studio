@@ -643,6 +643,18 @@ private:
         auto r4 = fc::adr::parse (tsv);
         expect (r4.cues.size() == 1 && r4.cues[0].number == "7" && r4.cues[0].dialogue == "Hello there" && r4.cues[0].tcOut == "00:00:12:00", "ADR: tabella TSV con intestazioni inglesi");
 
+        // trascrizione esportata (colonne start;end;transcript, tempi in ore:minuti:secondi.millesimi)
+        const juce::String tr = "start;end;transcript\n00:00:00.120;00:00:07.990;[musica] Scusate, e' ritardo.\n00:00:08.000;00:00:09.990;No, no, non e' niente, cara.\n";
+        auto r5 = fc::adr::parse (tr);
+        expect (r5.cues.size() == 2 && r5.cues[0].dialogue == "[musica] Scusate, e' ritardo." && r5.cues[1].dialogue == "No, no, non e' niente, cara.", "ADR: colonna 'transcript' letta come battuta (" + (r5.cues.empty() ? juce::String() : r5.cues[0].dialogue) + ")");
+        expect (r5.sampleRate == 1000.0 && r5.cues.size() == 2 && std::abs (r5.cues[0].samplesIn - 120.0) < 0.5 && std::abs (r5.cues[0].samplesOut - 7990.0) < 0.5 && std::abs (r5.cues[1].samplesIn - 8000.0) < 0.5,
+                "ADR: tempi con i millesimi (00:00:00.120 -> 00:00:07.990) letti al millesimo");
+        auto r7 = fc::adr::parse ("start;end;transcript\n00:00:56.000;00:00:55.990;Vuoi dire tutto.\n");
+        expect (r7.cues.size() == 1 && r7.cues[0].samplesIn == 56000.0 && r7.cues[0].samplesOut < 0.0, "ADR: uscita prima dell'entrata -> durata predefinita");
+        const juce::String unk = "tc in;tc out;qualcosa\n01:00:01:00;01:00:03:00;Ciao a tutti\n";
+        auto r6 = fc::adr::parse (unk);
+        expect (r6.cues.size() == 1 && r6.cues[0].dialogue == "Ciao a tutti", "ADR: colonna con nome sconosciuto ma con testo usata come battuta");
+
         // file non riconosciuto
         expect (fc::adr::parse ("ciao a tutti\nnessun timecode qui").cues.empty(), "ADR: un file non riconosciuto non produce cue");
 
@@ -4677,7 +4689,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.33.0"; }
+    const juce::String getApplicationVersion() override { return "2.34.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -4726,6 +4738,22 @@ public:
                 }
             }
             setApplicationReturnValue (rc);
+            quit();
+            return;
+        }
+        if (commandLine.contains ("--cues"))   // ADR Dub Studio --cues file: stampa i cue riconosciuti in un file (CSV, EDL, Pro Tools, SRT)
+        {
+            auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--cues", false, false), true);
+            args.removeEmptyStrings();
+            const juce::File f (args.isEmpty() ? juce::String() : args[0]);
+            const auto r = fc::adr::parse (f.loadFileAsString());
+            std::cout << r.format << ": " << r.cues.size() << " cue" << (r.sampleRate > 0.0 ? " (tempi a " + juce::String (r.sampleRate, 0) + " Hz)" : juce::String()) << std::endl;
+            for (auto& c : r.cues)
+                std::cout << (c.tcIn.isNotEmpty() ? c.tcIn : juce::String (c.samplesIn / juce::jmax (1.0, r.sampleRate), 3) + " s") << " - "
+                          << (c.tcOut.isNotEmpty() ? c.tcOut : (c.samplesOut >= 0.0 ? juce::String (c.samplesOut / juce::jmax (1.0, r.sampleRate), 3) + " s" : juce::String ("(4 s)")))
+                          << "  [" << c.character << "] " << c.dialogue << std::endl;
+            for (auto& w : r.warnings) std::cout << "avviso: " << w << std::endl;
+            setApplicationReturnValue (r.cues.empty() ? 1 : 0);
             quit();
             return;
         }
