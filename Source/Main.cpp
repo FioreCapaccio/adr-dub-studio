@@ -2874,39 +2874,91 @@ private:
         expect (k2 != nullptr && k2->character == "Marco / Anna" && k2->outPos == 330000, "unione cue: personaggi diversi riuniti");
     }
 
-    // spostando un clip, l'automazione sotto di lui lo segue (anche su un'altra traccia)
+    // spostando un clip, l'automazione sotto di lui lo segue (anche su un'altra traccia, da tastiera, in Shuffle)
     void stepAutoFollow()
     {
         fc::Project p (formats, 48000.0);
         p.addTrack();
-        auto a = std::make_shared<fc::Asset>(); a->name = "t"; a->audio.setSize (1, 96000); a->audio.clear(); a->buildPeaks();
+        auto a = std::make_shared<fc::Asset>(); a->name = "t"; a->audio.setSize (1, 200000); a->audio.clear(); a->buildPeaks();
         fc::Clip cl; cl.id = 1; cl.asset = a; cl.start = 48000; cl.length = 48000;
         p.edit().tracks[0].clips.push_back (cl);
         auto& vol = p.edit().tracks[0].volAuto;   // fuori dal clip 0 dB, dentro una discesa a -12 e risalita
         vol = { { 1, 0, 0.0f }, { 2, 40000, 0.0f }, { 3, 60000, -12.0f }, { 4, 84000, -12.0f }, { 5, 100000, 0.0f } };
-        p.edit().tracks[0].sendAAuto = { { 6, 0, -20.0f }, { 7, 200000, -20.0f } };   // nessun punto dentro il clip: non si sposta
+        p.edit().tracks[0].sendAAuto = { { 6, 150000, -20.0f }, { 7, 400000, -20.0f } };   // nessun punto vicino al clip: non si sposta
         auto v = [&] (int ti, int64_t pos) { return fc::evalAutomationDb (p.getSession().tracks[(size_t) ti].volAuto, pos); };
         const float in1 = v (0, 60000), in2 = v (0, 72000), in3 = v (0, 96000);
         const auto snap = p.snapshotAutomation();
 
-        p.moveClipTo (1, 0, 148000);
-        p.carryAutomation (snap, { { 0, 48000, 96000, 0, 148000 } });
+        p.moveClipTo (1, 0, 248000);
+        p.carryAutomation (snap, { { 1, 0, 48000, 96000, 0, 248000 } });
         const auto& lane = p.getSession().tracks[0].volAuto;
         bool sorted = true;
         for (size_t i = 1; i < lane.size(); ++i) sorted = sorted && lane[i - 1].pos <= lane[i].pos;
-        expect (sorted && std::abs (v (0, 160000) - in1) < 0.01f && std::abs (v (0, 172000) - in2) < 0.01f && std::abs (v (0, 196000) - in3) < 0.01f,
+        expect (sorted && std::abs (v (0, 260000) - in1) < 0.01f && std::abs (v (0, 272000) - in2) < 0.01f && std::abs (v (0, 296000) - in3) < 0.01f,
                 "automazione: spostando il clip la curva sotto di lui lo segue");
-        expect (std::abs (v (0, 30000)) < 0.01f && std::abs (v (0, 120000)) < 0.01f && std::abs (v (0, 140000)) < 0.01f,
-                "automazione: fuori dal clip (prima, al vecchio posto e dopo) la curva non cambia");
-        expect (p.getSession().tracks[0].sendAAuto.size() == 2, "automazione: le curve senza punti dentro il clip restano com'erano");
+        expect (std::abs (v (0, 20000)) < 0.01f && std::abs (v (0, 160000)) < 0.01f && std::abs (v (0, 200000)) < 0.01f && std::abs (v (0, 400000)) < 0.01f,
+                "automazione: fuori dal tratto del clip (prima, al vecchio posto e dopo) la curva non cambia");
+        expect (p.getSession().tracks[0].sendAAuto.size() == 2, "automazione: le curve senza punti vicino al clip restano com'erano");
 
         p.moveClipTo (1, 1, 48000);   // stesso trascinamento, ora su un'altra traccia al posto di partenza
-        p.carryAutomation (snap, { { 0, 48000, 96000, 1, 48000 } });
+        p.carryAutomation (snap, { { 1, 0, 48000, 96000, 1, 48000 } });
         expect (std::abs (v (1, 60000) - in1) < 0.01f && std::abs (v (1, 72000) - in2) < 0.01f && std::abs (v (0, 20000)) < 0.01f && std::abs (v (0, 110000)) < 0.01f,
                 "automazione: il clip portato su un'altra traccia si porta dietro la sua curva");
-        p.carryAutomation (snap, { { 0, 48000, 96000, 0, 48000 } });   // tornato al punto di partenza: tutto come prima
-        expect (p.getSession().tracks[0].volAuto.size() == snap[0][fc::AutoVolume].size() && p.getSession().tracks[1].volAuto.empty(),
+        p.moveClipTo (1, 0, 48000);
+        p.carryAutomation (snap, { { 1, 0, 48000, 96000, 0, 48000 } });   // tornato al punto di partenza: tutto come prima
+        expect (p.getSession().tracks[0].volAuto.size() == snap.lanes[0][fc::AutoVolume].size() && p.getSession().tracks[1].volAuto.empty(),
                 "automazione: riportando il clip dove era la curva torna identica");
+
+        // caso reale: rampe disegnate appena FUORI dai bordi della take (nessun punto dentro il clip)
+        {
+            fc::Project q (formats, 48000.0);
+            fc::Clip t; t.id = 7; t.asset = a; t.start = 38995; t.length = 154235; t.cueId = 1; t.takeNo = 1;
+            q.edit().tracks[0].clips.push_back (t);
+            q.edit().tracks[0].sendAAuto = { { 1, 22888, -80.0f }, { 2, 29532, 0.0f }, { 3, 194175, 0.0f }, { 4, 203773, -59.39f } };
+            const auto before = q.snapshotAutomation();
+            q.moveClipTo (7, 0, 38995 + 96000);
+            q.carryAutomation (before, { { 7, 0, 38995, 38995 + 154235, 0, 38995 + 96000 } });
+            const auto& sa = q.getSession().tracks[0].sendAAuto;
+            auto e = [&] (int64_t pos) { return fc::evalAutomationDb (sa, pos); };
+            expect (std::abs (e (29532 + 96000)) < 0.01f && std::abs (e (22888 + 96000) + 80.0f) < 0.01f && std::abs (e (203773 + 96000) + 59.39f) < 0.01f
+                        && std::abs (e (10000) + 80.0f) < 0.01f,
+                    "automazione: le rampe appena fuori dai bordi della take la seguono (sessione dell'utente)");
+        }
+
+        // tastiera (Alt + frecce), Info Line, Shuffle ed eliminazione in Ripple: un solo undo ciascuno
+        {
+            fc::Project q (formats, 48000.0);
+            auto mkClip = [&] (int64_t id, int64_t start) { fc::Clip c; c.id = id; c.asset = a; c.start = start; c.length = 48000; q.edit().tracks[0].clips.push_back (c); };
+            mkClip (1, 48000); mkClip (2, 192000);
+            auto& va = q.edit().tracks[0].volAuto;
+            va = { { 1, 0, 0.0f }, { 2, 60000, -10.0f }, { 3, 84000, -10.0f }, { 4, 100000, 0.0f }, { 5, 200000, -6.0f }, { 6, 230000, -6.0f }, { 7, 245000, 0.0f } };
+            auto ev = [&] (int64_t pos) { return fc::evalAutomationDb (q.getSession().tracks[0].volAuto, pos); };
+            q.selection = { 1 };
+            q.nudgeSelected (48000);
+            expect (q.findClip (1)->start == 96000 && std::abs (ev (108000) + 10.0f) < 0.01f && std::abs (ev (132000) + 10.0f) < 0.01f && std::abs (ev (240000 + 48000) - 0.0f) < 0.01f,
+                    "automazione: spostando il clip da tastiera la curva lo segue");
+            q.undo();
+            expect (q.findClip (1)->start == 48000 && std::abs (ev (60000) + 10.0f) < 0.01f, "automazione: un solo undo per clip e curva (tastiera)");
+
+            fc::Project::ClipEdit ed; ed.start = (int64_t) 24000;
+            q.setClipInfo (1, ed);
+            expect (q.findClip (1)->start == 24000 && std::abs (ev (36000) + 10.0f) < 0.01f, "automazione: segue anche il nuovo inizio scritto nella Info Line");
+            q.undo();
+
+            q.editMode = fc::Project::EditMode::Shuffle;   // il clip 1 finisce sopra il 2: lo Shuffle spinge il 2 (e la sua curva) a destra
+            q.beginEdit();
+            q.moveClipTo (1, 0, 180000);
+            q.shuffleResolve();
+            const auto* c2 = q.findClip (2);
+            expect (c2 != nullptr && c2->start == 228000 && std::abs (ev (228000 + 38000) + 6.0f) < 0.01f, "automazione: in Shuffle i clip spinti si portano dietro la curva");
+            q.undo();
+
+            q.selection = { 1 };
+            q.deleteSelected();   // Shuffle: il vuoto si chiude, il clip 2 scorre a sinistra con la sua curva
+            const auto* c2b = q.findClip (2);
+            expect (c2b != nullptr && c2b->start == 144000 && std::abs (ev (144000 + 38000) + 6.0f) < 0.01f, "automazione: eliminando in Shuffle/Ripple la curva dei clip che scorrono li segue");
+            q.editMode = fc::Project::EditMode::Normal;
+        }
         if (const auto snapFile = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_SENDS", {}); snapFile.isNotEmpty())   // striscia del mixer: mandata aperta e mandata scelta
         {
             fc::theme::StudioLookAndFeel laf;
@@ -4751,7 +4803,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.36.0"; }
+    const juce::String getApplicationVersion() override { return "2.37.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

@@ -735,13 +735,25 @@ public:
     void importFiles (juce::Array<juce::File> files, int trackId, int64_t start,
                       std::function<void (juce::StringArray)> done);
     void moveClipTo (int64_t clipId, int trackIndex, int64_t start); // senza undo (drag)
-    /** Curve di automazione di tutte le tracce (per indice), fotografate all'inizio di un trascinamento di clip. */
-    using AutoSnapshot = std::vector<std::array<std::vector<AutoPoint>, kNumAutoParams>>;
+    /** Curve di automazione di tutte le tracce (per indice) e posizione dei clip, fotografate prima di spostare dei clip. */
+    struct AutoSnapshot
+    {
+        std::vector<std::array<std::vector<AutoPoint>, kNumAutoParams>> lanes;
+        struct Pos { int64_t id; int track; int64_t start, end; bool muted; };
+        std::vector<Pos> clips;
+        bool empty() const noexcept { return lanes.empty(); }
+        void clear() { lanes.clear(); clips.clear(); }
+    };
     AutoSnapshot snapshotAutomation() const;
-    struct ClipMove { int fromTrack; int64_t start, end; int toTrack; int64_t newStart; };
-    /** L'automazione sotto i clip spostati li segue: riparte da 'orig' e sposta, su ogni curva che ha punti dentro il clip,
-        il tratto del clip nella nuova posizione (anche su un'altra traccia); fuori dai clip le curve non cambiano. Senza undo (drag). */
+    struct ClipMove { int64_t clipId; int fromTrack; int64_t start, end; int toTrack; int64_t newStart; };
+    /** L'automazione dei clip spostati li segue: riparte da 'orig' e sposta il tratto di curva del clip (il clip piu' un margine
+        per le rampe appena fuori dai bordi: fino a 1 s, al massimo meta' della distanza dal clip vicino), se vi cade almeno un punto,
+        nella nuova posizione (anche su un'altra traccia); fuori da quei tratti le curve non cambiano. Senza undo (drag). */
     void carryAutomation (const AutoSnapshot& orig, const std::vector<ClipMove>& moves);
+    /** Dopo un'operazione che ha spostato dei clip (stessa durata, nuovo inizio o nuova traccia): l'automazione li segue. */
+    void carryAutomationSince (const AutoSnapshot& before);
+    /** Sposta i clip selezionati di 'delta' campioni (tastiera), con l'automazione. Con undo. */
+    void nudgeSelected (int64_t delta);
     void splitAt (int64_t pos, bool allTracks = false);   // clip selezionati sotto la testina, altrimenti tutti (o sempre tutti)
     void splitClip (int64_t clipId, int64_t pos);         // un solo clip (strumento Lama)
     void rippleDeleteSelected();                          // elimina i clip selezionati chiudendo il vuoto sulla stessa traccia

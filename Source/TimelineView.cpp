@@ -2448,7 +2448,7 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
                 project.moveClipTo (o.id, o.track + rowDelta, o.start + delta);
                 int ti = -1;
                 if (const auto* c = project.findClip (o.id, &ti))   // dove e' finito davvero (una traccia bloccata non lo accoglie)
-                    moves.push_back ({ o.track, o.start, o.start + o.length, ti, c->start });
+                    moves.push_back ({ o.id, o.track, o.start, o.start + o.length, ti, c->start });
             }
             project.carryAutomation (autoOrigin, moves);
             break;

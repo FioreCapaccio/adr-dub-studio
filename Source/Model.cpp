@@ -1436,7 +1436,9 @@ bool Project::setClipInfo (int64_t clipId, const ClipEdit& e)
     if (e.muted) n.muted = *e.muted;
     if (e.invert) n.invert = *e.invert;
     beginEdit();
+    const auto before = snapshotAutomation();
     *c = n;
+    carryAutomationSince (before);   // solo se il clip si e' spostato (stessa durata)
     changed();
     return true;
 }
@@ -1905,6 +1907,7 @@ juce::String Project::editModeName (EditMode m)
 
 void Project::shuffleResolve()
 {
+    const auto before = snapshotAutomation();
     bool any = false;
     for (auto& t : session.tracks)
     {
@@ -1919,7 +1922,9 @@ void Project::shuffleResolve()
             edge = c->end();
         }
     }
-    if (any) changed();
+    if (! any) return;
+    carryAutomationSince (before);
+    changed();
 }
 
 void Project::toggleClipMute (int64_t clipId)
@@ -1941,10 +1946,14 @@ void Project::eraseClip (int64_t clipId)
     if (c == nullptr || session.tracks[(size_t) ti].editLocked()) return;
     const int64_t s0 = c->start, e0 = c->end();
     beginEdit();
+    const auto before = snapshotAutomation();
     auto& clips = session.tracks[(size_t) ti].clips;
     clips.erase (clips.begin() + (c - clips.data()));
     if (editMode != EditMode::Normal)   // Ripple / Shuffle: il vuoto si chiude
+    {
         for (auto& o : clips) if (o.start >= e0) o.start -= (e0 - s0);
+        carryAutomationSince (before);
+    }
     selection.erase (clipId);
     changed();
 }
@@ -2130,55 +2139,107 @@ void Project::moveClipTo (int64_t clipId, int trackIndex, int64_t start)
 
 Project::AutoSnapshot Project::snapshotAutomation() const
 {
-    AutoSnapshot snap (session.tracks.size());
+    AutoSnapshot snap;
+    snap.lanes.resize (session.tracks.size());
     for (size_t ti = 0; ti < session.tracks.size(); ++ti)
-        for (int p = 0; p < kNumAutoParams; ++p) snap[ti][(size_t) p] = session.tracks[ti].lane (p);
+    {
+        for (int p = 0; p < kNumAutoParams; ++p) snap.lanes[ti][(size_t) p] = session.tracks[ti].lane (p);
+        for (auto& c : session.tracks[ti].clips) snap.clips.push_back ({ c.id, (int) ti, c.start, c.end(), c.muted });
+    }
     return snap;
+}
+
+void Project::carryAutomationSince (const AutoSnapshot& before)
+{
+    std::vector<ClipMove> moves;
+    for (auto& o : before.clips)
+    {
+        int ti = -1;
+        if (const auto* c = findClip (o.id, &ti); c != nullptr && c->length == o.end - o.start && (ti != o.track || c->start != o.start))
+            moves.push_back ({ o.id, o.track, o.start, o.end, ti, c->start });
+    }
+    if (! moves.empty()) carryAutomation (before, moves);
+}
+
+void Project::nudgeSelected (int64_t delta)
+{
+    int64_t minStart = std::numeric_limits<int64_t>::max();
+    for (auto& t : session.tracks)
+        if (! t.editLocked())
+            for (auto& c : t.clips) if (selection.count (c.id) > 0) minStart = juce::jmin (minStart, c.start);
+    if (minStart == std::numeric_limits<int64_t>::max()) return;
+    delta = juce::jmax (delta, -minStart);   // all'inizio della timeline si fermano tutti insieme
+    if (delta == 0) return;
+    beginEdit();
+    const auto before = snapshotAutomation();
+    for (auto& t : session.tracks)
+        if (! t.editLocked())
+            for (auto& c : t.clips) if (selection.count (c.id) > 0) c.start += delta;
+    carryAutomationSince (before);
+    if (editMode == EditMode::Shuffle) shuffleResolve();
+    changed();
 }
 
 void Project::carryAutomation (const AutoSnapshot& orig, const std::vector<ClipMove>& moves)
 {
-    const int n = (int) juce::jmin (orig.size(), session.tracks.size());
+    const int n = (int) juce::jmin (orig.lanes.size(), session.tracks.size());
     auto inside = [] (const AutoPoint& q, int64_t a, int64_t b) { return q.pos >= a && q.pos <= b; };
     auto byPos = [] (const AutoPoint& x, const AutoPoint& y) { return x.pos < y.pos; };
+
+    // tratto di curva di ogni clip: il clip e le rampe appena fuori, senza arrivare oltre meta' strada dal clip vicino che suona
+    struct Span { const ClipMove* m; int64_t a, b; };
+    std::vector<Span> spans;
+    const int64_t maxMargin = (int64_t) sampleRate;
+    for (auto& m : moves)
+    {
+        if (m.fromTrack < 0 || m.fromTrack >= n || m.toTrack < 0 || m.toTrack >= n) continue;
+        if (m.newStart == m.start && m.toTrack == m.fromTrack) continue;
+        int64_t pre = maxMargin, post = maxMargin;
+        for (auto& o : orig.clips)
+        {
+            if (o.track != m.fromTrack || o.id == m.clipId || o.muted) continue;
+            if (o.start < m.start) pre = juce::jmin (pre, juce::jmax<int64_t> (0, (m.start - o.end) / 2));
+            else post = juce::jmin (post, juce::jmax<int64_t> (0, (o.start - m.end) / 2));
+        }
+        spans.push_back ({ &m, juce::jmax<int64_t> (0, m.start - pre), m.end + post });
+    }
+
     for (int p = 0; p < kNumAutoParams; ++p)
     {
         std::vector<std::vector<AutoPoint>> out ((size_t) n);
-        for (int ti = 0; ti < n; ++ti) out[(size_t) ti] = orig[(size_t) ti][(size_t) p];
-        std::vector<const ClipMove*> carried;
-        for (auto& m : moves)   // prima si stacca il tratto da tutte le tracce di origine...
+        for (int ti = 0; ti < n; ++ti) out[(size_t) ti] = orig.lanes[(size_t) ti][(size_t) p];
+        std::vector<const Span*> carried;
+        for (auto& sp : spans)   // prima si stacca il tratto da tutte le tracce di origine...
         {
-            if (m.fromTrack < 0 || m.fromTrack >= n || m.toTrack < 0 || m.toTrack >= n) continue;
-            if (m.newStart == m.start && m.toTrack == m.fromTrack) continue;
-            const auto& src = orig[(size_t) m.fromTrack][(size_t) p];
-            if (std::none_of (src.begin(), src.end(), [&] (const AutoPoint& q) { return inside (q, m.start, m.end); })) continue;
-            carried.push_back (&m);
-            auto& lane = out[(size_t) m.fromTrack];
-            const float va = evalAutomationDb (lane, m.start), vb = evalAutomationDb (lane, m.end);
-            lane.erase (std::remove_if (lane.begin(), lane.end(), [&] (const AutoPoint& q) { return inside (q, m.start, m.end); }), lane.end());
-            if (! lane.empty())   // resta dell'altra automazione: un ponte tiene la curva fuori dal clip com'era
+            const auto& src = orig.lanes[(size_t) sp.m->fromTrack][(size_t) p];
+            if (std::none_of (src.begin(), src.end(), [&] (const AutoPoint& q) { return inside (q, sp.a, sp.b); })) continue;
+            carried.push_back (&sp);
+            auto& lane = out[(size_t) sp.m->fromTrack];
+            const float va = evalAutomationDb (lane, sp.a), vb = evalAutomationDb (lane, sp.b);
+            lane.erase (std::remove_if (lane.begin(), lane.end(), [&] (const AutoPoint& q) { return inside (q, sp.a, sp.b); }), lane.end());
+            if (! lane.empty())   // resta dell'altra automazione: un ponte tiene la curva fuori dal tratto com'era
             {
-                lane.push_back ({ nextAutoId++, m.start, va });
-                lane.push_back ({ nextAutoId++, m.end, vb });
+                lane.push_back ({ nextAutoId++, sp.a, va });
+                lane.push_back ({ nextAutoId++, sp.b, vb });
                 std::stable_sort (lane.begin(), lane.end(), byPos);
             }
         }
-        for (auto* m : carried)   // ...poi si incolla dove sono finiti i clip
+        for (auto* sp : carried)   // ...poi si incolla dove sono finiti i clip
         {
-            const auto& src = orig[(size_t) m->fromTrack][(size_t) p];
-            const int64_t d = m->newStart - m->start, a = m->newStart, b = m->end + d;
-            auto& lane = out[(size_t) m->toTrack];
+            const auto& src = orig.lanes[(size_t) sp->m->fromTrack][(size_t) p];
+            const int64_t d = sp->m->newStart - sp->m->start, a = juce::jmax<int64_t> (0, sp->a + d), b = sp->b + d;   // il margine non va prima dell'inizio
+            auto& lane = out[(size_t) sp->m->toTrack];
             std::vector<AutoPoint> add;
-            if (! lane.empty())   // la curva di arrivo fuori dal clip non cambia: un gradino solo se i valori sono diversi
+            if (! lane.empty())   // la curva di arrivo fuori dal tratto non cambia: un gradino solo se i valori sono diversi
             {
                 const float before = evalAutomationDb (lane, a - 1), after = evalAutomationDb (lane, b + 1);
-                if (a > 0 && std::abs (before - evalAutomationDb (src, m->start)) > 0.01f) add.push_back ({ nextAutoId++, a - 1, before });
-                if (std::abs (after - evalAutomationDb (src, m->end)) > 0.01f) add.push_back ({ nextAutoId++, b + 1, after });
+                if (a > 0 && std::abs (before - evalAutomationDb (src, a - d)) > 0.01f) add.push_back ({ nextAutoId++, a - 1, before });
+                if (std::abs (after - evalAutomationDb (src, sp->b)) > 0.01f) add.push_back ({ nextAutoId++, b + 1, after });
                 lane.erase (std::remove_if (lane.begin(), lane.end(), [&] (const AutoPoint& q) { return inside (q, a, b); }), lane.end());
             }
-            add.push_back ({ nextAutoId++, a, evalAutomationDb (src, m->start) });
-            for (auto& q : src) if (q.pos > m->start && q.pos < m->end) add.push_back ({ nextAutoId++, q.pos + d, q.db });
-            add.push_back ({ nextAutoId++, b, evalAutomationDb (src, m->end) });
+            add.push_back ({ nextAutoId++, a, evalAutomationDb (src, a - d) });
+            for (auto& q : src) if (q.pos + d > a && q.pos < sp->b) add.push_back ({ nextAutoId++, q.pos + d, q.db });
+            add.push_back ({ nextAutoId++, b, evalAutomationDb (src, sp->b) });
             lane.insert (lane.end(), add.begin(), add.end());
             std::stable_sort (lane.begin(), lane.end(), byPos);
         }
@@ -2261,6 +2322,7 @@ void Project::rippleDeleteSelected()
 {
     if (selection.empty()) return;
     beginEdit();
+    const auto before = snapshotAutomation();
     for (auto& t : session.tracks)
     {
         std::vector<std::pair<int64_t, int64_t>> removed;
@@ -2276,6 +2338,7 @@ void Project::rippleDeleteSelected()
             for (auto& c : t.clips)
                 if (c.start >= e0) c.start -= (e0 - s0);
     }
+    carryAutomationSince (before);
     selection.clear();
     changed();
 }
@@ -2700,7 +2763,9 @@ bool Project::moveSyncTo (int64_t clipId, int64_t pos)
     const int64_t ns = c->start + (pos - c->syncTime());
     if (ns < 0) return false;
     beginEdit();
+    const auto before = snapshotAutomation();
     findClip (clipId)->start = ns;
+    carryAutomationSince (before);
     changed();
     return true;
 }

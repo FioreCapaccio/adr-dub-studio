@@ -1546,7 +1546,8 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack, cmdSplitVoices });
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack, cmdSplitVoices,
+                  cmdClipNudgeL, cmdClipNudgeR, cmdClipNudgeLBig, cmdClipNudgeRBig });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -1690,6 +1691,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdWarpCancel:    i.setInfo (TRANS ("Time Warp: annulla i punti"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress (juce::KeyPress::escapeKey, 0); i.setActive (timeline->warpActive()); break;
         case cmdSyncSet:       i.setInfo (TRANS ("Punto di sincronia: imposta alla testina"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('s', juce::ModifierKeys::altModifier); i.setActive (singleSelectedClip() != 0); break;
         case cmdSyncClear:     i.setInfo (TRANS ("Punto di sincronia: togli"), "", TRANS ("Modifica"), 0); i.setActive (singleSelectedClip() != 0); break;
+        case cmdClipNudgeL:    i.setInfo (TRANS ("Sposta i clip indietro di un fotogramma"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress (KeyPress::leftKey, juce::ModifierKeys::altModifier); i.setActive (hasSel); break;
+        case cmdClipNudgeR:    i.setInfo (TRANS ("Sposta i clip avanti di un fotogramma"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress (KeyPress::rightKey, juce::ModifierKeys::altModifier); i.setActive (hasSel); break;
+        case cmdClipNudgeLBig: i.setInfo (TRANS ("Sposta i clip indietro di un secondo"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress (KeyPress::leftKey, juce::ModifierKeys::altModifier | shift); i.setActive (hasSel); break;
+        case cmdClipNudgeRBig: i.setInfo (TRANS ("Sposta i clip avanti di un secondo"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress (KeyPress::rightKey, juce::ModifierKeys::altModifier | shift); i.setActive (hasSel); break;
         case cmdSyncToCue:     i.setInfo (TRANS ("Punto di sincronia: porta sul cue (o sulla testina)"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('s', juce::ModifierKeys::altModifier | juce::ModifierKeys::shiftModifier); i.setActive (singleSelectedClip() != 0); break;
         case cmdAutoDuck:      i.setInfo (TRANS ("Ducking automatico del fondo sotto i dialoghi..."), "", TRANS ("Traccia"), 0); break;
         case cmdLevelTrack:    i.setInfo (TRANS ("Livella il volume della traccia (automazione)..."), "", TRANS ("Traccia"), 0); break;
@@ -1927,6 +1932,10 @@ bool MainComponent::perform (const InvocationInfo& info)
             if (const auto id = singleSelectedClip(); id != 0 && ! project->setSyncPoint (id, engine.getPosition())) showError (TRANS ("Metti la testina dentro il clip, su una traccia non bloccata."));
             break;
         case cmdSyncClear:     if (const auto id = singleSelectedClip(); id != 0) project->setSyncPoint (id, -1); break;
+        case cmdClipNudgeL:    project->nudgeSelected (-(int64_t) (rate / project->frameRate())); break;
+        case cmdClipNudgeR:    project->nudgeSelected ((int64_t) (rate / project->frameRate())); break;
+        case cmdClipNudgeLBig: project->nudgeSelected (-(int64_t) rate); break;
+        case cmdClipNudgeRBig: project->nudgeSelected ((int64_t) rate); break;
         case cmdSyncToCue:
             if (const auto id = singleSelectedClip(); id != 0)
             {
@@ -2192,7 +2201,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, cmdSeparateStems, cmdSplitVoices, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, cmdSeparateStems, cmdSplitVoices, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClipNudgeL, cmdClipNudgeR, cmdClipNudgeLBig, cmdClipNudgeRBig, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2:
             add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdRefTrack, cmdRefAB, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck, cmdLevelTrack });
             m.addSeparator();

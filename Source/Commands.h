@@ -20,7 +20,8 @@ enum Cmd : juce::CommandID
     cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
     cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
     cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-    cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack, cmdSplitVoices
+    cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack, cmdSplitVoices,
+    cmdClipNudgeL, cmdClipNudgeR, cmdClipNudgeLBig, cmdClipNudgeRBig
 };
 
 /** Strumenti della timeline. */
