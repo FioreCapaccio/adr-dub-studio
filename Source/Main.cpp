@@ -25,6 +25,7 @@
 #include "Conform.h"
 #include "ExternalSync.h"
 #include "ThemeManager.h"
+#include "MixerView.h"
 #include "Lang.h"
 #include "License.h"
 #include "StemEngine.h"
@@ -138,6 +139,7 @@ private:
         stepStems();
         stepLeveler();
         stepCueMerge();
+        stepAutoFollow();
         stepVoices();
         stepLivePeaks();
         stepAdrMonitor();
@@ -2872,6 +2874,57 @@ private:
         expect (k2 != nullptr && k2->character == "Marco / Anna" && k2->outPos == 330000, "unione cue: personaggi diversi riuniti");
     }
 
+    // spostando un clip, l'automazione sotto di lui lo segue (anche su un'altra traccia)
+    void stepAutoFollow()
+    {
+        fc::Project p (formats, 48000.0);
+        p.addTrack();
+        auto a = std::make_shared<fc::Asset>(); a->name = "t"; a->audio.setSize (1, 96000); a->audio.clear(); a->buildPeaks();
+        fc::Clip cl; cl.id = 1; cl.asset = a; cl.start = 48000; cl.length = 48000;
+        p.edit().tracks[0].clips.push_back (cl);
+        auto& vol = p.edit().tracks[0].volAuto;   // fuori dal clip 0 dB, dentro una discesa a -12 e risalita
+        vol = { { 1, 0, 0.0f }, { 2, 40000, 0.0f }, { 3, 60000, -12.0f }, { 4, 84000, -12.0f }, { 5, 100000, 0.0f } };
+        p.edit().tracks[0].sendAAuto = { { 6, 0, -20.0f }, { 7, 200000, -20.0f } };   // nessun punto dentro il clip: non si sposta
+        auto v = [&] (int ti, int64_t pos) { return fc::evalAutomationDb (p.getSession().tracks[(size_t) ti].volAuto, pos); };
+        const float in1 = v (0, 60000), in2 = v (0, 72000), in3 = v (0, 96000);
+        const auto snap = p.snapshotAutomation();
+
+        p.moveClipTo (1, 0, 148000);
+        p.carryAutomation (snap, { { 0, 48000, 96000, 0, 148000 } });
+        const auto& lane = p.getSession().tracks[0].volAuto;
+        bool sorted = true;
+        for (size_t i = 1; i < lane.size(); ++i) sorted = sorted && lane[i - 1].pos <= lane[i].pos;
+        expect (sorted && std::abs (v (0, 160000) - in1) < 0.01f && std::abs (v (0, 172000) - in2) < 0.01f && std::abs (v (0, 196000) - in3) < 0.01f,
+                "automazione: spostando il clip la curva sotto di lui lo segue");
+        expect (std::abs (v (0, 30000)) < 0.01f && std::abs (v (0, 120000)) < 0.01f && std::abs (v (0, 140000)) < 0.01f,
+                "automazione: fuori dal clip (prima, al vecchio posto e dopo) la curva non cambia");
+        expect (p.getSession().tracks[0].sendAAuto.size() == 2, "automazione: le curve senza punti dentro il clip restano com'erano");
+
+        p.moveClipTo (1, 1, 48000);   // stesso trascinamento, ora su un'altra traccia al posto di partenza
+        p.carryAutomation (snap, { { 0, 48000, 96000, 1, 48000 } });
+        expect (std::abs (v (1, 60000) - in1) < 0.01f && std::abs (v (1, 72000) - in2) < 0.01f && std::abs (v (0, 20000)) < 0.01f && std::abs (v (0, 110000)) < 0.01f,
+                "automazione: il clip portato su un'altra traccia si porta dietro la sua curva");
+        p.carryAutomation (snap, { { 0, 48000, 96000, 0, 48000 } });   // tornato al punto di partenza: tutto come prima
+        expect (p.getSession().tracks[0].volAuto.size() == snap[0][fc::AutoVolume].size() && p.getSession().tracks[1].volAuto.empty(),
+                "automazione: riportando il clip dove era la curva torna identica");
+        if (const auto snapFile = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_SENDS", {}); snapFile.isNotEmpty())   // striscia del mixer: mandata aperta e mandata scelta
+        {
+            fc::theme::StudioLookAndFeel laf;
+            juce::LookAndFeel::setDefaultLookAndFeel (&laf);
+            auto live = p.getSession().tracks[0].live;
+            live->sendDb[0] = -12.0f; live->sendDb[1] = -80.0f; live->autoParam = fc::AutoSendB;
+            {
+                fc::ChannelStrip strip (p, host, live, p.getSession().tracks[0].id, false);
+                strip.setSize (fc::MixerView::stripW, 640);
+                strip.syncFromLive();
+                auto img = strip.createComponentSnapshot (strip.getLocalBounds(), true, 2.0f);
+                juce::File (snapFile).deleteFile();
+                if (auto os = juce::File (snapFile).createOutputStream()) juce::PNGImageFormat().writeImageToStream (img, *os);
+            }
+            juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+        }
+    }
+
     // piu' registrazioni dello stesso cue: valutare, scartare, tenere la migliore
     void stepTakeChoice()
     {
@@ -4698,7 +4751,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.35.0"; }
+    const juce::String getApplicationVersion() override { return "2.36.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

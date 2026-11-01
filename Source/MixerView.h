@@ -59,6 +59,7 @@ public:
     void showAutomatedVolume (float db);
     void showAutomatedPan (float pan);
     void showAutomatedSend (int k, float db);
+    void showSelectedSend();   // anello e nome in giallo sulla mandata scelta per l'automazione
     void resetPeak() { meter.resetPeak(); }
     const std::shared_ptr<TrackLive>& getLive() const noexcept { return live; }
 

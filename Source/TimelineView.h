@@ -94,6 +94,7 @@ private:
                          Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane, GroupBar, HeaderLock, GlobalMute, GlobalSolo, GlobalVisibility };
     struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; int group = 0, groupPart = 0; /* 0 barra, 1 muto, 2 solo */ };
     struct Origin { int64_t id, start, offset, length, fadeIn, fadeOut; int track; };
+    Project::AutoSnapshot autoOrigin;   // automazione all'inizio dello spostamento dei clip: la parte sotto i clip li segue
 
     // geometria
     bool hasVideo() const noexcept { return project.getSession().video != nullptr; }

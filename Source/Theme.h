@@ -430,6 +430,12 @@ public:
         g.setColour (juce::Colours::black.withAlpha (0.7f));
         g.drawEllipse (centre.x - rBody, centre.y - rBody, rBody * 2.0f, rBody * 2.0f, 1.0f);
 
+        if ((bool) s.getProperties().getWithDefault ("selected", false))   // manopola scelta (es. mandata da automatizzare)
+        {
+            g.setColour (yellow);
+            g.drawEllipse (centre.x - rBody - 2.5f, centre.y - rBody - 2.5f, (rBody + 2.5f) * 2.0f, (rBody + 2.5f) * 2.0f, 1.6f);
+        }
+
         // indice
         juce::Path pointer;
         pointer.addRoundedRectangle (-1.3f, -rBody + 2.5f, 2.6f, rBody * 0.55f, 1.2f);

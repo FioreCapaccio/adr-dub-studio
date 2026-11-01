@@ -735,6 +735,13 @@ public:
     void importFiles (juce::Array<juce::File> files, int trackId, int64_t start,
                       std::function<void (juce::StringArray)> done);
     void moveClipTo (int64_t clipId, int trackIndex, int64_t start); // senza undo (drag)
+    /** Curve di automazione di tutte le tracce (per indice), fotografate all'inizio di un trascinamento di clip. */
+    using AutoSnapshot = std::vector<std::array<std::vector<AutoPoint>, kNumAutoParams>>;
+    AutoSnapshot snapshotAutomation() const;
+    struct ClipMove { int fromTrack; int64_t start, end; int toTrack; int64_t newStart; };
+    /** L'automazione sotto i clip spostati li segue: riparte da 'orig' e sposta, su ogni curva che ha punti dentro il clip,
+        il tratto del clip nella nuova posizione (anche su un'altra traccia); fuori dai clip le curve non cambiano. Senza undo (drag). */
+    void carryAutomation (const AutoSnapshot& orig, const std::vector<ClipMove>& moves);
     void splitAt (int64_t pos, bool allTracks = false);   // clip selezionati sotto la testina, altrimenti tutti (o sempre tutti)
     void splitClip (int64_t clipId, int64_t pos);         // un solo clip (strumento Lama)
     void rippleDeleteSelected();                          // elimina i clip selezionati chiudendo il vuoto sulla stessa traccia

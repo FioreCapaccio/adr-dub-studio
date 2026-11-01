@@ -299,6 +299,14 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
                 sl->setTooltip (juce::String (k == 0 ? "Send A" : "Send B") + (v <= -59.5f ? TRANS (": spento") : ": " + juce::String (v, 1) + " dB")
                                 + TRANS ("  (post-fader, verso il ritorno FX). Doppio clic: spento"));
                 project.liveChanged();
+                repaint (sendCaptionA.getUnion (sendCaptionB));
+            };
+            sl->onDragStart = [this, k]   // clic sulla manopola: questa mandata diventa la curva mostrata sulla timeline
+            {
+                live->autoParam = k == 0 ? AutoSendA : AutoSendB;
+                project.selectedTrackId = trackId;
+                showSelectedSend();
+                project.liveChanged();
             };
             sl->onDragEnd = [this] { project.endAutoTouch(); };
             sl->setTooltip (juce::String (k == 0 ? "Send A" : "Send B") + TRANS (" verso il ritorno FX (post-fader). Doppio clic: spento"));
@@ -343,6 +351,7 @@ void ChannelStrip::syncFromLive()
         routeBtn.setButtonText (live->outBus.load() == 0 ? juce::String ("MASTER") : juce::String (groupBusName (live->outBus.load() - 1)));
         sendA.setValue (live->sendDb[0].load() <= -79.5f ? -60.0 : (double) live->sendDb[0].load(), juce::dontSendNotification);
         sendB.setValue (live->sendDb[1].load() <= -79.5f ? -60.0 : (double) live->sendDb[1].load(), juce::dontSendNotification);
+        showSelectedSend();
     }
     else if (aux)
         muteBtn.setToggleState (live->mute.load(), juce::dontSendNotification);
@@ -431,7 +440,22 @@ void ChannelStrip::showAutomatedSend (int k, float db)
 {
     auto& sl = k == 0 ? sendA : sendB;
     if (sl.isMouseButtonDown()) return;
-    sl.setValue (db <= -59.5f ? -60.0 : (double) db, juce::dontSendNotification);
+    const double v = db <= -59.5f ? -60.0 : (double) db;
+    if (v != sl.getValue()) { sl.setValue (v, juce::dontSendNotification); repaint (sendCaptionA.getUnion (sendCaptionB)); }
+}
+
+void ChannelStrip::showSelectedSend()
+{
+    const int p = live->autoParam.load();
+    juce::Slider* knobs[2] = { &sendA, &sendB };
+    for (int k = 0; k < 2; ++k)
+    {
+        const bool sel = p == AutoSendA + k;
+        if ((bool) knobs[k]->getProperties().getWithDefault ("selected", false) == sel) continue;
+        knobs[k]->getProperties().set ("selected", sel);
+        knobs[k]->repaint();
+        repaint (sendCaptionA.getUnion (sendCaptionB));
+    }
 }
 
 void ChannelStrip::updateMeter()
@@ -526,8 +550,16 @@ void ChannelStrip::paint (juce::Graphics& g)
 
     if (! master && ! aux)
     {
-        drawCaption (g, TRANS ("Send A"), sendCaptionA, juce::Justification::centred);
-        drawCaption (g, TRANS ("Send B"), sendCaptionB, juce::Justification::centred);
+        // spenta: "SEND A" grigio; aperta: livello in blu; scelta per l'automazione (clic sulla manopola): in giallo
+        const juce::Slider* knobs[2] = { &sendA, &sendB };
+        const juce::Rectangle<int> caps[2] = { sendCaptionA, sendCaptionB };
+        for (int k = 0; k < 2; ++k)
+        {
+            const double v = knobs[k]->getValue();
+            const bool on = v > -59.5, sel = live->autoParam.load() == AutoSendA + k;
+            drawCaption (g, on ? juce::String (k == 0 ? "A " : "B ") + juce::String (v, v > -9.95 ? 1 : 0) : TRANS (k == 0 ? "Send A" : "Send B"),
+                         caps[k], juce::Justification::centred, sel ? yellow : (on ? blue : dim));
+        }
     }
 
     if (! master && ! aux)

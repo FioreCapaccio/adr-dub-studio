@@ -2128,6 +2128,64 @@ void Project::moveClipTo (int64_t clipId, int trackIndex, int64_t start)
     }
 }
 
+Project::AutoSnapshot Project::snapshotAutomation() const
+{
+    AutoSnapshot snap (session.tracks.size());
+    for (size_t ti = 0; ti < session.tracks.size(); ++ti)
+        for (int p = 0; p < kNumAutoParams; ++p) snap[ti][(size_t) p] = session.tracks[ti].lane (p);
+    return snap;
+}
+
+void Project::carryAutomation (const AutoSnapshot& orig, const std::vector<ClipMove>& moves)
+{
+    const int n = (int) juce::jmin (orig.size(), session.tracks.size());
+    auto inside = [] (const AutoPoint& q, int64_t a, int64_t b) { return q.pos >= a && q.pos <= b; };
+    auto byPos = [] (const AutoPoint& x, const AutoPoint& y) { return x.pos < y.pos; };
+    for (int p = 0; p < kNumAutoParams; ++p)
+    {
+        std::vector<std::vector<AutoPoint>> out ((size_t) n);
+        for (int ti = 0; ti < n; ++ti) out[(size_t) ti] = orig[(size_t) ti][(size_t) p];
+        std::vector<const ClipMove*> carried;
+        for (auto& m : moves)   // prima si stacca il tratto da tutte le tracce di origine...
+        {
+            if (m.fromTrack < 0 || m.fromTrack >= n || m.toTrack < 0 || m.toTrack >= n) continue;
+            if (m.newStart == m.start && m.toTrack == m.fromTrack) continue;
+            const auto& src = orig[(size_t) m.fromTrack][(size_t) p];
+            if (std::none_of (src.begin(), src.end(), [&] (const AutoPoint& q) { return inside (q, m.start, m.end); })) continue;
+            carried.push_back (&m);
+            auto& lane = out[(size_t) m.fromTrack];
+            const float va = evalAutomationDb (lane, m.start), vb = evalAutomationDb (lane, m.end);
+            lane.erase (std::remove_if (lane.begin(), lane.end(), [&] (const AutoPoint& q) { return inside (q, m.start, m.end); }), lane.end());
+            if (! lane.empty())   // resta dell'altra automazione: un ponte tiene la curva fuori dal clip com'era
+            {
+                lane.push_back ({ nextAutoId++, m.start, va });
+                lane.push_back ({ nextAutoId++, m.end, vb });
+                std::stable_sort (lane.begin(), lane.end(), byPos);
+            }
+        }
+        for (auto* m : carried)   // ...poi si incolla dove sono finiti i clip
+        {
+            const auto& src = orig[(size_t) m->fromTrack][(size_t) p];
+            const int64_t d = m->newStart - m->start, a = m->newStart, b = m->end + d;
+            auto& lane = out[(size_t) m->toTrack];
+            std::vector<AutoPoint> add;
+            if (! lane.empty())   // la curva di arrivo fuori dal clip non cambia: un gradino solo se i valori sono diversi
+            {
+                const float before = evalAutomationDb (lane, a - 1), after = evalAutomationDb (lane, b + 1);
+                if (a > 0 && std::abs (before - evalAutomationDb (src, m->start)) > 0.01f) add.push_back ({ nextAutoId++, a - 1, before });
+                if (std::abs (after - evalAutomationDb (src, m->end)) > 0.01f) add.push_back ({ nextAutoId++, b + 1, after });
+                lane.erase (std::remove_if (lane.begin(), lane.end(), [&] (const AutoPoint& q) { return inside (q, a, b); }), lane.end());
+            }
+            add.push_back ({ nextAutoId++, a, evalAutomationDb (src, m->start) });
+            for (auto& q : src) if (q.pos > m->start && q.pos < m->end) add.push_back ({ nextAutoId++, q.pos + d, q.db });
+            add.push_back ({ nextAutoId++, b, evalAutomationDb (src, m->end) });
+            lane.insert (lane.end(), add.begin(), add.end());
+            std::stable_sort (lane.begin(), lane.end(), byPos);
+        }
+        for (int ti = 0; ti < n; ++ti) session.tracks[(size_t) ti].lane (p) = std::move (out[(size_t) ti]);
+    }
+}
+
 void Project::splitAt (int64_t pos, bool allTracks)
 {
     auto contains = [pos] (const Clip& c) { return pos > c.start + 16 && pos < c.end() - 16; };

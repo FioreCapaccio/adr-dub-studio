@@ -2108,6 +2108,7 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
                 for (auto& c : project.getSession().tracks[ti].clips)
                     if (project.selection.count (c.id) > 0 || c.id == primaryId)
                         origins.push_back ({ c.id, c.start, c.offset, c.length, c.fadeIn, c.fadeOut, (int) ti });
+            autoOrigin = project.snapshotAutomation();
 
             buildSnapPoints (true);
 
@@ -2441,8 +2442,15 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
             for (auto& o : origins)
                 rowDelta = juce::jlimit (-o.track, nTracks - 1 - o.track, rowDelta);
 
+            std::vector<Project::ClipMove> moves;
             for (auto& o : origins)
+            {
                 project.moveClipTo (o.id, o.track + rowDelta, o.start + delta);
+                int ti = -1;
+                if (const auto* c = project.findClip (o.id, &ti))   // dove e' finito davvero (una traccia bloccata non lo accoglie)
+                    moves.push_back ({ o.track, o.start, o.start + o.length, ti, c->start });
+            }
+            project.carryAutomation (autoOrigin, moves);
             break;
         }
         case Drag::TrimL:
@@ -2592,6 +2600,7 @@ void TimelineView::mouseUp (const juce::MouseEvent& e)
     resizeIndex = -1;
     marquee = {};
     origins.clear();
+    autoOrigin.clear();
     snapPoints.clear();
     project.sendChangeMessage();
     repaint();
