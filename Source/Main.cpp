@@ -140,6 +140,7 @@ private:
         stepLeveler();
         stepCueMerge();
         stepAutoFollow();
+        stepZoomPlayhead();
         stepVoices();
         stepLivePeaks();
         stepAdrMonitor();
@@ -2875,6 +2876,30 @@ private:
     }
 
     // spostando un clip, l'automazione sotto di lui lo segue (anche su un'altra traccia, da tastiera, in Shuffle)
+    // lo zoom (tastiera, pulsanti, rotella, pinch) tiene la testina al centro della vista
+    void stepZoomPlayhead()
+    {
+        fc::Project p (formats, 48000.0);
+        p.addTrack();
+        fc::AudioEngine eng;
+        fc::TimelineView tv (p, eng);
+        tv.setSize (1400, 500);
+        eng.setPosition (60 * 48000);
+        const double half = (1400 - fc::TimelineView::headerW - fc::TimelineView::sbSize) * 0.5;
+        bool ok = true;
+        juce::String got;
+        for (double f : { 2.0, 1.5, 1.0 / 1.5, 0.5, 4.0 })
+        {
+            tv.zoomBy (f);
+            const double px = (60.0 * 48000.0 - tv.getScrollX()) / tv.getSpp();   // testina in pixel dal bordo sinistro delle corsie
+            got << juce::String (px, 1) << " ";
+            ok = ok && std::abs (px - half) < 1.0;
+        }
+        tv.setSpp (tv.getSpp() * 3.0);   // valore di zoom scritto nella barra di modifica
+        ok = ok && std::abs ((60.0 * 48000.0 - tv.getScrollX()) / tv.getSpp() - half) < 1.0;
+        expect (ok, "zoom: la testina resta al centro della vista (" + got.trim() + " px, centro " + juce::String (half, 1) + ")");
+    }
+
     void stepAutoFollow()
     {
         fc::Project p (formats, 48000.0);
@@ -4803,7 +4828,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.37.0"; }
+    const juce::String getApplicationVersion() override { return "2.38.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

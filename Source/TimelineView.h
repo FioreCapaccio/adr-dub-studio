@@ -23,8 +23,9 @@ public:
 
     // vista
     bool snapEnabled = true, followEnabled = true;
-    void zoomBy (double factor, float anchorX = -1.0f);
+    void zoomBy (double factor, float anchorX = -1.0f);   // senza anchorX la testina resta al centro della vista
     double getSpp() const noexcept { return spp; }
+    double getScrollX() const noexcept { return scrollX; }
     void setSpp (double newSpp);
     /** Porta nella vista l'intervallo (campioni): scorre, e se serve riduce lo zoom, solo quando non e' gia' tutto visibile. */
     void showRange (int64_t from, int64_t to);   // zoom attorno al centro della vista

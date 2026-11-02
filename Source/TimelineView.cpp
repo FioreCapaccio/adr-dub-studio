@@ -181,8 +181,9 @@ void TimelineView::scrollBarMoved (juce::ScrollBar* bar, double newStart)
 
 void TimelineView::zoomBy (double factor, float anchorX)
 {
-    if (anchorX < 0.0f) anchorX = (float) headerW + (float) laneArea().getWidth() * 0.5f;
-    const double anchorSample = xToSampleD (anchorX);
+    const bool onPlayhead = anchorX < 0.0f;
+    if (onPlayhead) anchorX = (float) headerW + (float) laneArea().getWidth() * 0.5f;
+    const double anchorSample = onPlayhead ? (double) engine.getPosition() : xToSampleD (anchorX);
     spp = juce::jlimit (0.05, 400000.0, spp / factor);
     scrollX = anchorSample - ((double) anchorX - headerW) * spp;
     updateScrollBars();
@@ -2656,7 +2657,7 @@ void TimelineView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseW
     }
     if (e.mods.isCommandDown() || e.mods.isCtrlDown())
     {
-        zoomBy (std::exp ((double) w.deltaY * 1.6), (float) e.x);
+        zoomBy (std::exp ((double) w.deltaY * 1.6));
         return;
     }
     if (e.mods.isAltDown())
@@ -2672,9 +2673,9 @@ void TimelineView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseW
     repaint();
 }
 
-void TimelineView::mouseMagnify (const juce::MouseEvent& e, float scaleFactor)
+void TimelineView::mouseMagnify (const juce::MouseEvent&, float scaleFactor)
 {
-    zoomBy ((double) scaleFactor, (float) e.x);
+    zoomBy ((double) scaleFactor);
 }
 
 //==============================================================================

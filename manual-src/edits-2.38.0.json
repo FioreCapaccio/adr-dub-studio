@@ -1,0 +1,8 @@
+{"it": [
+ ["<b>−</b> e <b>+</b>: zoom orizzontale della timeline.</span>", "<b>−</b> e <b>+</b>: zoom orizzontale della timeline, centrato sulla testina.</span>"],
+ [" (o pizzico sul trackpad) per lo zoom orizzontale; ", " (o pizzico sul trackpad) per lo zoom orizzontale, che tiene la testina al centro della vista (all'inizio del progetto la testina resta più a sinistra); "]
+],
+"en": [
+ ["<b>−</b> and <b>+</b>: horizontal zoom of the timeline.</span>", "<b>−</b> and <b>+</b>: horizontal zoom of the timeline, centred on the playhead.</span>"],
+ [" (or trackpad pinch) to zoom horizontally; ", " (or trackpad pinch) to zoom horizontally, keeping the playhead in the centre of the view (near the start of the project the playhead stays further left); "]
+]}
