@@ -1167,7 +1167,8 @@ void TimelineView::paintBody (juce::Graphics& g)
             for (float ex : { ex0, ex1 }) if (ex >= lx && ex <= rx) g.drawVerticalLine ((int) ex, (float) lanes.getY(), (float) lanes.getBottom());
         }
 
-        // cue ADR: fascia dall'ingresso all'uscita, colore secondo lo stato
+        // cue ADR: fascia dall'ingresso all'uscita, colore secondo lo stato; si ferma sotto l'ultima traccia (anche i marker)
+        const float cueBottom = juce::jlimit ((float) (lanes.getY() + cueStripH), (float) lanes.getBottom(), (float) (lanesTop() + contentTop (nTracks) - scrollY));
         for (auto& cue : s.cues)
         {
             const float cx0 = sampleToX (cue.inPos), cx1 = sampleToX (cue.outPos);
@@ -1176,12 +1177,12 @@ void TimelineView::paintBody (juce::Graphics& g)
             const bool sel = cue.id == project.selectedCueId;
             const float a = juce::jmax ((float) lanes.getX(), cx0), b = juce::jmin ((float) lanes.getRight(), cx1);
             g.setColour (cc.withAlpha (sel ? 0.16f : 0.08f));
-            g.fillRect (a, (float) lanes.getY(), b - a, (float) lanes.getHeight());
+            g.fillRect (a, (float) lanes.getY(), b - a, cueBottom - (float) lanes.getY());
             g.setColour (cc.withAlpha (sel ? 0.30f : 0.16f));
             g.fillRect (a, (float) lanes.getY(), b - a, (float) cueStripH);   // fascia da afferrare per spostare il cue
             g.setColour (cc.withAlpha (sel ? 0.9f : 0.5f));
-            g.drawVerticalLine ((int) cx0, (float) lanes.getY(), (float) lanes.getBottom());
-            g.drawVerticalLine ((int) cx1, (float) lanes.getY(), (float) lanes.getBottom());
+            g.drawVerticalLine ((int) cx0, (float) lanes.getY(), cueBottom);
+            g.drawVerticalLine ((int) cx1, (float) lanes.getY(), cueBottom);
             for (float ex : { cx0, cx1 })   // maniglie dei bordi
                 if (ex >= (float) lanes.getX() && ex <= (float) lanes.getRight()) g.fillRect (ex - 1.5f, (float) lanes.getY(), 3.0f, (float) cueStripH);
             if (cx1 - cx0 > 30.0f)
@@ -1217,13 +1218,13 @@ void TimelineView::paintBody (juce::Graphics& g)
                 g.drawRect (cx0, (float) laneTop (ci), cx1 - cx0, (float) heightOf (ci), 1.5f);
             }
 
-        // linee dei marker
+        // linee dei marker: come i cue, si fermano sotto l'ultima traccia
         for (auto& m : s.markers)
         {
             const float mx = sampleToX (m.pos);
             if (mx < (float) lanes.getX() || mx > (float) lanes.getRight()) continue;
             g.setColour (m.colour.withAlpha (0.30f));
-            g.drawVerticalLine ((int) mx, (float) lanes.getY(), (float) lanes.getBottom());
+            g.drawVerticalLine ((int) mx, (float) lanes.getY(), cueBottom);
         }
 
         // registrazione in corso: blocco rosso che cresce fino alla testina

@@ -1,0 +1,6 @@
+{"it": [
+ ["e in modalità <b>Shuffle</b> e <b>Ripple</b>, dove i clip spinti o fatti scorrere si portano dietro la loro curva.</p>", "con <em>Allinea alla guida</em> e in modalità <b>Shuffle</b> e <b>Ripple</b>, dove i clip spinti o fatti scorrere si portano dietro la loro curva. <em>Range: rimuovi (chiude il vuoto)</em> toglie lo stesso tempo anche dalle curve delle tracce del range: prima e dopo il taglio restano com'erano. Con <em>Range: elimina</em>, che lascia il vuoto, le curve non cambiano.</p>"]
+],
+"en": [
+ ["and in <b>Shuffle</b> and <b>Ripple</b> mode, where clips that are pushed or slide along take their curve with them.</p>", "with <em>Align to guide</em>, and in <b>Shuffle</b> and <b>Ripple</b> mode, where clips that are pushed or slide along take their curve with them. <em>Range: remove (close the gap)</em> removes the same time from the curves of the tracks in the range too: before and after the cut they stay as they were. With <em>Range: delete</em>, which leaves the gap, the curves do not change.</p>"]
+]}

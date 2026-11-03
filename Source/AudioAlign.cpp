@@ -200,6 +200,7 @@ std::vector<Item> alignToGuide (Project& p, const std::vector<int64_t>& clipIds,
     if (! moves.empty())
     {
         p.beginEdit();
+        const auto before = p.snapshotAutomation();
         for (auto& m : moves)
             if (auto* c = p.findClip (m.first))
             {
@@ -207,6 +208,7 @@ std::vector<Item> alignToGuide (Project& p, const std::vector<int64_t>& clipIds,
                 if (it != items.end() && it->stretchRatio != 1.0) continue;   // lo sposta lo stretch
                 c->start = m.second;
             }
+        p.carryAutomationSince (before);
         p.changed();
     }
     return items;

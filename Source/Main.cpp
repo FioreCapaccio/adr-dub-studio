@@ -2984,6 +2984,26 @@ private:
             expect (c2b != nullptr && c2b->start == 144000 && std::abs (ev (144000 + 38000) + 6.0f) < 0.01f, "automazione: eliminando in Shuffle/Ripple la curva dei clip che scorrono li segue");
             q.editMode = fc::Project::EditMode::Normal;
         }
+        {   // Elimina intervallo con ripple: il tempo tolto sparisce anche dalla curva, prima e dopo il taglio resta com'era
+            fc::Project r (formats, 48000.0);
+            r.addTrack();
+            auto& rt = r.edit().tracks[0];
+            fc::Clip c; c.id = 1; c.asset = a; c.start = 100000; c.length = 48000;
+            rt.clips.push_back (c);
+            rt.volAuto = { { 1, 0, 0.0f }, { 2, 110000, -12.0f }, { 3, 140000, -12.0f }, { 4, 200000, 0.0f } };
+            auto ev = [&] (int64_t pos) { return fc::evalAutomationDb (r.getSession().tracks[0].volAuto, pos); };
+            const float e10 = ev (10000), e80 = ev (80000), e120 = ev (120000), e170 = ev (170000);
+            r.range = { 20000, 60000, 0, 0 };
+            r.rangeDelete (true);
+            expect (r.findClip (1)->start == 60000 && std::abs (ev (10000) - e10) < 0.02f && std::abs (ev (40000) - e80) < 0.02f
+                        && std::abs (ev (80000) - e120) < 0.01f && std::abs (ev (130000) - e170) < 0.01f,
+                    "automazione: Elimina intervallo con ripple toglie il tempo anche dalla curva");
+            r.undo();
+            expect (r.findClip (1)->start == 100000 && std::abs (ev (120000) - e120) < 0.01f && r.getSession().tracks[0].volAuto.size() == 4, "automazione: Elimina intervallo, un solo undo");
+            r.range = { 20000, 60000, 0, 0 };
+            r.rangeDelete (false);
+            expect (r.getSession().tracks[0].volAuto.size() == 4 && std::abs (ev (120000) - e120) < 0.01f, "automazione: Elimina intervallo senza ripple non tocca la curva");
+        }
         if (const auto snapFile = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_SENDS", {}); snapFile.isNotEmpty())   // striscia del mixer: mandata aperta e mandata scelta
         {
             fc::theme::StudioLookAndFeel laf;
@@ -3870,8 +3890,15 @@ private:
             other.asset = a;
         }
         tr[2].clips = { other };
+        tr[3].volAuto = { { 1, 0, 0.0f }, { 2, t.start + (int64_t) sr, -10.0f }, { 3, t.start + 2 * (int64_t) sr, -10.0f }, { 4, 30 * (int64_t) sr, 0.0f } };
 
         const auto items = fc::align::alignToGuide (p, { 101 }, 1.5, 0.3, false);
+        {
+            const auto& va = p.getSession().tracks[3].volAuto;
+            const int64_t ns = p.findClip (101)->start;
+            expect (std::any_of (va.begin(), va.end(), [&] (const fc::AutoPoint& q) { return q.pos == ns + (int64_t) sr && std::abs (q.db + 10.0f) < 0.01f; }),
+                    "allineamento: la curva di automazione segue il clip");
+        }
         expect (items.size() == 1 && items[0].applied && std::abs (items[0].shiftMs + 137.0) < 3.0 && items[0].confidence > 0.5,
                 "allineamento: take in ritardo di 137 ms riportato sulla guida (spostamento " + juce::String (items.empty() ? 0.0 : items[0].shiftMs, 1) + " ms, somiglianza " + juce::String (items.empty() ? 0.0 : items[0].confidence, 2) + ")");
         expect (std::abs ((double) p.findClip (101)->start - 4.0 * sr) < 0.003 * sr, "allineamento: il clip e' tornato in posizione (" + juce::String ((double) (p.findClip (101)->start - 4 * (int) sr) / sr * 1000.0, 1) + " ms)");
@@ -4828,7 +4855,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.38.0"; }
+    const juce::String getApplicationVersion() override { return "2.39.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

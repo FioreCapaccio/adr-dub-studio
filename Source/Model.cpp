@@ -2015,7 +2015,19 @@ void Project::rangeDelete (bool ripple)
         splitTrackAt (t, a, nextClipId);
         splitTrackAt (t, b, nextClipId);
         t.clips.erase (std::remove_if (t.clips.begin(), t.clips.end(), [a, b] (const Clip& c) { return c.start >= a && c.end() <= b; }), t.clips.end());
-        if (ripple) for (auto& c : t.clips) if (c.start >= b) c.start -= (b - a);
+        if (! ripple) continue;
+        for (auto& c : t.clips) if (c.start >= b) c.start -= (b - a);
+        for (int p = 0; p < kNumAutoParams; ++p)   // il tempo tolto sparisce anche dalle curve; prima e dopo il taglio restano com'erano
+        {
+            auto& lane = t.lane (p);
+            if (lane.empty()) continue;
+            const float va = evalAutomationDb (lane, a), vb = evalAutomationDb (lane, b);
+            lane.erase (std::remove_if (lane.begin(), lane.end(), [a, b] (const AutoPoint& q) { return q.pos >= a && q.pos < b; }), lane.end());
+            for (auto& q : lane) if (q.pos >= b) q.pos -= b - a;
+            lane.push_back ({ nextAutoId++, a, vb });
+            if (a > 0 && std::abs (va - vb) > 0.01f) lane.push_back ({ nextAutoId++, a - 1, va });
+            std::stable_sort (lane.begin(), lane.end(), [] (const AutoPoint& x, const AutoPoint& y) { return x.pos < y.pos; });
+        }
     }
     changed();
 }
