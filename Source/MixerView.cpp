@@ -285,8 +285,6 @@ ChannelStrip::ChannelStrip (Project& p, PluginHost& h, std::shared_ptr<TrackLive
             auto* sl = knobs[k];
             sl->getProperties().set ("ticks", 7);
             sl->getProperties().set ("majorEvery", 2);
-            sl->getProperties().set ("lblMin", "off");
-            sl->getProperties().set ("lblMax", "0");
             sl->setRange (-60.0, 0.0, 0.5);
             sl->setDoubleClickReturnValue (true, -60.0);
             sl->setRotaryParameters (juce::MathConstants<float>::pi * 1.25f, juce::MathConstants<float>::pi * 2.75f, true);
@@ -550,14 +548,14 @@ void ChannelStrip::paint (juce::Graphics& g)
 
     if (! master && ! aux)
     {
-        // spenta: "SEND A" grigio; aperta: livello in blu; scelta per l'automazione (clic sulla manopola): in giallo
+        // sotto ogni manopola il suo valore: spenta "A OFF" in grigio; aperta il livello in blu; scelta per l'automazione (clic sulla manopola): in giallo
         const juce::Slider* knobs[2] = { &sendA, &sendB };
         const juce::Rectangle<int> caps[2] = { sendCaptionA, sendCaptionB };
         for (int k = 0; k < 2; ++k)
         {
             const double v = knobs[k]->getValue();
             const bool on = v > -59.5, sel = live->autoParam.load() == AutoSendA + k;
-            drawCaption (g, on ? juce::String (k == 0 ? "A " : "B ") + juce::String (v, v > -9.95 ? 1 : 0) : TRANS (k == 0 ? "Send A" : "Send B"),
+            drawCaption (g, juce::String (k == 0 ? "A " : "B ") + (on ? juce::String (v, v > -9.95 ? 1 : 0) : juce::String ("off")),
                          caps[k], juce::Justification::centred, sel ? yellow : (on ? blue : dim));
         }
     }
@@ -588,11 +586,11 @@ void ChannelStrip::resized()
         row.removeFromLeft (4);
         invertBtn.setBounds (row);
         r.removeFromTop (2);
-        auto sends = r.removeFromTop (36);
+        auto sends = r.removeFromTop (44);
         auto left = sends.removeFromLeft (sends.getWidth() / 2);
-        sendA.setBounds (left.withSizeKeepingCentre (36, 36));
-        sendB.setBounds (sends.withSizeKeepingCentre (36, 36));
-        auto caps = r.removeFromTop (10);
+        sendA.setBounds (left.withSizeKeepingCentre (44, 44));
+        sendB.setBounds (sends.withSizeKeepingCentre (44, 44));
+        auto caps = r.removeFromTop (13);
         sendCaptionA = caps.removeFromLeft (caps.getWidth() / 2);
         sendCaptionB = caps;
         {

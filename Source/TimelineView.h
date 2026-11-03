@@ -124,24 +124,25 @@ private:
     int controlMask = CtlAll;
     bool shows (Control c) const noexcept { return (controlMask & c) != 0; }
     void showControlsMenu();
-    juce::Rectangle<int> lockRect (int ti) const { return { headerW - knobW - 126, laneTop (ti) + 9, 26, 20 }; }
+    int nameRow (int ti) const { return heightOf (ti) >= 88 ? 14 : 0; }   // traccia alta: il nome ha una riga sua sopra i pulsanti, intero
+    juce::Rectangle<int> lockRect (int ti) const { return { headerW - knobW - 126, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
     // pulsanti nell'angolo in alto a sinistra: togli tutti i mute, togli tutti i solo, visibilita' delle tracce
     juce::Rectangle<int> globalRect (int part) const { return { headerW - 104 + part * 32, 7, 28, rulerH - 14 }; }
-    juce::Rectangle<int> armRect (int ti) const { return { headerW - knobW - 98, laneTop (ti) + 9, 26, 20 }; }
-    juce::Rectangle<int> muteRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 9, 26, 20 }; }
-    juce::Rectangle<int> soloRect (int ti) const { return { headerW - knobW - 42, laneTop (ti) + 9, 26, 20 }; }
-    juce::Rectangle<int> inputRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 36, 56, 18 }; }
+    juce::Rectangle<int> armRect (int ti) const { return { headerW - knobW - 98, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
+    juce::Rectangle<int> muteRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
+    juce::Rectangle<int> soloRect (int ti) const { return { headerW - knobW - 42, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
+    juce::Rectangle<int> inputRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 36 + nameRow (ti), 56, 18 }; }
     juce::Rectangle<int> trimRect (int ti) const { return { headerW - knobW + 4, laneTop (ti) + 4, knobW - 10, 64 }; }   // manopola del guadagno in ingresso
     // vu-meter orizzontale in basso nell'intestazione: con la scala (traccia alta) o ridotto (traccia bassa)
     juce::Rectangle<int> meterRect (int ti) const   // sotto i pulsanti, con un margine dal bordo
     {
         const int h = heightOf (ti), y = laneTop (ti), w = headerW - knobW - 50;
-        if (h >= 88) return { 42, y + 60, w, 20 };
-        if (h >= 76) return { 42, y + 60, w, 8 };
+        if (h >= 96) return { 42, y + 56 + nameRow (ti), w, 20 };
+        if (h >= 76) return { 42, y + 60 + nameRow (ti), w, 8 };
         if (h >= 66) return { 42, y + h - 16, w, 8 };
         return { 42, y + 36, w, 8 };
     }
-    juce::Rectangle<int> autoRect (int ti) const { return { 42, laneTop (ti) + 36, 46, 18 }; }
+    juce::Rectangle<int> autoRect (int ti) const { return { 42, laneTop (ti) + 36 + nameRow (ti), 46, 18 }; }
     int trackIndexAtY (int y) const noexcept;
 
     Hit hitTest (juce::Point<int>) const;
@@ -184,7 +185,7 @@ private:
     // automazione del volume
     float autoYForValue (int ti, int param, float v) const;
     float autoValueForY (int ti, int param, int y) const;
-    juce::Rectangle<int> paramRect (int ti) const { return { 92, laneTop (ti) + 36, 48, 18 }; }
+    juce::Rectangle<int> paramRect (int ti) const { return { 92, laneTop (ti) + 36 + nameRow (ti), 48, 18 }; }
     bool findAutoPointAt (juce::Point<int> p, int& trackIndex, int& pointId) const;
     bool findAutoSegmentAt (juce::Point<int> p, int& trackIndex, int& idA, int& idB) const;   // linea tra due punti
     void drawWaveformChannel (juce::Graphics&, const Clip&, juce::Rectangle<float>, juce::Rectangle<int>, int channel);   // -1 = tutti i canali sovrapposti

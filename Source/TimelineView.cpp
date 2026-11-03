@@ -437,7 +437,7 @@ void TimelineView::drawHeaderMeter (juce::Graphics& g, int ti)
 {
     const auto& t = project.getSession().tracks[(size_t) ti];
     const auto r = meterRect (ti).toFloat();
-    const bool scale = heightOf (ti) >= 88;
+    const bool scale = r.getHeight() >= 20.0f;
     const auto it = headerMeters.find (t.id);
     const HeaderMeter m = it != headerMeters.end() ? it->second : HeaderMeter();
     auto xOf = [&] (float db) { return r.getX() + r.getWidth() * juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f); };
@@ -516,19 +516,23 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
     g.setColour (text);
     g.setFont (font (13.0f, true));
     {
-        int right = headerW - knobW - 8;   // il nome arriva fino al primo pulsante visibile
-        if (shows (CtlSolo)) right = lockRect (ti).getX() > 0 ? juce::jmin (right, soloRect (ti).getX() - 4) : right;
-        if (shows (CtlMute)) right = juce::jmin (right, muteRect (ti).getX() - 4);
-        if (shows (CtlRec)) right = juce::jmin (right, armRect (ti).getX() - 4);
-        if (shows (CtlLock)) right = juce::jmin (right, lockRect (ti).getX() - 4);
-        g.drawText ((t.reference ? juce::String ("[RIF] ") : juce::String()) + t.name, 42, y + 9, juce::jmax (30, right - 42), 20, juce::Justification::centredLeft, true);
+        int right = headerW - knobW - 8;   // il nome arriva fino al primo pulsante visibile, o fino alla manopola se ha una riga sua
+        const int ny = nameRow (ti) > 0 ? y + 3 : y + 9;
+        if (nameRow (ti) == 0 && shows (CtlSolo)) right = lockRect (ti).getX() > 0 ? juce::jmin (right, soloRect (ti).getX() - 4) : right;
+        int btnLeft = right;
+        if (shows (CtlMute)) btnLeft = juce::jmin (btnLeft, muteRect (ti).getX() - 4);
+        if (shows (CtlRec)) btnLeft = juce::jmin (btnLeft, armRect (ti).getX() - 4);
+        if (shows (CtlLock)) btnLeft = juce::jmin (btnLeft, lockRect (ti).getX() - 4);
+        if (nameRow (ti) == 0) right = juce::jmin (right, btnLeft);
+        g.drawText ((t.reference ? juce::String ("[RIF] ") : juce::String()) + t.name, 42, ny, juce::jmax (30, right - 42), 20, juce::Justification::centredLeft, true);
         if (t.versions.size() > 1)   // Track Versions: la versione attiva sotto il nome
         {
             juce::String vn;
             for (auto& v : t.versions) if (v.id == t.activeVersion) vn = v.name;
             g.setColour (blue.brighter (0.3f));
             g.setFont (font (10.0f, true));
-            g.drawText (juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xb8 ")) + vn + "  (" + juce::String ((int) t.versions.size()) + ")", 42, y + 26, juce::jmax (30, right - 42), 12, juce::Justification::centredLeft, true);
+            const int vy = nameRow (ti) > 0 ? y + 9 + nameRow (ti) + 4 : y + 26;   // con il nome sopra: accanto ai pulsanti
+            g.drawText (juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xb8 ")) + vn + "  (" + juce::String ((int) t.versions.size()) + ")", 42, vy, juce::jmax (30, juce::jmin (right, btnLeft) - 42), 12, juce::Justification::centredLeft, true);
         }
     }
 
