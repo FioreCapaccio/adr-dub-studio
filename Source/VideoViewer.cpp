@@ -180,6 +180,11 @@ void VideoViewer::sync (double t, bool playing)
 
     if (playing && vt >= 0.0 && vt < dur)
     {
+#if ADR_FFMPEG_VIDEO
+        // lettore ffmpeg: il suo orologio si riaggancia all'audio a ogni aggiornamento (nessun anticipo da imparare)
+        video.setPlayPosition (tc);
+        if (! running) { video.play(); running = true; }
+#else
         if (! running)
         {
             // il lettore parte con un ritardo (decodifica del primo fotogramma): si parte un po' avanti, e il ritardo
@@ -213,6 +218,7 @@ void VideoViewer::sync (double t, bool playing)
                 if (std::abs (speed - lastSpeed) > 0.004) { fc::video::setNativePlayerRate (video, speed); lastSpeed = speed; }
             }
         }
+#endif
     }
     else
     {

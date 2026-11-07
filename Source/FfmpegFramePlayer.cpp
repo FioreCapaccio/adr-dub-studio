@@ -52,8 +52,8 @@ public:
                 const juce::ScopedLock sl (reqLock);
                 if (! hasRequest) { stream = false; pos = 0; gen = 0; }
                 else { stream = reqStream; pos = reqPos; gen = reqGen; hasRequest = false; }
-                if (gen == 0) { wake.wait (200); continue; }
             }
+            if (gen == 0) { wake.wait (200); continue; }   // si aspetta senza il lock: post() dal thread dell'interfaccia non deve attendere
             decode (stream, pos, gen);
         }
     }
@@ -71,11 +71,14 @@ private:
         if (! stream) { args.add ("-frames:v"); args.add ("1"); }
         args.addArray ({ "-f", "rawvideo", "pipe:1" });
 
+        // avvio fuori dal lock: su Windows CreateProcess (antivirus compreso) puo' durare molto e post() dal thread
+        // dell'interfaccia non deve aspettare
+        if (superseded (gen)) return;
         ProcessPipe proc;
+        if (! proc.start (args)) return;
         {
             const juce::ScopedLock sl (reqLock);
-            if (hasRequest) return;   // gia' sostituita
-            if (! proc.start (args)) return;
+            if (hasRequest || reqGen != gen) return;   // sostituita mentre partiva (il distruttore chiude ffmpeg)
             running = &proc;
         }
 
@@ -94,7 +97,8 @@ private:
             }
             if (got < bytes || threadShouldExit() || superseded (gen)) break;
 
-            juce::Image img (juce::Image::ARGB, width, height, false);
+            // immagine software: su Windows l'immagine nativa e' Direct2D, crearne una a fotogramma da questo thread blocca l'interfaccia
+            juce::Image img (juce::Image::ARGB, width, height, false, juce::SoftwareImageType());
             {
                 juce::Image::BitmapData bd (img, juce::Image::BitmapData::writeOnly);
                 for (int y = 0; y < height; ++y) std::memcpy (bd.getLinePointer (y), buf.data() + (size_t) y * (size_t) width * 4, (size_t) width * 4);
@@ -277,6 +281,22 @@ void FfmpegFramePlayer::timerCallback()
         }
         else if (! queue.empty()) { current = queue.back(); queue.clear(); changed = true; }
     }
+    // ffmpeg non tiene il passo (o e' partito tardi): se l'immagine resta indietro si riparte dalla posizione dell'audio
+    if (playing && current.image.isValid() && pos - current.pts > 0.4)
+    {
+        const double now = wallClock();
+        if (behindSince == 0.0) behindSince = now;
+        else if (now - behindSince > 1.0 && now - lastCatchUp > 3.0)
+        {
+            lastCatchUp = now;
+            behindSince = 0.0;
+            startLead = juce::jmin (2.0, startLead + 0.2);
+            playStartWall = now;
+            measuringStart = true;
+            request (true, pos + startLead);
+        }
+    }
+    else behindSince = 0.0;
     if (changed) repaint();
 }
 

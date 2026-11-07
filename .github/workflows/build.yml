@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  APP_VERSION: "2.44.0"
+  APP_VERSION: "2.45.0"
 
 jobs:
   macos-universal:
@@ -70,6 +70,15 @@ jobs:
           Set-Content -Path pkg/FFMPEG.txt -Value "ffmpeg.exe e ffprobe.exe sono FFmpeg (https://ffmpeg.org), build LGPL di https://github.com/BtbN/FFmpeg-Builds , usati per leggere e esportare i video."
           if (-not ((& pkg/ffmpeg.exe -hide_banner -encoders) -match "libmp3lame")) { throw "ffmpeg senza libmp3lame: l'esportazione MP3 non funzionerebbe" }
           Compress-Archive -Path pkg/* -DestinationPath ADR-Dub-Studio-${{ env.APP_VERSION }}-Windows-x64-portable.zip
+      - name: Video playback test (ffmpeg player on Windows)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          & pkg/ffmpeg.exe -v error -y -f lavfi -i testsrc2=size=1920x1080:rate=25 -t 12 -c:v mpeg4 -q:v 5 bench.mp4
+          $p = Start-Process -FilePath "pkg/ADR Dub Studio.exe" -ArgumentList "--video-bench", "`"$PWD\bench.mp4`"", "`"$PWD\bench.txt`"" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "video bench: timeout" }
+          Get-Content bench.txt
+          if (-not (Select-String -Path bench.txt -Pattern "VIDEO OK" -Quiet)) { throw "video bench non OK" }
       - name: Build the installer (Inno Setup)
         shell: pwsh
         run: |

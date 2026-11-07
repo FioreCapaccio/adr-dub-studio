@@ -40,6 +40,7 @@ public:
     double getVideoPosition() const { return video.getPlayPosition(); }
 #if ADR_FFMPEG_VIDEO
     int getFramesShown() const noexcept { return video.getFramesShown(); }
+    double getShownPts() const noexcept { return video.getShownPts() + (asset != nullptr ? asset->offsetSec : 0.0); }
 #endif
 
     void paint (juce::Graphics&) override;

@@ -4905,11 +4905,72 @@ private:
     std::unique_ptr<fc::Project> project, reload, project2, project3, project4;
 };
 
+/** --video-bench video.mp4 risultati.txt: riproduce il video per 8 s come fa l'app (audio = orologio) e scrive
+    fotogrammi mostrati, ritardo dell'immagine e blocchi del thread dell'interfaccia. Serve a provare Windows in CI. */
+struct VideoBench : public juce::Timer
+{
+    std::unique_ptr<fc::VideoViewer> viewer;
+    std::unique_ptr<juce::DocumentWindow> win;
+    std::shared_ptr<fc::VideoAsset> asset;
+    juce::File out;
+    std::function<void (int)> done;
+    double t0 = 0.0, lastTick = 0.0, maxGap = 0.0, lagSum = 0.0, lagMax = 0.0;
+    int lagN = 0;
+    juce::String log;
+
+    void timerCallback() override
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        if (t0 == 0.0) { t0 = now; lastTick = now; }
+        if (now - t0 > 0.5) maxGap = juce::jmax (maxGap, now - lastTick);   // thread dell'interfaccia fermo
+        lastTick = now;
+        const double t = now - t0;
+        viewer->sync (t, true);
+#if ADR_FFMPEG_VIDEO
+        if (t > 2.0) { const double lag = t - viewer->getShownPts(); lagSum += lag; lagMax = juce::jmax (lagMax, lag); ++lagN; }
+#endif
+        if (t < 8.0) return;
+        stopTimer();
+        int frames = 0;
+#if ADR_FFMPEG_VIDEO
+        frames = viewer->getFramesShown();
+#endif
+        const double expected = 8.0 * asset->fps;
+        log << "fotogrammi mostrati: " << frames << " su ~" << juce::String (expected, 0) << "\n"
+            << "ritardo immagine (dopo 2 s): medio " << juce::String (juce::roundToInt (lagN > 0 ? lagSum / lagN * 1000.0 : -1.0)) << " ms, massimo " << juce::String (juce::roundToInt (lagMax * 1000.0)) << " ms\n"
+            << "blocco massimo dell'interfaccia: " << juce::String (juce::roundToInt (maxGap * 1000.0)) << " ms\n";
+        const bool ok = frames > expected * 0.6 && maxGap < 0.5 && lagN > 0 && std::abs (lagSum / lagN) < 0.1;
+        log << (ok ? "VIDEO OK" : "VIDEO NON OK") << "\n";
+        out.replaceWithText (log);
+        std::cout << log;
+        viewer->sync (0.0, false);
+        win.reset();
+        auto d = done;
+        juce::MessageManager::callAsync ([d, ok] { d (ok ? 0 : 1); });
+    }
+
+    void start (const juce::File& f)
+    {
+        const auto info = fc::video::probe (f);
+        if (! info.ok) { out.replaceWithText ("video non leggibile: " + info.error + "\nVIDEO NON OK\n"); juce::MessageManager::callAsync ([d = done] { d (1); }); return; }
+        log << "video " << info.width << "x" << info.height << " " << juce::String (info.fps, 2) << " fps\n";
+        asset = std::make_shared<fc::VideoAsset>();
+        asset->file = f; asset->duration = info.duration; asset->fps = info.fps; asset->width = info.width; asset->height = info.height;
+        viewer = std::make_unique<fc::VideoViewer>();
+        viewer->setSize (1280, 860);
+        win = std::make_unique<juce::DocumentWindow> ("bench", juce::Colours::black, juce::DocumentWindow::allButtons);
+        win->setContentNonOwned (viewer.get(), true);
+        win->setVisible (true);
+        viewer->setVideo (asset);
+        juce::Timer::callAfterDelay (3000, [this] { startTimerHz (30); });
+    }
+};
+
 class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.44.0"; }
+    const juce::String getApplicationVersion() override { return "2.45.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -5026,6 +5087,17 @@ public:
             quit();
             return;
         }
+        if (commandLine.contains ("--video-bench"))
+        {
+            auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--video-bench", false, false), true);
+            args.removeEmptyStrings();
+            for (auto& a : args) a = a.unquoted();
+            videoBench = std::make_unique<VideoBench>();
+            videoBench->out = juce::File (args[1]);
+            videoBench->done = [this] (int rc) { setApplicationReturnValue (rc); quit(); };
+            videoBench->start (juce::File (args[0]));
+            return;
+        }
         if (commandLine.contains ("--selftest"))
         {
             auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--selftest", false, false), true);
@@ -5109,6 +5181,7 @@ private:
     fc::theme::StudioLookAndFeel laf;
     std::unique_ptr<MainWindow> window;
     std::unique_ptr<SelfTest> selfTest;
+    std::unique_ptr<VideoBench> videoBench;
 };
 
 START_JUCE_APPLICATION (StudioApplication)
