@@ -193,6 +193,10 @@ private:
     void toggleMtcWindow();
     void keyEditorDialog();
     void settingsDialog();
+    void adviseBuffer (bool dropouts);   // propone un buffer audio piu' grande (plug-in esterni)
+    void watchDropouts();
+    bool smallBufferAdviceShown = false, dropoutAdviceShown = false;
+    int dropoutTick = 0, lastXruns = -1, overloadSeconds = 0;
 public:
     void snapshotSettings (const juce::File& dir);   // verifica: immagini delle schede delle Impostazioni
 private:

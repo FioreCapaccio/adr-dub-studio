@@ -1,0 +1,14 @@
+{
+ "it": [
+  [
+   "Il pulsante si vede sulle tracce alte almeno 66 pixel.</p>",
+   "Il pulsante si vede sulle tracce alte almeno 66 pixel.</p><p><b>Buffer audio e plug-in</b>: il buffer (<b>File &gt; Impostazioni &gt; Audio</b>, <i>Audio buffer size</i>) decide ogni quanti campioni l'app chiede l'audio alla scheda. Un buffer piccolo (16–128 campioni) dà poco ritardo, utile quando l'attore si ascolta in cuffia; un buffer grande (512–1024) lascia ai plug-in il tempo di calcolare. I plug-in pesanti, come quelli di pulizia della voce, con un buffer piccolo suonano distorti, a scatti e sembrano rallentati. Per questo l'app avvisa quando inserisci un plug-in esterno con un buffer sotto i 256 campioni, e quando durante la riproduzione la scheda segnala buchi o il processore è al limite: l'avviso propone il valore adatto e lo imposta con un clic. Senza impostazioni salvate il buffer parte da 512 campioni.</p>"
+  ]
+ ],
+ "en": [
+  [
+   "The button is shown on tracks at least 66 pixels tall.</p>",
+   "The button is shown on tracks at least 66 pixels tall.</p><p><b>Audio buffer and plug-ins</b>: the buffer (<b>File &gt; Settings &gt; Audio</b>, <i>Audio buffer size</i>) sets how many samples at a time the app asks the interface for. A small buffer (16–128 samples) gives little delay, useful when the actor listens on headphones; a large one (512–1024) gives plug-ins time to compute. Heavy plug-ins, such as voice cleaners, sound distorted, choppy and seemingly slowed down with a small buffer. So the app warns you when you insert an external plug-in with a buffer below 256 samples, and when during playback the interface reports dropouts or the processor is at its limit: the warning suggests a suitable value and sets it with one click. With no saved settings the buffer starts at 512 samples.</p>"
+  ]
+ ]
+}

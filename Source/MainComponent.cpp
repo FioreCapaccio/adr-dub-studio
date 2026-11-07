@@ -221,7 +221,7 @@ MainComponent::MainComponent()
     project->onSessionLoaded = [this] { pluginHost->restoreAll (project->getSession()); };
     project->isPlayingFn = [this] { return engine.isPlaying(); };
     project->positionFn = [this] { return engine.getPosition(); };
-    pluginHost->onChanged = [this] { project->liveChanged(); };
+    pluginHost->onChanged = [this] { project->liveChanged(); adviseBuffer (false); };
     pluginHost->onError = [this] (const juce::String& m) { showError (m); };
     project->newSession (false);   // si parte senza tracce: si creano o si importano
 
@@ -634,6 +634,71 @@ void MainComponent::toggleVideoFullscreen()
     videoWindow->setFullScreen (! videoWindow->isFullScreen());
 }
 
+namespace
+{
+bool hasExternalPlugin (const Session& s)
+{
+    auto check = [] (const TrackLive& l)
+    {
+        if (auto c = l.getChain())
+            for (auto& sl : c->slots) if (! sl->bypass.load() && sl->desc.pluginFormatName != BuiltinFx::formatName) return true;
+        return false;
+    };
+    if (check (*s.master) || check (*s.aux[0]) || check (*s.aux[1])) return true;
+    for (auto& g : s.group) if (check (*g)) return true;
+    for (auto& t : s.tracks) if (check (*t.live)) return true;
+    return false;
+}
+} // namespace
+
+/** Plug-in esterni con un buffer audio piccolo, o riproduzione che salta: propone un buffer piu' grande (una volta per tipo di avviso). */
+void MainComponent::adviseBuffer (bool dropouts)
+{
+    auto* dev = engine.deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr || (dropouts ? dropoutAdviceShown : smallBufferAdviceShown)) return;
+    const int buf = dev->getCurrentBufferSizeSamples();
+    if (! dropouts && (buf >= 256 || ! hasExternalPlugin (project->getSession()))) return;
+    if (dropouts && buf >= 2048) return;
+    int target = juce::jmax (512, buf * 2);
+    for (int b : dev->getAvailableBufferSizes()) if (b >= target) { target = b; break; }
+    (dropouts ? dropoutAdviceShown : smallBufferAdviceShown) = true;
+
+    const auto ms = [&] (int n) { return juce::String (n * 1000.0 / juce::jmax (1.0, dev->getCurrentSampleRate()), 1) + " ms"; };
+    const juce::String msg = (dropouts ? TRANS ("La riproduzione salta: il computer non fa in tempo a calcolare i plug-in con il buffer audio attuale")
+                                       : TRANS ("Hai inserito un plug-in esterno ma il buffer audio e' molto piccolo"))
+        + " (" + juce::String (buf) + TRANS (" campioni, ") + ms (buf) + ").\n\n"
+        + TRANS ("I plug-in pesanti (per esempio quelli di pulizia della voce) con un buffer piccolo suonano distorti e a scatti. Con ")
+        + juce::String (target) + TRANS (" campioni il ritardo diventa ") + ms (target)
+        + TRANS (": va bene per ascolto e mix; per registrare con l'attore in cuffia puoi tornare a un valore basso in File > Impostazioni > Audio.");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon).withTitle (TRANS ("Buffer audio"))
+                                      .withMessage (msg).withButton (TRANS ("Usa ") + juce::String (target) + TRANS (" campioni")).withButton (TRANS ("Lascia cosi'"))
+                                      .withAssociatedComponent (this),
+                                  [safe, target] (int r)
+    {
+        if (safe == nullptr || r != 1) return;
+        auto setup = safe->engine.deviceManager.getAudioDeviceSetup();
+        setup.bufferSize = target;
+        const auto err = safe->engine.deviceManager.setAudioDeviceSetup (setup, true);
+        if (err.isNotEmpty()) safe->showError (err);
+    });
+}
+
+/** Ogni ~1 s durante il play: buchi segnalati dalla scheda (xrun) o processore al limite con plug-in esterni. */
+void MainComponent::watchDropouts()
+{
+    if (++dropoutTick < 30) return;
+    dropoutTick = 0;
+    auto* dev = engine.deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr) return;
+    const int xr = dev->getXRunCount();
+    const bool newXruns = xr > 0 && lastXruns >= 0 && xr - lastXruns >= 3;
+    lastXruns = xr;
+    const bool busy = engine.deviceManager.getCpuUsage() > 0.95;
+    overloadSeconds = engine.isPlaying() && (newXruns || busy) && hasExternalPlugin (project->getSession()) ? overloadSeconds + 1 : 0;
+    if (overloadSeconds >= 2) adviseBuffer (true);
+}
+
 void MainComponent::timerCallback()
 {
     if (++licenseTick >= 60)   // ogni 2 s ripresenta il blocco se la finestra e' stata chiusa; ogni 30 s rilegge lo stato (la prova puo' scadere a programma aperto)
@@ -644,6 +709,7 @@ void MainComponent::timerCallback()
         if (! license::allowed (licenseStatus) && ! nagDone && licenseWin == nullptr && eulaWin == nullptr) showLicenseDialog (true);
     }
     engine.cue.custom = project->directorMix;
+    watchDropouts();
     const int64_t pos = engine.getPosition();
     if (pos != lastShownPos)
     {

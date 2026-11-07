@@ -583,6 +583,7 @@ bool AudioEngine::initialise (const juce::XmlElement* savedState)
 {
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     setup.sampleRate = 48000.0;
+    setup.bufferSize = 512;   // senza impostazioni salvate: abbastanza grande per i plug-in pesanti (con 16-64 campioni suonano a scatti)
     // all'avvio non si apre nessun ingresso: con un ingresso di un'altra scheda (o un driver virtuale) che non risponde la riproduzione si
     // blocca. L'ingresso scelto dall'utente si ricorda e si apre alla prima registrazione.
     std::unique_ptr<juce::XmlElement> cleaned;
