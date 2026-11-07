@@ -38,6 +38,9 @@ public:
     void sync (double timeSeconds, bool playing);
     int getSeekCount() const noexcept { return seekCount; }   // quante volte il video e' stato riposizionato mentre suonava (diagnostica)
     double getVideoPosition() const { return video.getPlayPosition(); }
+#if ADR_FFMPEG_VIDEO
+    int getFramesShown() const noexcept { return video.getFramesShown(); }
+#endif
 
     void paint (juce::Graphics&) override;
     void resized() override;

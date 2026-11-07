@@ -1604,6 +1604,9 @@ private:
                 std::cout << "     video: riposizionamenti in 6 s di riproduzione: " << viewer->getSeekCount() << " (posizione del video a campione: ";
                 for (auto& s : samples) std::cout << juce::String (s.first, 1) << "->" << juce::String (s.second, 2) << " ";
                 std::cout << ")" << std::endl;
+#if ADR_FFMPEG_VIDEO
+                std::cout << "     video: fotogrammi mostrati in 6 s: " << viewer->getFramesShown() << std::endl;
+#endif
                 viewer->sync (0.0, false);
                 win.reset();
                 auto f = finished;
@@ -4906,7 +4909,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.43.0"; }
+    const juce::String getApplicationVersion() override { return "2.44.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

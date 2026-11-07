@@ -24,6 +24,7 @@ public:
     bool isPlaying() const noexcept { return playing; }
     void setPlayPosition (double seconds);
     double getPlayPosition() const;
+    int getFramesShown() const noexcept { return framesShown; }   // diagnostica
 
     void paint (juce::Graphics&) override;
 
@@ -51,6 +52,7 @@ private:
     std::unique_ptr<Decoder> decoder;
     uint32_t generation = 0;      // incrementa a ogni nuova richiesta: i fotogrammi vecchi si scartano
     bool loaded = false;
+    int framesShown = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FfmpegFramePlayer)
 };

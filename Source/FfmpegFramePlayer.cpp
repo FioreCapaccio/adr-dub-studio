@@ -1,5 +1,6 @@
 #include "FfmpegFramePlayer.h"
 #include "VideoSupport.h"
+#include "ProcessPipe.h"
 
 namespace fc
 {
@@ -63,18 +64,18 @@ private:
     void decode (bool stream, double pos, uint32_t gen)
     {
         // prima si prova con l'accelerazione hardware (se c'e' e' molto piu' leggera per i video 4K), poi senza
-        juce::StringArray args { ffmpegCommand(), "-v", "error" };
+        juce::StringArray args { ffmpegCommand(), "-nostdin", "-v", "error" };
         if (useHardware) args.add ("-hwaccel"), args.add ("auto");
         args.addArray ({ "-ss", juce::String (pos, 4), "-i", file.getFullPathName(), "-an", "-sn",
                          "-vf", "scale=" + juce::String (width) + ":" + juce::String (height) + ":flags=fast_bilinear", "-pix_fmt", "bgra" });
         if (! stream) { args.add ("-frames:v"); args.add ("1"); }
         args.addArray ({ "-f", "rawvideo", "pipe:1" });
 
-        juce::ChildProcess proc;
+        ProcessPipe proc;
         {
             const juce::ScopedLock sl (reqLock);
             if (hasRequest) return;   // gia' sostituita
-            if (! proc.start (args, juce::ChildProcess::wantStdOut)) return;
+            if (! proc.start (args)) return;
             running = &proc;
         }
 
@@ -82,13 +83,7 @@ private:
         std::vector<char> buf (bytes);
         for (int k = 0;; ++k)
         {
-            size_t got = 0;
-            while (got < bytes)
-            {
-                const int n = proc.readProcessOutput (buf.data() + got, (int) juce::jmin<size_t> (bytes - got, 1 << 20));
-                if (n <= 0) break;
-                got += (size_t) n;
-            }
+            const size_t got = (size_t) juce::jmax (0, proc.read (buf.data(), (int) bytes));
             if (got < bytes && k == 0 && useHardware && ! threadShouldExit() && ! superseded (gen))
             {
                 useHardware = false;   // l'accelerazione non parte su questo sistema: si riprova in software
@@ -139,7 +134,7 @@ private:
     bool reqStream = false, hasRequest = false;
     double reqPos = 0.0;
     uint32_t reqGen = 0;
-    juce::ChildProcess* running = nullptr;
+    ProcessPipe* running = nullptr;
     bool useHardware = true;
 };
 
@@ -272,6 +267,7 @@ void FfmpegFramePlayer::timerCallback()
                 current = queue.front();
                 queue.pop_front();
                 changed = true;
+                ++framesShown;
                 if (measuringStart)   // ritardo di ffmpeg per il primo fotogramma: la prossima partenza lo anticipa
                 {
                     measuringStart = false;
