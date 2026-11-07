@@ -141,6 +141,7 @@ private:
         stepCueMerge();
         stepAutoFollow();
         stepZoomPlayhead();
+        stepInputs();
         stepVoices();
         stepLivePeaks();
         stepAdrMonitor();
@@ -2876,6 +2877,52 @@ private:
     }
 
     // spostando un clip, l'automazione sotto di lui lo segue (anche su un'altra traccia, da tastiera, in Shuffle)
+    // ingresso di registrazione per traccia: un microfono per traccia, e il predefinito delle Impostazioni
+    void stepInputs()
+    {
+        auto pick = [] (int mode, int def, int n) { const auto p = fc::decodeInput (mode, def, n); return juce::String (p.a) + "/" + juce::String (p.b); };
+        expect (pick (0, 0, 8) == "0/-1" && pick (1, 0, 8) == "1/-1" && pick (2, 0, 8) == "0/1" && pick (fc::monoInput (5), 0, 8) == "5/-1"
+                    && pick (fc::stereoInput (2), 0, 8) == "2/3" && pick (-1, fc::monoInput (3), 8) == "3/-1" && pick (fc::monoInput (5), 0, 2) == "0/-1",
+                "ingressi: IN 1 / IN 2 / IN 1+2 delle sessioni vecchie, canali oltre il 2, predefinito, canale che manca");
+        expect (fc::inputName (fc::stereoInput (2), 0) == "IN 3+4" && fc::inputName (-1, fc::monoInput (4)) == "IN 5", "ingressi: nomi sul pulsante");
+
+        fc::Project p (formats, 48000.0);
+        p.addTrack();
+        const int idA = p.getSession().tracks[0].id, idB = p.getSession().tracks[1].id;
+        fc::AudioEngine eng;
+        eng.setNumInputChannelsForTest (4);
+        eng.defaultInput = fc::stereoInput (2);
+        eng.publish (std::make_shared<const fc::Session> (p.getSession()));
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory);
+        const auto fa = dir.getChildFile ("selftest_in3.wav"), fb = dir.getChildFile ("selftest_in34.wav");
+        eng.setPosition (0);
+        expect (eng.startRecording ({ { idA, fa, fc::monoInput (2) }, { idB, fb, -1 } }).isEmpty(), "ingressi: registrazione su due tracce");
+        eng.play();
+        const int block = 480;
+        std::vector<std::vector<float>> ins (4, std::vector<float> ((size_t) block));
+        for (int c = 0; c < 4; ++c) std::fill (ins[(size_t) c].begin(), ins[(size_t) c].end(), 0.1f * (float) (c + 1));   // IN 1 = 0,1 ... IN 4 = 0,4
+        const float* in[4] = { ins[0].data(), ins[1].data(), ins[2].data(), ins[3].data() };
+        std::vector<float> l ((size_t) block), r ((size_t) block);
+        float* outs[2] = { l.data(), r.data() };
+        for (int b = 0; b < 100; ++b) eng.audioDeviceIOCallbackWithContext (in, 4, outs, 2, block, juce::AudioIODeviceCallbackContext());
+        eng.stop();
+        eng.stopRecording();
+        auto mid = [this] (const juce::File& f, int ch) -> float
+        {
+            std::unique_ptr<juce::AudioFormatReader> rd (formats.createReaderFor (f));
+            if (rd == nullptr || ch >= (int) rd->numChannels) return -1.0f;
+            juce::AudioBuffer<float> buf ((int) rd->numChannels, (int) rd->lengthInSamples);
+            rd->read (&buf, 0, buf.getNumSamples(), 0, true, true);
+            return buf.getSample (ch, buf.getNumSamples() / 2);
+        };
+        std::unique_ptr<juce::AudioFormatReader> ra (formats.createReaderFor (fa)), rb (formats.createReaderFor (fb));
+        expect (ra != nullptr && ra->numChannels == 1 && std::abs (mid (fa, 0) - 0.3f) < 0.01f, "ingressi: la traccia su IN 3 registra il terzo microfono (" + juce::String (mid (fa, 0), 3) + ")");
+        expect (rb != nullptr && rb->numChannels == 2 && std::abs (mid (fb, 0) - 0.3f) < 0.01f && std::abs (mid (fb, 1) - 0.4f) < 0.01f,
+                "ingressi: la traccia su \"predefinito\" registra l'ingresso delle Impostazioni (IN 3+4)");
+        ra.reset(); rb.reset();
+        fa.deleteFile(); fb.deleteFile();
+    }
+
     // lo zoom (tastiera, pulsanti, rotella, pinch) tiene la testina al centro della vista
     void stepZoomPlayhead()
     {
@@ -4859,7 +4906,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.41.0"; }
+    const juce::String getApplicationVersion() override { return "2.42.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

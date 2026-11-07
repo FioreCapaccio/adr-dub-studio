@@ -124,6 +124,7 @@ private:
     int controlMask = CtlAll;
     bool shows (Control c) const noexcept { return (controlMask & c) != 0; }
     void showControlsMenu();
+    void showInputMenu (int trackId);   // ingresso di registrazione della traccia
     int nameRow (int ti) const { return heightOf (ti) >= 88 ? 14 : 0; }   // traccia alta: il nome ha una riga sua sopra i pulsanti, intero
     juce::Rectangle<int> lockRect (int ti) const { return { headerW - knobW - 126, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
     // pulsanti nell'angolo in alto a sinistra: togli tutti i mute, togli tutti i solo, visibilita' delle tracce

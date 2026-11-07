@@ -162,6 +162,7 @@ public:
     /** Scrive nello stato salvato l'ingresso preferito (all'avvio nessun ingresso e' aperto). */
     void storePreferredInput (juce::XmlElement& state) const;
     int getNumInputChannels() const noexcept { return numInputs.load(); }
+    std::atomic<int> defaultInput { 0 };   // ingresso delle tracce impostate su "predefinito" (Impostazioni)
     void setNumInputChannelsForTest (int n) { numInputs = n; }
     /** Prepara una registrazione per traccia e poi chiamare play(). Ritorna un messaggio d'errore, o stringa vuota. */
     juce::String startRecording (const std::vector<TakeSpec>&);

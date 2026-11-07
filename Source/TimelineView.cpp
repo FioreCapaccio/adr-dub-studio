@@ -619,7 +619,6 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
             g.drawText (mode == 2 ? TRANS ("SCRIVI") : (mode == 1 ? TRANS ("LEGGI") : "AUTO"), ar.toNearestInt(), juce::Justification::centred);
         }
 
-        static const char* inputNames[] = { "IN 1", "IN 2", "IN 1+2" };
         if (shows (CtlInput))
         {
         const auto ir = inputRect (ti).toFloat();
@@ -629,7 +628,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         g.drawRoundedRectangle (ir.reduced (0.5f), 9.0f, 1.0f);
         g.setColour (armed ? text : dim);
         g.setFont (font (10.5f, true));
-        g.drawText (inputNames[juce::jlimit (0, 2, t.live->inputMode.load())], ir.toNearestInt(), juce::Justification::centred);
+        g.drawText (inputName (t.live->inputMode.load(), engine.defaultInput.load()), ir.toNearestInt(), juce::Justification::centred);
         }
     }
 
@@ -2064,7 +2063,7 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
             }
             break;
         case HitType::HeaderInput:
-            if (auto* t = project.findTrack (hit.track)) { t->live->inputMode = (t->live->inputMode.load() + 1) % 3; project.liveChanged(); }
+            if (auto* t = project.findTrack (hit.track)) showInputMenu (t->id);
             break;
         case HitType::HeaderLock:
             if (auto* t = project.findTrack (hit.track))
@@ -2756,13 +2755,41 @@ void TimelineView::drawGroupBars (juce::Graphics& g)
     }
 }
 
+void TimelineView::showInputMenu (int trackId)
+{
+    const auto* t = project.findTrack (trackId);
+    if (t == nullptr) return;
+    engine.ensureInput();   // apre la scheda per sapere quanti ingressi ha
+    const int n = juce::jmax (2, engine.getNumInputChannels()), def = engine.defaultInput.load(), cur = t->live->inputMode.load();
+    const auto now = decodeInput (cur, def, 0);
+    juce::PopupMenu m;
+    m.addSectionHeader (TRANS ("Ingresso di registrazione"));
+    m.addItem (1, TRANS ("Predefinito") + " (" + inputName (def, 0) + ")", true, cur < 0);
+    m.addSeparator();
+    for (int k = 0; k < n; ++k) m.addItem (1000 + k, "IN " + juce::String (k + 1), true, cur >= 0 && now.a == k && now.b < 0);
+    m.addSeparator();
+    for (int k = 0; k + 1 < n; k += 2)
+        m.addItem (2000 + k, "IN " + juce::String (k + 1) + "+" + juce::String (k + 2) + " " + TRANS ("(stereo)"), true, cur >= 0 && now.a == k && now.b == k + 1);
+    juce::Component::SafePointer<TimelineView> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options(), [safe, trackId] (int r)
+    {
+        if (safe == nullptr || r == 0) return;
+        if (auto* tr = safe->project.findTrack (trackId))
+        {
+            tr->live->inputMode = r == 1 ? -1 : (r >= 2000 ? stereoInput (r - 2000) : monoInput (r - 1000));
+            safe->project.liveChanged();
+            safe->repaint();
+        }
+    });
+}
+
 void TimelineView::showControlsMenu()
 {
     struct Item { Control c; const char* label; };
     static const Item items[] = {
         { CtlLock, TRX ("Lock / Freeze (L)") }, { CtlRec, TRX ("Registra (R)") }, { CtlMute, TRX ("Mute (M)") }, { CtlSolo, TRX ("Solo (S)") },
         { CtlTrim, TRX ("Manopola del guadagno in ingresso") }, { CtlMeter, TRX ("Misuratore di livello") },
-        { CtlAutomation, TRX ("Automazione (parametro e modo)") }, { CtlInput, TRX ("Ingresso (IN 1 / IN 2)") } };
+        { CtlAutomation, TRX ("Automazione (parametro e modo)") }, { CtlInput, TRX ("Ingresso di registrazione (IN)") } };
     juce::PopupMenu m;
     m.addSectionHeader (TRANS ("Controlli delle tracce"));
     for (auto& it : items) m.addItem (100 + (int) it.c, juce::translate (it.label), true, shows (it.c));

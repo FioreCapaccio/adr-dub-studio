@@ -1,0 +1,14 @@
+{
+ "it": [
+  [
+   "una dissolvenza non supera metà della take.</p>",
+   "una dissolvenza non supera metà della take.</p><p><b>Ingresso di registrazione per traccia</b>: con più microfoni ogni traccia può registrare il suo. Il pulsante <b>IN</b> nell'intestazione della traccia apre l'elenco degli ingressi della scheda audio: <b>Predefinito</b>, un canale mono (IN 1, IN 2, IN 3…) o una coppia stereo (IN 1+2, IN 3+4…). Le tracce su <b>Predefinito</b> registrano dall'ingresso scelto in <b>File &gt; Impostazioni &gt; Registrazione ed editing &gt; Ingresso predefinito</b>; le tracce nuove partono così. Se la scheda non ha il canale scelto, la traccia registra da IN 1. Il pulsante si vede sulle tracce alte almeno 66 pixel.</p>"
+  ]
+ ],
+ "en": [
+  [
+   "a fade never exceeds half the take.</p>",
+   "a fade never exceeds half the take.</p><p><b>Recording input per track</b>: with several microphones each track can record its own. The <b>IN</b> button in the track header opens the list of the audio interface inputs: <b>Default</b>, a mono channel (IN 1, IN 2, IN 3…) or a stereo pair (IN 1+2, IN 3+4…). Tracks set to <b>Default</b> record from the input chosen in <b>File &gt; Settings &gt; Recording and editing &gt; Default input</b>; new tracks start that way. If the interface lacks the chosen channel, the track records from IN 1. The button is shown on tracks at least 66 pixels tall.</p>"
+  ]
+ ]
+}

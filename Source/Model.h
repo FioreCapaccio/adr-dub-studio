@@ -176,6 +176,29 @@ struct InsertChain
 struct PendingInsert { juce::String descXml, stateB64; bool bypass = false; };
 
 /** Parametri letti dal thread audio e scritti dalla UI (condivisi fra le copie della sessione). */
+/** Ingresso di registrazione di una traccia (TrackLive::inputMode): -1 = quello predefinito (Impostazioni);
+    0 / 1 / 2 = IN 1 / IN 2 / IN 1+2 (come nelle sessioni vecchie); 10 + k = canale k mono; 50 + k = canali k e k+1 in stereo. */
+struct InputPick { int a = 0, b = -1; };   // canali (da 0); b < 0 = mono
+inline InputPick decodeInput (int mode, int defaultMode, int numIn)
+{
+    if (mode < 0) mode = defaultMode < 0 ? 0 : defaultMode;
+    InputPick p;
+    if (mode == 1) p.a = 1;
+    else if (mode == 2) { p.a = 0; p.b = 1; }
+    else if (mode >= 50) { p.a = mode - 50; p.b = p.a + 1; }
+    else if (mode >= 10) p.a = mode - 10;
+    if (numIn > 0 && p.a >= numIn) { p.a = 0; p.b = -1; }   // canale che la scheda non ha: si ripiega sul primo
+    if (p.b >= numIn && numIn > 0) p.b = -1;
+    return p;
+}
+inline int monoInput (int ch) { return 10 + ch; }
+inline int stereoInput (int ch) { return 50 + ch; }
+inline juce::String inputName (int mode, int defaultMode)
+{
+    const auto p = decodeInput (mode, defaultMode, 0);
+    return "IN " + juce::String (p.a + 1) + (p.b >= 0 ? "+" + juce::String (p.b + 1) : juce::String());
+}
+
 struct TrackLive
 {
     std::atomic<float> volumeDb { 0.0f }, pan { 0.0f };
@@ -246,7 +269,7 @@ struct TrackLive
         if (old != nullptr) retire (old);
     }
     std::atomic<bool> armed { false };     // armata per la registrazione
-    std::atomic<int> inputMode { 0 };      // 0 = ingresso 1, 1 = ingresso 2, 2 = stereo 1+2
+    std::atomic<int> inputMode { -1 };     // ingresso di registrazione (vedi decodeInput); -1 = predefinito delle Impostazioni
 
     void copyFrom (const TrackLive& o)
     {

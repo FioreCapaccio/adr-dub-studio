@@ -445,7 +445,9 @@ bool AudioEngine::ensureInput()
         if (idx < 0 || idx >= names.size()) return false;
         setup.inputDeviceName = names[idx];
     }
-    setup.useDefaultInputChannels = true;
+    setup.useDefaultInputChannels = false;   // tutti i canali della scheda (non solo i primi due): ogni traccia sceglie il suo microfono
+    setup.inputChannels.clear();
+    setup.inputChannels.setRange (0, 64, true);
     const auto err = deviceManager.setAudioDeviceSetup (setup, true);
     return err.isEmpty() && numInputs.load() > 0;
 }
@@ -491,8 +493,9 @@ juce::String AudioEngine::startRecording (const std::vector<TakeSpec>& specs)
         t->trackId = sp.trackId;
         t->file = sp.file;
         t->latency = latency;
-        t->srcA = sp.inputMode == 1 ? juce::jmin (1, nIn - 1) : 0;
-        t->srcB = (sp.inputMode == 2 && nIn > 1) ? 1 : -1;
+        const auto pick = decodeInput (sp.inputMode, defaultInput.load(), nIn);
+        t->srcA = pick.a;
+        t->srcB = pick.b;
         const int nch = t->srcB >= 0 ? 2 : 1;
 
         sp.file.getParentDirectory().createDirectory();
@@ -665,9 +668,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* in, int 
         {
             auto& live = *t.live;
             if (! live.armed.load()) continue;
-            const int mode = live.inputMode.load();
-            const int a = mode == 1 ? juce::jmin (1, numIn - 1) : 0;
-            const int b = (mode == 2 && numIn > 1) ? 1 : a;
+            const auto pick = decodeInput (live.inputMode.load(), defaultInput.load(), numIn);
+            const int a = pick.a, b = pick.b >= 0 ? pick.b : a;
             if (in[a] == nullptr || in[b] == nullptr) continue;
             const float g = dbToGain (live.trimDb.load());
             const float pl = juce::FloatVectorOperations::findMinAndMax (in[a], numSamples).getEnd() * g;

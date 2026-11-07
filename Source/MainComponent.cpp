@@ -308,6 +308,7 @@ MainComponent::MainComponent()
     project->autoFadeMs = settings().getIntValue ("autoFadeMs", 0);
     project->takeFadeInMs = settings().getIntValue ("takeFadeInMs", 0);
     project->takeFadeOutMs = settings().getIntValue ("takeFadeOutMs", 0);
+    engine.defaultInput = settings().getIntValue ("defaultInput", 0);
     {
         const auto saved = settings().getValue ("layout", "standard");
         for (int i = 0; i < (int) std::size (kLayouts); ++i) if (saved == kLayouts[i].id) { applyLayout (i, false); break; }
@@ -2972,6 +2973,22 @@ public:
             auto* fi = new juce::SliderPropertyComponent (bind (p.takeFadeInMs, [this, save] (const juce::var& v) { mc.project->takeFadeInMs = (int) v; save ("takeFadeInMs", v); }), TRANS ("Fade-in (ms)"), 0.0, 2000.0, 5.0);
             auto* fo = new juce::SliderPropertyComponent (bind (p.takeFadeOutMs, [this, save] (const juce::var& v) { mc.project->takeFadeOutMs = (int) v; save ("takeFadeOutMs", v); }), TRANS ("Fade-out (ms)"), 0.0, 2000.0, 5.0);
             for (auto* c : { fi, fo }) c->setTooltip (TRANS ("Applicato a ogni take registrata o importata. 0 = come le dissolvenze automatiche."));
+            {
+                mc.engine.ensureInput();   // per elencare tutti gli ingressi della scheda
+                const int n = juce::jmax (2, mc.engine.getNumInputChannels());
+                juce::StringArray names; juce::Array<juce::var> modes;
+                for (int k = 0; k < n; ++k) { names.add ("IN " + juce::String (k + 1)); modes.add (monoInput (k)); }
+                for (int k = 0; k + 1 < n; k += 2) { names.add ("IN " + juce::String (k + 1) + "+" + juce::String (k + 2) + " " + TRANS ("(stereo)")); modes.add (stereoInput (k)); }
+                const auto cur = decodeInput (mc.engine.defaultInput.load(), 0, 0);
+                auto* in = new juce::ChoicePropertyComponent (bind (cur.b >= 0 ? stereoInput (cur.a) : monoInput (cur.a), [this, save] (const juce::var& v)
+                {
+                    mc.engine.defaultInput = (int) v;
+                    save ("defaultInput", v);
+                    mc.timeline->repaint();   // le tracce su "predefinito" mostrano il nuovo ingresso
+                }), TRANS ("Ingresso predefinito"), names, modes);
+                in->setTooltip (TRANS ("Le tracce impostate su \"Predefinito\" registrano da qui. Ogni traccia puo' scegliere il suo ingresso con il pulsante IN nell'intestazione."));
+                pp->addSection (TRANS ("Ingresso di registrazione"), { in });
+            }
             pp->addSection (TRANS ("Dissolvenze delle take registrate o importate (0 = come le automatiche)"), { fi, fo });
             auto* af = new juce::SliderPropertyComponent (bind (p.autoFadeMs, [this, save] (const juce::var& v) { mc.project->autoFadeMs = (int) v; save ("autoFadeMs", v); }), TRANS ("Dissolvenze automatiche (ms, 0 = spente)"), 0.0, 100.0, 1.0);
             af->setTooltip (TRANS ("Ai bordi dei clip nuovi e dei tagli. 0 = spente."));
@@ -3009,7 +3026,7 @@ public:
             static const Item items[] = {
                 { TimelineView::CtlLock, TRX ("Lock / Freeze (L)") }, { TimelineView::CtlRec, TRX ("Registra (R)") }, { TimelineView::CtlMute, TRX ("Mute (M)") }, { TimelineView::CtlSolo, TRX ("Solo (S)") },
                 { TimelineView::CtlTrim, TRX ("Manopola del guadagno in ingresso") }, { TimelineView::CtlMeter, TRX ("Misuratore di livello") },
-                { TimelineView::CtlAutomation, TRX ("Automazione (parametro e modo)") }, { TimelineView::CtlInput, TRX ("Ingresso (IN 1 / IN 2)") } };
+                { TimelineView::CtlAutomation, TRX ("Automazione (parametro e modo)") }, { TimelineView::CtlInput, TRX ("Ingresso di registrazione (IN)") } };
             juce::Array<juce::PropertyComponent*> ctl;
             for (auto& it : items)
                 ctl.add (new juce::BooleanPropertyComponent (bind ((mc.timeline->getControlMask() & it.c) != 0, [this, c = it.c] (const juce::var& v)
