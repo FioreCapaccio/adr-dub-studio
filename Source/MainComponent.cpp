@@ -306,6 +306,8 @@ MainComponent::MainComponent()
     returnToStart = settings().getBoolValue ("returnToStart", true);
     project->snapZero = settings().getBoolValue ("snapZero", false);
     project->autoFadeMs = settings().getIntValue ("autoFadeMs", 0);
+    project->takeFadeInMs = settings().getIntValue ("takeFadeInMs", 0);
+    project->takeFadeOutMs = settings().getIntValue ("takeFadeOutMs", 0);
     {
         const auto saved = settings().getValue ("layout", "standard");
         for (int i = 0; i < (int) std::size (kLayouts); ++i) if (saved == kLayouts[i].id) { applyLayout (i, false); break; }
@@ -1531,7 +1533,7 @@ void MainComponent::audioSettings()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
 {
-    c.addArray ({ cmdNew, cmdOpen, cmdSave, cmdSaveAs, cmdImport, cmdExport, cmdAudioSettings,
+    c.addArray ({ cmdNew, cmdOpen, cmdSave, cmdSaveAs, cmdImport, cmdExport, cmdAudioSettings, cmdSettings,
                   cmdUndo, cmdRedo, cmdSelectAll, cmdDelete, cmdDuplicate, cmdSplit,
                   cmdAddTrack, cmdRemoveTrack, cmdRenameTrack,
                   cmdPlay, cmdHome, cmdEnd, cmdLoop, cmdLoopFromSel, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig,
@@ -1565,7 +1567,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdSaveAs:        i.setInfo (TRANS ("Salva con nome..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('s', cmd | shift); break;
         case cmdImport:        i.setInfo (TRANS ("Importa audio..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('i', cmd); break;
         case cmdExport:        i.setInfo (TRANS ("Esporta audio..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('e', cmd); break;
-        case cmdAudioSettings: i.setInfo (TRANS ("Impostazioni audio..."), "", TRANS ("File"), 0); i.addDefaultKeypress (',', cmd); break;
+        case cmdAudioSettings: i.setInfo (TRANS ("Impostazioni audio..."), "", TRANS ("File"), 0); break;
+        case cmdSettings:      i.setInfo (TRANS ("Impostazioni..."), "", TRANS ("File"), 0); i.addDefaultKeypress (',', cmd); break;
 
         case cmdUndo:          i.setInfo (TRANS ("Annulla (Undo)"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('z', cmd); i.setActive (project->canUndo()); break;
         case cmdRedo:          i.setInfo (TRANS ("Ripeti"), "", TRANS ("Modifica"), 0); i.addDefaultKeypress ('z', cmd | shift); i.setActive (project->canRedo()); break;
@@ -1756,6 +1759,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdImport:        importDialog(); break;
         case cmdExport:        exportDialog(); break;
         case cmdAudioSettings: audioSettings(); break;
+        case cmdSettings:      settingsDialog(); break;
 
         case cmdUndo:          project->undo(); break;
         case cmdRedo:          project->redo(); break;
@@ -2193,7 +2197,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             if (recent.getNumItems() > 0) { recent.addSeparator(); recent.addCommandItem (&commandManager, cmdClearRecent); }
             m.addSubMenu (TRANS ("Apri recente"), recent, recent.getNumItems() > 0);
             m.addSeparator();
-            add ({ cmdSave, cmdSaveAs, cmdSaveVersion, cmdVersions, 0, cmdCollectMedia, cmdRelink, cmdPool, cmdCheckSession, 0, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdBatchExport, cmdExportPackage, cmdExportVideo, 0, cmdAudioSettings,
+            add ({ cmdSave, cmdSaveAs, cmdSaveVersion, cmdVersions, 0, cmdCollectMedia, cmdRelink, cmdPool, cmdCheckSession, 0, cmdSessionSettings, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdBatchExport, cmdExportPackage, cmdExportVideo, 0, cmdSettings, cmdAudioSettings,
 #if ! JUCE_MAC
                   0, cmdQuit
 #endif
@@ -2942,6 +2946,170 @@ void MainComponent::keyEditorDialog()
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (new KeyEditorPanel (commandManager));
     lo.dialogTitle = TRANS ("Scorciatoie da tastiera");
+    lo.dialogBackgroundColour = theme::panel;
+    lo.componentToCentreAround = this;
+    lo.escapeKeyTriggersCloseButton = true;
+    lo.useNativeTitleBar = true;
+    lo.resizable = true;
+    lo.launchAsync();
+}
+
+/** Impostazioni: tutte le preferenze in un posto solo, divise per argomento. Ogni modifica vale subito e resta salvata. */
+class SettingsPanel : public juce::Component
+{
+public:
+    explicit SettingsPanel (MainComponent& m) : mc (m)
+    {
+        auto& p = *mc.project;
+        auto save = [] (const char* key, const juce::var& v) { settings().setValue (key, v); settings().saveIfNeeded(); };
+
+        // audio
+        tabs.addTab (TRANS ("Audio"), theme::panel, new juce::AudioDeviceSelectorComponent (mc.engine.deviceManager, 0, 8, 0, 2, false, false, true, false), true);
+
+        // registrazione ed editing
+        {
+            auto* pp = new juce::PropertyPanel();
+            auto* fi = new juce::SliderPropertyComponent (bind (p.takeFadeInMs, [this, save] (const juce::var& v) { mc.project->takeFadeInMs = (int) v; save ("takeFadeInMs", v); }), TRANS ("Fade-in (ms)"), 0.0, 2000.0, 5.0);
+            auto* fo = new juce::SliderPropertyComponent (bind (p.takeFadeOutMs, [this, save] (const juce::var& v) { mc.project->takeFadeOutMs = (int) v; save ("takeFadeOutMs", v); }), TRANS ("Fade-out (ms)"), 0.0, 2000.0, 5.0);
+            for (auto* c : { fi, fo }) c->setTooltip (TRANS ("Applicato a ogni take registrata o importata. 0 = come le dissolvenze automatiche."));
+            pp->addSection (TRANS ("Dissolvenze delle take registrate o importate (0 = come le automatiche)"), { fi, fo });
+            auto* af = new juce::SliderPropertyComponent (bind (p.autoFadeMs, [this, save] (const juce::var& v) { mc.project->autoFadeMs = (int) v; save ("autoFadeMs", v); }), TRANS ("Dissolvenze automatiche (ms, 0 = spente)"), 0.0, 100.0, 1.0);
+            af->setTooltip (TRANS ("Ai bordi dei clip nuovi e dei tagli. 0 = spente."));
+            pp->addSection (TRANS ("Editing"), {
+                af,
+                new juce::BooleanPropertyComponent (bind (p.snapZero, [this, save] (const juce::var& v) { mc.project->snapZero = (bool) v; save ("snapZero", v); }), TRANS ("Tagli sul passaggio per lo zero"), TRANS ("Attivo")) });
+            pp->addSection (TRANS ("Trasporto"), {
+                new juce::BooleanPropertyComponent (bind (mc.returnToStart, [this, save] (const juce::var& v) { mc.returnToStart = (bool) v; save ("returnToStart", v); }), TRANS ("Allo stop la testina torna al punto di partenza"), TRANS ("Attivo")),
+                button (TRANS ("Sincronia esterna (MTC)"), TRANS ("Apri..."), [this] { mc.toggleMtcWindow(); }) });
+            pp->addSection (TRANS ("Sessione aperta"), {
+                button (TRANS ("Timecode, pre-roll e ADR"), TRANS ("Impostazioni sessione..."), [this] { mc.showSessionSettings(); }),
+                button (TRANS ("Cuffie dell'attore e talkback"), TRANS ("Apri..."), [this] { mc.toggleCueWindow(); }) });
+            tabs.addTab (TRANS ("Registrazione ed editing"), theme::panel, pp, true);
+        }
+
+        // aspetto
+        {
+            auto* pp = new juce::PropertyPanel();
+            juce::StringArray names; juce::Array<juce::var> ids;
+            for (auto& l : lang::languages()) { names.add (l.name); ids.add (juce::String (l.code)); }
+            auto* langC = new juce::ChoicePropertyComponent (bind (lang::savedCode().isEmpty() ? juce::String ("it") : lang::savedCode(), [] (const juce::var& v)
+            {
+                lang::saveCode (v.toString());
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "ADR Dub Studio", lang::translateTo (v.toString(), TRANS ("Il cambio di lingua si applica al riavvio dell'app.")));
+            }), TRANS ("Lingua"), names, ids);
+            juce::StringArray tn; juce::Array<juce::var> tid;
+            for (auto& t : ThemeManager::all()) { tn.add (t.name); tid.add (t.id); }
+            auto* themeC = new juce::ChoicePropertyComponent (bind (ThemeManager::currentId(), [] (const juce::var& v) { ThemeManager::select (v.toString()); }), TRANS ("Tema"), tn, tid);
+            juce::StringArray ln; juce::Array<juce::var> lid;
+            for (int i = 0; i < (int) std::size (kLayouts); ++i) { ln.add (juce::translate (kLayouts[i].name)); lid.add (i); }
+            auto* layoutC = new juce::ChoicePropertyComponent (bind (mc.layoutIndex, [this] (const juce::var& v) { mc.applyLayout ((int) v, true); }), TRANS ("Dimensioni (layout)"), ln, lid);
+            pp->addSection (TRANS ("Interfaccia"), { langC, themeC, layoutC });
+
+            struct Item { TimelineView::Control c; const char* label; };
+            static const Item items[] = {
+                { TimelineView::CtlLock, TRX ("Lock / Freeze (L)") }, { TimelineView::CtlRec, TRX ("Registra (R)") }, { TimelineView::CtlMute, TRX ("Mute (M)") }, { TimelineView::CtlSolo, TRX ("Solo (S)") },
+                { TimelineView::CtlTrim, TRX ("Manopola del guadagno in ingresso") }, { TimelineView::CtlMeter, TRX ("Misuratore di livello") },
+                { TimelineView::CtlAutomation, TRX ("Automazione (parametro e modo)") }, { TimelineView::CtlInput, TRX ("Ingresso (IN 1 / IN 2)") } };
+            juce::Array<juce::PropertyComponent*> ctl;
+            for (auto& it : items)
+                ctl.add (new juce::BooleanPropertyComponent (bind ((mc.timeline->getControlMask() & it.c) != 0, [this, c = it.c] (const juce::var& v)
+                {
+                    const int mask = mc.timeline->getControlMask();
+                    mc.timeline->setControlMask ((bool) v ? (mask | c) : (mask & ~c));   // salva da solo (onControlsChanged)
+                }), juce::translate (it.label), TRANS ("Visibile")));
+            pp->addSection (TRANS ("Controlli nell'intestazione delle tracce"), ctl);
+            tabs.addTab (TRANS ("Aspetto"), theme::panel, pp, true);
+        }
+
+        // tastiera
+        {
+            auto* pp = new juce::PropertyPanel();
+            pp->addSection (TRANS ("Tastiera"), { button (TRANS ("Scorciatoie da tastiera"), TRANS ("Personalizza..."), [this] { mc.keyEditorDialog(); }) });
+            tabs.addTab (TRANS ("Tastiera"), theme::panel, pp, true);
+        }
+
+        for (int i = 1; i < tabs.getNumTabs(); ++i) tabs.getTabContentComponent (i)->setLookAndFeel (&wideLabels);
+        addAndMakeVisible (tabs);
+        setSize (760, 560);
+    }
+    ~SettingsPanel() override
+    {
+        for (int i = 1; i < tabs.getNumTabs(); ++i) tabs.getTabContentComponent (i)->setLookAndFeel (nullptr);
+    }
+
+    void paint (juce::Graphics& g) override { g.fillAll (theme::panel); }
+    void resized() override { tabs.setBounds (getLocalBounds().reduced (8)); }
+
+    /** Per la verifica senza finestre: un'immagine per scheda (settings_0.png, ...). */
+    void snapshotTabs (const juce::File& dir)
+    {
+        for (int i = 0; i < tabs.getNumTabs(); ++i)
+        {
+            tabs.setCurrentTabIndex (i);
+            auto img = createComponentSnapshot (getLocalBounds(), true, 1.0f);
+            const auto f = dir.getChildFile ("settings_" + juce::String (i) + ".png");
+            f.deleteFile();
+            if (auto os = f.createOutputStream()) juce::PNGImageFormat().writeImageToStream (img, *os);
+        }
+    }
+
+private:
+    struct Bound : juce::Value::Listener
+    {
+        juce::Value value;
+        std::function<void (const juce::var&)> apply;
+        void valueChanged (juce::Value& v) override { apply (v.getValue()); }
+    };
+    /** Un valore mostrato nella pagina: alla modifica chiama apply (che lo applica e lo salva). */
+    juce::Value& bind (const juce::var& initial, std::function<void (const juce::var&)> apply)
+    {
+        auto b = std::make_unique<Bound>();
+        b->value = initial;   // prima di ascoltare: il valore iniziale non e' una modifica
+        b->apply = std::move (apply);
+        b->value.addListener (b.get());
+        bound.push_back (std::move (b));
+        return bound.back()->value;
+    }
+    static juce::PropertyComponent* button (const juce::String& name, const juce::String& text, std::function<void()> fn)
+    {
+        struct B : juce::ButtonPropertyComponent
+        {
+            B (const juce::String& n, juce::String t, std::function<void()> f) : ButtonPropertyComponent (n, false), txt (std::move (t)), fn (std::move (f)) { refresh(); }
+            void buttonClicked() override { fn(); }
+            juce::String getButtonText() const override { return txt; }
+            juce::String txt; std::function<void()> fn;
+        };
+        return new B (name, text, std::move (fn));
+    }
+
+    struct WideLabels : theme::StudioLookAndFeel   // etichette intere: la colonna dei nomi e' larga 330 px invece di 200
+    {
+        juce::Rectangle<int> getPropertyComponentContentPosition (juce::PropertyComponent& c) override
+        {
+            const int w = juce::jmin (330, c.getWidth() * 9 / 20);
+            return { w, 1, c.getWidth() - w - 1, c.getHeight() - 3 };
+        }
+        juce::Font getTextButtonFont (juce::TextButton&, int) override { return theme::font (12.5f, true); }
+    };
+
+    MainComponent& mc;
+    WideLabels wideLabels;
+    std::vector<std::unique_ptr<Bound>> bound;   // prima delle schede: le schede (che usano i valori) si distruggono per prime
+    juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
+};
+
+void MainComponent::snapshotSettings (const juce::File& dir)
+{
+    SettingsPanel p (*this);
+    p.setVisible (true);
+    p.snapshotTabs (dir);
+}
+
+void MainComponent::settingsDialog()
+{
+    juce::DialogWindow::LaunchOptions lo;
+    lo.content.setOwned (new SettingsPanel (*this));
+    lo.dialogTitle = TRANS ("Impostazioni");
     lo.dialogBackgroundColour = theme::panel;
     lo.componentToCentreAround = this;
     lo.escapeKeyTriggersCloseButton = true;

@@ -192,6 +192,11 @@ private:
     std::unique_ptr<class BoothWindow> scriptWindow, cueWindow;
     void toggleMtcWindow();
     void keyEditorDialog();
+    void settingsDialog();
+public:
+    void snapshotSettings (const juce::File& dir);   // verifica: immagini delle schede delle Impostazioni
+private:
+    friend class SettingsPanel;
     std::unique_ptr<class BoothWindow> mtcWindow;
     std::unique_ptr<mtc::Sync> mtcSync;   // ingresso MIDI e aggancio al timecode esterno
     void reconformDialog();

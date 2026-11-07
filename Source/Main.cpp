@@ -4670,6 +4670,7 @@ private:
 
         std::vector<fc::Project::RecItem> items;
         for (auto& r : results) items.push_back ({ r.trackId, r.file, r.startPos, 480 });   // latenza simulata: 480 campioni
+        project->takeFadeInMs = 250; project->takeFadeOutMs = 600;   // Impostazioni: dissolvenze delle take
         project->addRecordings (items, [this, trackId] (juce::StringArray errs)
         {
             auto* t = project->findTrack (trackId);
@@ -4677,6 +4678,9 @@ private:
                          && t->clips[0].start == 3 * 48000 - 480 && t->clips[0].length == 96000;
             expect (ok, "clip registrato posizionato con compensazione della latenza (start "
                             + juce::String (t != nullptr && ! t->clips.empty() ? (juce::int64) t->clips[0].start : -1) + ")");
+            expect (t != nullptr && t->clips.size() == 1 && t->clips[0].fadeIn == 12000 && t->clips[0].fadeOut == 28800,
+                    "take registrata: fade-in 250 ms e fade-out 600 ms dalle Impostazioni");
+            project->takeFadeInMs = project->takeFadeOutMs = 0;
             stepPunch ([this] { stepVideo(); });
         });
     }
@@ -4855,7 +4859,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.40.0"; }
+    const juce::String getApplicationVersion() override { return "2.41.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -4987,6 +4991,13 @@ public:
         juce::LookAndFeel::setDefaultLookAndFeel (&laf);
         fc::lang::apply (fc::lang::savedCode());   // lingua dell'interfaccia (prima di creare le finestre)
         fc::ThemeManager::applySaved();   // tema scelto l'ultima volta (prima di creare la finestra)
+        if (commandLine.contains ("--snapshot-settings"))   // immagini della finestra Impostazioni, senza aprire finestre
+        {
+            fc::MainComponent mc;
+            mc.snapshotSettings (juce::File (commandLine.fromFirstOccurrenceOf ("--snapshot-settings", false, false).trim().unquoted()));
+            quit();
+            return;
+        }
         window = std::make_unique<MainWindow> (getApplicationName());
         window->main().importFromCommandLine (juce::StringArray::fromTokens (commandLine, true));
         if (const auto dumpPath = juce::SystemStats::getEnvironmentVariable ("ADR_UIDUMP", {}); dumpPath.isNotEmpty())   // elenco dei testi visibili (controllo traduzioni)
@@ -5024,7 +5035,11 @@ private:
             setResizeLimits (1400, 700, 6000, 4000);
             centreWithSize (1440, 900);
 #if JUCE_MAC
-            juce::MenuBarModel::setMacMainMenu (c);   // menu nella barra di macOS
+            {
+                juce::PopupMenu appMenu;   // "Impostazioni..." anche nel menu dell'app, dove lo si cerca su macOS
+                appMenu.addCommandItem (&c->commandManager, fc::cmdSettings);
+                juce::MenuBarModel::setMacMainMenu (c, &appMenu);   // menu nella barra di macOS
+            }
 #else
             setMenuBar (c);                           // Windows e Linux: menu dentro la finestra
 #endif

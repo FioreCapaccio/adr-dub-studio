@@ -1,0 +1,22 @@
+{
+ "it": [
+  [
+   "apri <b>File &gt; Impostazioni audio</b>.</p>",
+   "apri <b>File &gt; Impostazioni audio</b>.</p><p><b>File &gt; Impostazioni</b> (<kbd>Cmd+,</kbd>, su macOS anche nel menu dell'app) riunisce in una finestra tutte le preferenze, divise in schede: <b>Audio</b> (uscita, ingresso, frequenza e buffer); <b>Registrazione ed editing</b> (fade-in e fade-out di ogni take registrata o importata, dissolvenze automatiche dei clip e dei tagli, tagli sul passaggio per lo zero, ritorno al punto di partenza allo stop, sincronia MTC, impostazioni della sessione aperta, cuffie dell'attore); <b>Aspetto</b> (lingua, tema, dimensioni e controlli visibili nell'intestazione delle tracce); <b>Tastiera</b> (scorciatoie). Ogni modifica vale subito e resta salvata, tranne la lingua che si applica al riavvio.</p><p><b>Dissolvenze delle take</b>: il fade-in e il fade-out impostati (in millisecondi) si applicano a ogni take nuova, registrata o importata, e non toccano le take già presenti. Con 0 la take prende le dissolvenze automatiche; una dissolvenza non supera metà della take.</p>"
+  ],
+  [
+   "(il comando cambia la durata a ogni clic, oppure la spegne).</li></ul>",
+   "(il comando cambia la durata a ogni clic, oppure la spegne; in <b>File &gt; Impostazioni</b> si sceglie qualsiasi durata da 0 a 100 ms).</li></ul>"
+  ]
+ ],
+ "en": [
+  [
+   "open <b>File &gt; Audio settings</b>.</p>",
+   "open <b>File &gt; Audio settings</b>.</p><p><b>File &gt; Settings</b> (<kbd>Cmd+,</kbd>, on macOS also in the app menu) gathers all preferences in one window, in tabs: <b>Audio</b> (output, input, sample rate and buffer); <b>Recording and editing</b> (fade-in and fade-out of every recorded or imported take, automatic fades of clips and cuts, cuts on the zero crossing, return to the start point on stop, MTC sync, settings of the open session, actor headphones); <b>Appearance</b> (language, theme, size and the controls shown in the track header); <b>Keyboard</b> (shortcuts). Every change applies at once and is saved, except the language, which applies on restart.</p><p><b>Take fades</b>: the fade-in and fade-out you set (in milliseconds) are applied to every new take, recorded or imported, and leave existing takes untouched. With 0 the take gets the automatic fades; a fade never exceeds half the take.</p>"
+  ],
+  [
+   "(the command changes the length at every click, or turns it off).</li></ul>",
+   "(the command changes the length at every click, or turns it off; in <b>File &gt; Settings</b> you can pick any length from 0 to 100 ms).</li></ul>"
+  ]
+ ]
+}

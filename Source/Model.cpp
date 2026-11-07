@@ -626,6 +626,13 @@ void Project::importFiles (juce::Array<juce::File> files, int trackId, int64_t s
     });
 }
 
+void Project::applyTakeFades (Clip& c) const
+{
+    auto ms = [this] (int v) { return (int64_t) (v * sampleRate / 1000.0); };
+    c.fadeIn = takeFadeInMs > 0 ? juce::jmin (ms (takeFadeInMs), c.length / 2) : (autoFadeMs > 0 ? juce::jmin (autoFadeSamples(), c.length / 4) : 0);
+    c.fadeOut = takeFadeOutMs > 0 ? juce::jmin (ms (takeFadeOutMs), c.length / 2) : (autoFadeMs > 0 ? juce::jmin (autoFadeSamples(), c.length / 4) : 0);
+}
+
 void Project::addRecordings (std::vector<RecItem> items, std::function<void (juce::StringArray)> done)
 {
     const double rate = sampleRate;
@@ -666,7 +673,7 @@ void Project::addRecordings (std::vector<RecItem> items, std::function<void (juc
                 c.start = start;
                 c.offset = offset;
                 c.length = asset->length() - offset;
-                if (autoFadeMs > 0) c.fadeIn = c.fadeOut = juce::jmin (autoFadeSamples(), c.length / 4);
+                applyTakeFades (c);
                 if (items[i].cueId != 0 && findCue (items[i].cueId) != nullptr)
                 {
                     // take ADR: il nuovo take diventa quello attivo e gli altri vengono silenziati
@@ -742,7 +749,7 @@ void Project::importTakes (std::vector<TakeFile> items, std::function<void (juce
                 c.start = start;
                 c.offset = offset;
                 c.length = asset->length() - offset;
-                if (autoFadeMs > 0) c.fadeIn = c.fadeOut = juce::jmin (autoFadeSamples(), c.length / 4);
+                applyTakeFades (c);
                 c.cueId = items[i].cueId;
                 c.takeNo = items[i].takeNo;
                 for (auto& t : session.tracks) for (auto& oc : t.clips) if (oc.cueId == c.cueId && oc.takeNo == c.takeNo) { c.takeNo = nextTakeNumber (c.cueId); break; }   // numero gia' preso da un'altra take

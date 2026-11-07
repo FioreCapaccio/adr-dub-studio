@@ -642,6 +642,8 @@ public:
     // aiuti di montaggio
     bool snapZero = false;     // i tagli si spostano sul passaggio per lo zero piu' vicino (Snap to Zero Crossing)
     int autoFadeMs = 0;        // dissolvenze automatiche ai bordi dei clip nuovi e dei tagli (0 = spente)
+    int takeFadeInMs = 0, takeFadeOutMs = 0;   // take registrate o importate (Impostazioni); 0 = come le dissolvenze automatiche
+    void applyTakeFades (Clip&) const;
     int64_t zeroCrossNear (const Clip&, int64_t pos) const;
     int64_t autoFadeSamples() const { return (int64_t) (autoFadeMs * sampleRate / 1000.0); }
     // Track Versions
