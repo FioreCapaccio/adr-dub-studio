@@ -64,7 +64,6 @@ public:
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;   // barra di avanzamento dei caricamenti lunghi
     void resized() override;
-    void mouseDown (const juce::MouseEvent&) override;   // clic sul timecode: si scrive dove andare
 
     // ApplicationCommandTarget
     ApplicationCommandTarget* getNextCommandTarget() override { return nullptr; }
@@ -175,8 +174,14 @@ private:
 
     static constexpr int toolbarH = 74;
     juce::Rectangle<int> timeBox, statusBox;
-    juce::TextEditor tcEdit;
+    // barra in basso: trasporto, vai al timecode, vai al marker numero N
+    juce::Rectangle<int> transportBox, tcCaption, markerCaption;
+    juce::TextEditor tcEdit, markerEdit;
+    juce::TextButton prevMarkBtn { juce::String::fromUTF8 ("\xe2\x97\x80") }, nextMarkBtn { juce::String::fromUTF8 ("\xe2\x96\xb6") };
     void commitTcEdit();
+    void goToMarkerNumber();
+    std::vector<int64_t> sortedMarkerPositions() const;
+    void refreshTransportFields (bool force);
     std::vector<juce::Rectangle<int>> capsules;
     bool mixerVisible = true, viewerVisible = true;
     int mixerHeight = 420;

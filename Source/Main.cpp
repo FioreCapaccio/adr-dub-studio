@@ -4975,7 +4975,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.47.0"; }
+    const juce::String getApplicationVersion() override { return "2.48.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -5125,6 +5125,17 @@ public:
             quit();
             return;
         }
+        if (commandLine.contains ("--snapshot-main"))   // immagine della finestra principale (verifica della disposizione), senza aprire finestre
+        {
+            fc::MainComponent mc;
+            mc.setSize (1500, 950);
+            const juce::File out (commandLine.fromFirstOccurrenceOf ("--snapshot-main", false, false).trim().unquoted());
+            out.deleteFile();
+            juce::PNGImageFormat png;
+            if (auto os = out.createOutputStream()) png.writeImageToStream (mc.createComponentSnapshot (mc.getLocalBounds(), true, 1.0f), *os);
+            quit();
+            return;
+        }
         window = std::make_unique<MainWindow> (getApplicationName());
         window->main().importFromCommandLine (juce::StringArray::fromTokens (commandLine, true));
         if (const auto dumpPath = juce::SystemStats::getEnvironmentVariable ("ADR_UIDUMP", {}); dumpPath.isNotEmpty())   // elenco dei testi visibili (controllo traduzioni)
@@ -5171,6 +5182,12 @@ private:
             setMenuBar (c);                           // Windows e Linux: menu dentro la finestra
 #endif
             setVisible (true);
+            // all'avvio la finestra occupa tutto lo schermo (su Mac senza aprire uno spazio a schermo intero: le finestre ADR e video restano sopra)
+#if JUCE_MAC
+            if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) setBounds (d->userArea);
+#else
+            setFullScreen (true);
+#endif
         }
 
 #if JUCE_MAC

@@ -135,6 +135,7 @@ public:
         setUsingNativeTitleBar (true);
         setResizable (true, true);
         setResizeLimits (860, 600, 4000, 3000);
+        setAlwaysOnTop (true);   // resta davanti anche quando si clicca sulla finestra principale
     }
     void closeButtonPressed() override { if (onClose) onClose(); }
 

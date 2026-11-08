@@ -319,18 +319,33 @@ MainComponent::MainComponent()
     playBtn.setColour (juce::TextButton::buttonOnColourId, green.darker (0.3f));
 
     rewindBtn.onClick = [this] { engine.setPosition (0); };
-    tcEdit.setFont (mono (24.0f));
-    tcEdit.setJustification (juce::Justification::centred);
+    for (auto* ed : { &tcEdit, &markerEdit })
+    {
+        ed->setJustification (juce::Justification::centred);
+        ed->setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff101418));
+        ed->setColour (juce::TextEditor::textColourId, playhead);
+        ed->setColour (juce::TextEditor::outlineColourId, border);
+        ed->setColour (juce::TextEditor::focusedOutlineColourId, accent);
+        ed->setSelectAllWhenFocused (true);
+        ed->onEscapeKey = [this] { grabKeyboardFocus(); refreshTransportFields (true); };
+        ed->onFocusLost = [this] { refreshTransportFields (true); };
+        addAndMakeVisible (*ed);
+    }
+    tcEdit.setFont (mono (15.0f));
     tcEdit.setInputRestrictions (16, "0123456789:;.,");
-    tcEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff101418));
-    tcEdit.setColour (juce::TextEditor::textColourId, juce::Colours::white);
-    tcEdit.setColour (juce::TextEditor::outlineColourId, accent);
-    tcEdit.setColour (juce::TextEditor::focusedOutlineColourId, accent);
     tcEdit.onReturnKey = [this] { commitTcEdit(); };
-    tcEdit.onEscapeKey = [this] { tcEdit.setVisible (false); };
-    tcEdit.onFocusLost = [this] { tcEdit.setVisible (false); };
     tcEdit.setTooltip (TRANS ("Scrivi il timecode (hh:mm:ss:ff, oppure solo le cifre) e premi Invio; Esc annulla"));
-    addChildComponent (tcEdit);
+    markerEdit.setFont (mono (14.0f));
+    markerEdit.setInputRestrictions (4, "0123456789");
+    markerEdit.onReturnKey = [this] { goToMarkerNumber(); };
+    markerEdit.setTooltip (TRANS ("Scrivi il numero del marker (1 = il primo sulla timeline) e premi Invio"));
+    prevMarkBtn.onClick = [this] { commandManager.invokeDirectly (cmdPrevMarker, false); refreshTransportFields (true); };
+    nextMarkBtn.onClick = [this] { commandManager.invokeDirectly (cmdNextMarker, false); refreshTransportFields (true); };
+    prevMarkBtn.setTooltip (TRANS ("Marker precedente"));
+    nextMarkBtn.setTooltip (TRANS ("Marker successivo"));
+    prevMarkBtn.setWantsKeyboardFocus (false); nextMarkBtn.setWantsKeyboardFocus (false);
+    addAndMakeVisible (prevMarkBtn);
+    addAndMakeVisible (nextMarkBtn);
     playBtn.onClick = [this] { toggleTransport(); };
     stopBtn.onClick = [this] { stopAll(); };
     recBtn.onClick = [this] { if (engine.isRecording()) finishRecording(); else startRecording(); };
@@ -466,6 +481,19 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawText (juce::String ((double) pos / rate, 3) + " s", timeBox.withTrimmedTop (timeBox.getHeight() - 15).translated (0, -1), juce::Justification::centred);
     }
 
+    // barra del trasporto (sotto il mixer)
+    g.setColour (panelHi);
+    g.fillRect (transportBox);
+    g.setColour (border);
+    g.drawHorizontalLine (transportBox.getY(), 0.0f, (float) getWidth());
+    drawCaption (g, TRANS ("TIMECODE"), tcCaption, juce::Justification::centredLeft);
+    drawCaption (g, TRANS ("MARKER"), markerCaption, juce::Justification::centredLeft);
+    {
+        const int n = (int) project->getSession().markers.size();
+        drawCaption (g, n == 0 ? TRANS ("nessuno") : TRANS ("di ") + juce::String (n),
+                     juce::Rectangle<int> (nextMarkBtn.getRight() + 10, transportBox.getY(), 90, transportBox.getHeight()), juce::Justification::centredLeft);
+    }
+
     // barra di stato
     g.setColour (panel);
     g.fillRect (statusBox);
@@ -540,6 +568,17 @@ void MainComponent::layoutAll()
     auto r = getLocalBounds();
     r.removeFromTop (toolbarH);
     statusBox = r.removeFromBottom (24);
+    refreshTransportFields (false);
+    {
+        transportBox = r.removeFromBottom (32);
+        auto b = transportBox.reduced (12, 4);
+        auto put = [&b] (juce::Component& c, int w, int gap = 4) { c.setBounds (b.removeFromLeft (w)); b.removeFromLeft (gap); };
+        put (rewindBtn, 32); put (playBtn, 38); put (stopBtn, 32); put (recBtn, 38, 20);
+        tcCaption = b.removeFromLeft (66);
+        put (tcEdit, 130, 20);
+        markerCaption = b.removeFromLeft (56);
+        put (prevMarkBtn, 26); put (markerEdit, 44); put (nextMarkBtn, 26, 0);
+    }
     mixerResizer.setVisible (mixerVisible);
     if (mixerVisible)
     {
@@ -584,13 +623,6 @@ void MainComponent::resized()
         r.removeFromLeft (gap);
     };
 
-    auto g1 = group (40 + 6 + 48 + 6 + 40 + 6 + 48);
-    put (g1, rewindBtn, 40); put (g1, playBtn, 48); put (g1, stopBtn, 40); put (g1, recBtn, 48, 0);
-
-    timeBox = area.removeFromLeft (220);
-    tcEdit.setBounds (timeBox.withTrimmedTop (14).withTrimmedBottom (13).reduced (8, 0));
-    area.removeFromLeft (10);
-
     auto g3 = group (56 + 6 + 56 + 6 + 62);
     put (g3, loopBtn, 56); put (g3, snapBtn, 56); put (g3, followBtn, 62, 0);
 
@@ -602,11 +634,23 @@ void MainComponent::resized()
     auto g5 = group (32 + 6 + 32 + 6 + 62);
     put (g5, zoomOutBtn, 32); put (g5, zoomInBtn, 32); put (g5, fitBtn, 62, 0);
 
-    auto g6 = group (84 + 6 + 66 + 6 + 66 + 6 + 54 + 6 + 58);
+    // a destra, allineati al bordo
+    auto groupRight = [&] (int contentW) -> juce::Rectangle<int>
+    {
+        auto c = area.removeFromRight (contentW + 16);
+        area.removeFromRight (10);
+        capsules.push_back (c);
+        return c.reduced (8, 6);
+    };
+    auto g7 = groupRight (44);
+    put (g7, exitBtn, 44, 0);
+    auto g6 = groupRight (84 + 6 + 66 + 6 + 66 + 6 + 54 + 6 + 58);
     put (g6, addTrackBtn, 84); put (g6, importBtn, 66); put (g6, exportBtn, 66); put (g6, videoBtn, 54); put (g6, mixerBtn, 58, 0);
 
-    auto g7 = group (44);
-    put (g7, exitBtn, 44, 0);
+    // timecode al centro della finestra (spostato se lo spazio libero non arriva al centro)
+    const int tcW = 220;
+    const int tcX = juce::jlimit (area.getX(), juce::jmax (area.getX(), area.getRight() - tcW), getWidth() / 2 - tcW / 2);
+    timeBox = juce::Rectangle<int> (tcX, area.getY(), tcW, area.getHeight());
 
     layoutAll();
     repaint (0, 0, getWidth(), toolbarH);
@@ -728,6 +772,7 @@ void MainComponent::timerCallback()
     {
         lastShownPos = pos;
         repaint (timeBox);
+        refreshTransportFields (false);
     }
     const bool playing = engine.isPlaying();
 
@@ -4478,13 +4523,42 @@ void MainComponent::exportAdrBwf()
     });
 }
 
-void MainComponent::mouseDown (const juce::MouseEvent& e)
+std::vector<int64_t> MainComponent::sortedMarkerPositions() const
 {
-    if (! timeBox.contains (e.getPosition()) || engine.isRecording()) return;
-    tcEdit.setText (project->formatTc ((double) engine.getPosition() / project->getSampleRate()), false);
-    tcEdit.setVisible (true);
-    tcEdit.grabKeyboardFocus();
-    tcEdit.selectAll();
+    std::vector<int64_t> v;
+    for (auto& m : project->getSession().markers) v.push_back (m.pos);
+    std::sort (v.begin(), v.end());
+    return v;
+}
+
+void MainComponent::refreshTransportFields (bool force)
+{
+    const int64_t pos = engine.getPosition();
+    if (! tcEdit.hasKeyboardFocus (true))
+        tcEdit.setText (project->formatTc ((double) pos / project->getSampleRate()), false);
+    if (! markerEdit.hasKeyboardFocus (true))
+    {
+        // numero dell'ultimo marker raggiunto dalla testina (vuoto prima del primo)
+        const auto v = sortedMarkerPositions();
+        const auto n = (int) (std::upper_bound (v.begin(), v.end(), pos) - v.begin());
+        markerEdit.setText (n > 0 ? juce::String (n) : juce::String(), false);
+    }
+    if (force) repaint (transportBox);
+}
+
+void MainComponent::goToMarkerNumber()
+{
+    const auto v = sortedMarkerPositions();
+    const int n = markerEdit.getText().getIntValue();
+    if (n < 1 || n > (int) v.size())
+    {
+        juce::LookAndFeel::getDefaultLookAndFeel().playAlertSound();
+        markerEdit.selectAll();
+        return;
+    }
+    engine.setPosition (v[(size_t) n - 1]);
+    grabKeyboardFocus();
+    refreshTransportFields (true);
 }
 
 void MainComponent::commitTcEdit()
@@ -4502,8 +4576,9 @@ void MainComponent::commitTcEdit()
         tcEdit.selectAll();
         return;
     }
-    tcEdit.setVisible (false);
     engine.setPosition ((int64_t) std::llround (juce::jmax (0.0, sec - project->tcStartSec) * project->getSampleRate()));
+    grabKeyboardFocus();
+    refreshTransportFields (true);
     repaint (timeBox);
 }
 

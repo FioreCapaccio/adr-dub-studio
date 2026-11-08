@@ -1554,3 +1554,6 @@ language: English
 "Cue ADR e marker" = "ADR cues and markers"
 "Solo marker" = "Markers only"
 " marker." = " markers."
+"Scrivi il numero del marker (1 = il primo sulla timeline) e premi Invio" = "Type the marker number (1 = the first on the timeline) and press Return"
+"nessuno" = "none"
+"di " = "of "

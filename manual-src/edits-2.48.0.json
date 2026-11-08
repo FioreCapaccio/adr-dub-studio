@@ -1,0 +1,14 @@
+{
+ "it": [
+  [
+   "Barra del trasporto: riavvolgi, play, stop, registra e display del timecode. Un clic sul display permette di scrivere un timecode (<kbd>01:02:03:04</kbd> oppure solo le cifre, <kbd>1020304</kbd>): con Invio la testina salta lì, Esc annulla.",
+   "Display del timecode, al centro della barra in alto (all'avvio la finestra occupa tutto lo schermo). I tasti del trasporto (inizio, play, stop, registra) sono nella barra sottile in basso, sotto il mixer, insieme a due campi: <b>TIMECODE</b> (scrivi un timecode, <kbd>01:02:03:04</kbd> oppure solo le cifre, <kbd>1020304</kbd>, e con Invio la testina salta lì; Esc annulla) e <b>MARKER</b> (scrivi il numero del marker, 1 = il primo da sinistra sulla timeline, e premi Invio; le frecce ◀ ▶ vanno al marker precedente e successivo). La finestra ADR resta sempre in primo piano."
+  ]
+ ],
+ "en": [
+  [
+   "Transport bar: rewind, play, stop, record and the timecode display. Click the display to type a timecode (<kbd>01:02:03:04</kbd> or just the digits, <kbd>1020304</kbd>): Return moves the playhead there, Esc cancels.",
+   "Timecode display, in the middle of the top bar (at startup the window fills the screen). The transport buttons (start, play, stop, record) are in the thin bar at the bottom, below the mixer, together with two fields: <b>TIMECODE</b> (type a timecode, <kbd>01:02:03:04</kbd> or just the digits, <kbd>1020304</kbd>, and Return moves the playhead there; Esc cancels) and <b>MARKER</b> (type the marker number, 1 = the leftmost on the timeline, and press Return; the ◀ ▶ arrows go to the previous and next marker). The ADR window always stays in front."
+  ]
+ ]
+}
