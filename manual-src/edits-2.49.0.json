@@ -1,0 +1,14 @@
+{
+ "it": [
+  [
+   "La finestra ADR resta sempre in primo piano.",
+   "Con il pulsante <b>⋯</b> a destra della barra (o con il clic destro sulla barra) scegli dove metterla: <b>Sotto il mixer</b>, <b>Sopra il mixer</b>, <b>In alto</b> oppure <b>Staccata</b>, in una piccola finestra sempre in primo piano che si sposta dove vuoi; chiudendola la barra torna sotto il mixer. La scelta resta salvata. La finestra ADR resta sempre in primo piano."
+  ]
+ ],
+ "en": [
+  [
+   "The ADR window always stays in front.",
+   "With the <b>⋯</b> button at the right of the bar (or a right-click on the bar) you choose where it goes: <b>Below the mixer</b>, <b>Above the mixer</b>, <b>At the top</b> or <b>Detached</b>, in a small window that always stays in front and can be moved anywhere; closing it puts the bar back below the mixer. The choice is remembered. The ADR window always stays in front."
+  ]
+ ]
+}

@@ -4975,7 +4975,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.48.0"; }
+    const juce::String getApplicationVersion() override { return "2.49.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -5125,14 +5125,11 @@ public:
             quit();
             return;
         }
-        if (commandLine.contains ("--snapshot-main"))   // immagine della finestra principale (verifica della disposizione), senza aprire finestre
+        if (commandLine.contains ("--snapshot-main"))   // immagini della finestra principale (una per posizione della barra) in una cartella, senza aprire finestre
         {
             fc::MainComponent mc;
             mc.setSize (1500, 950);
-            const juce::File out (commandLine.fromFirstOccurrenceOf ("--snapshot-main", false, false).trim().unquoted());
-            out.deleteFile();
-            juce::PNGImageFormat png;
-            if (auto os = out.createOutputStream()) png.writeImageToStream (mc.createComponentSnapshot (mc.getLocalBounds(), true, 1.0f), *os);
+            mc.snapshotLayouts (juce::File (commandLine.fromFirstOccurrenceOf ("--snapshot-main", false, false).trim().unquoted()));
             quit();
             return;
         }

@@ -45,6 +45,17 @@ int exportAdrTakes (const Project&, const juce::File& folder, juce::StringArray&
 class ExportJob;
 class VideoExportJob;
 
+/** Contenitore della barra del trasporto: sta nella finestra principale (sotto o sopra il mixer, in alto) o in una finestra flottante. */
+class TransportStrip : public juce::Component
+{
+public:
+    std::function<void (juce::Graphics&)> onPaint;
+    std::function<void()> onLayout, onMenu;
+    void paint (juce::Graphics& g) override { if (onPaint) onPaint (g); }
+    void resized() override { if (onLayout) onLayout(); }
+    void mouseDown (const juce::MouseEvent& e) override { if (e.mods.isPopupMenu() && onMenu) onMenu(); }
+};
+
 class MainComponent : public juce::Component,
                       public juce::ApplicationCommandTarget,
                       public juce::MenuBarModel,
@@ -175,9 +186,19 @@ private:
     static constexpr int toolbarH = 74;
     juce::Rectangle<int> timeBox, statusBox;
     // barra in basso: trasporto, vai al timecode, vai al marker numero N
-    juce::Rectangle<int> transportBox, tcCaption, markerCaption;
+    juce::Rectangle<int> tcCaption, markerCaption, countBox;   // coordinate dentro 'strip'
     juce::TextEditor tcEdit, markerEdit;
-    juce::TextButton prevMarkBtn { juce::String::fromUTF8 ("\xe2\x97\x80") }, nextMarkBtn { juce::String::fromUTF8 ("\xe2\x96\xb6") };
+    juce::TextButton prevMarkBtn { juce::String::fromUTF8 ("\xe2\x97\x80") }, nextMarkBtn { juce::String::fromUTF8 ("\xe2\x96\xb6") },
+                     stripPosBtn { juce::String::fromUTF8 ("\xe2\x8b\xaf") };
+    TransportStrip strip;                                // dichiarata dopo i suoi controlli: viene distrutta prima
+    std::unique_ptr<class BoothWindow> stripWindow;      // barra staccata (dopo 'strip': distrutta prima)
+    enum StripPos { stripBelowMixer = 0, stripAboveMixer, stripTop, stripFloating };
+    int stripPos = stripBelowMixer;
+    static constexpr int stripH = 32, stripContentW = 668;
+    void setStripPos (int pos);
+    void layoutStrip();
+    void paintStrip (juce::Graphics&);
+    void stripMenu();
     void commitTcEdit();
     void goToMarkerNumber();
     std::vector<int64_t> sortedMarkerPositions() const;
@@ -207,6 +228,7 @@ private:
     int dropoutTick = 0, lastXruns = -1, overloadSeconds = 0;
 public:
     void snapshotSettings (const juce::File& dir);   // verifica: immagini delle schede delle Impostazioni
+    void snapshotLayouts (const juce::File& dir);    // verifica: finestra con la barra del trasporto in ogni posizione (non salva le preferenze)
 private:
     friend class SettingsPanel;
     std::unique_ptr<class BoothWindow> mtcWindow;

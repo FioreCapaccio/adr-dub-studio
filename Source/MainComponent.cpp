@@ -329,7 +329,6 @@ MainComponent::MainComponent()
         ed->setSelectAllWhenFocused (true);
         ed->onEscapeKey = [this] { grabKeyboardFocus(); refreshTransportFields (true); };
         ed->onFocusLost = [this] { refreshTransportFields (true); };
-        addAndMakeVisible (*ed);
     }
     tcEdit.setFont (mono (15.0f));
     tcEdit.setInputRestrictions (16, "0123456789:;.,");
@@ -344,8 +343,20 @@ MainComponent::MainComponent()
     prevMarkBtn.setTooltip (TRANS ("Marker precedente"));
     nextMarkBtn.setTooltip (TRANS ("Marker successivo"));
     prevMarkBtn.setWantsKeyboardFocus (false); nextMarkBtn.setWantsKeyboardFocus (false);
-    addAndMakeVisible (prevMarkBtn);
-    addAndMakeVisible (nextMarkBtn);
+    stripPosBtn.setWantsKeyboardFocus (false);
+    stripPosBtn.setTooltip (TRANS ("Posizione della barra: sotto o sopra il mixer, in alto, oppure staccata"));
+    stripPosBtn.onClick = [this] { stripMenu(); };
+    for (juce::Component* c : std::initializer_list<juce::Component*> { &rewindBtn, &playBtn, &stopBtn, &recBtn, &tcEdit, &prevMarkBtn, &markerEdit, &nextMarkBtn, &stripPosBtn })
+        strip.addAndMakeVisible (c);
+    strip.onPaint = [this] (juce::Graphics& g) { paintStrip (g); };
+    strip.onLayout = [this] { layoutStrip(); };
+    strip.onMenu = [this] { stripMenu(); };
+    addAndMakeVisible (strip);
+    {
+        const int saved = settings().getIntValue ("transportPos", stripBelowMixer);
+        if (saved != stripBelowMixer)   // la finestra flottante si crea quando la principale e' gia' sullo schermo
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this), saved] { if (safe != nullptr) safe->setStripPos (saved); });
+    }
     playBtn.onClick = [this] { toggleTransport(); };
     stopBtn.onClick = [this] { stopAll(); };
     recBtn.onClick = [this] { if (engine.isRecording()) finishRecording(); else startRecording(); };
@@ -481,19 +492,6 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawText (juce::String ((double) pos / rate, 3) + " s", timeBox.withTrimmedTop (timeBox.getHeight() - 15).translated (0, -1), juce::Justification::centred);
     }
 
-    // barra del trasporto (sotto il mixer)
-    g.setColour (panelHi);
-    g.fillRect (transportBox);
-    g.setColour (border);
-    g.drawHorizontalLine (transportBox.getY(), 0.0f, (float) getWidth());
-    drawCaption (g, TRANS ("TIMECODE"), tcCaption, juce::Justification::centredLeft);
-    drawCaption (g, TRANS ("MARKER"), markerCaption, juce::Justification::centredLeft);
-    {
-        const int n = (int) project->getSession().markers.size();
-        drawCaption (g, n == 0 ? TRANS ("nessuno") : TRANS ("di ") + juce::String (n),
-                     juce::Rectangle<int> (nextMarkBtn.getRight() + 10, transportBox.getY(), 90, transportBox.getHeight()), juce::Justification::centredLeft);
-    }
-
     // barra di stato
     g.setColour (panel);
     g.fillRect (statusBox);
@@ -569,16 +567,8 @@ void MainComponent::layoutAll()
     r.removeFromTop (toolbarH);
     statusBox = r.removeFromBottom (24);
     refreshTransportFields (false);
-    {
-        transportBox = r.removeFromBottom (32);
-        auto b = transportBox.reduced (12, 4);
-        auto put = [&b] (juce::Component& c, int w, int gap = 4) { c.setBounds (b.removeFromLeft (w)); b.removeFromLeft (gap); };
-        put (rewindBtn, 32); put (playBtn, 38); put (stopBtn, 32); put (recBtn, 38, 20);
-        tcCaption = b.removeFromLeft (66);
-        put (tcEdit, 130, 20);
-        markerCaption = b.removeFromLeft (56);
-        put (prevMarkBtn, 26); put (markerEdit, 44); put (nextMarkBtn, 26, 0);
-    }
+    if (stripPos == stripBelowMixer) strip.setBounds (r.removeFromBottom (stripH));
+    else if (stripPos == stripTop) strip.setBounds (r.removeFromTop (stripH));
     mixerResizer.setVisible (mixerVisible);
     if (mixerVisible)
     {
@@ -587,6 +577,7 @@ void MainComponent::layoutAll()
         mixer->setBounds (r.removeFromBottom (mixerHeight));
         mixerResizer.setBounds (r.removeFromBottom (7));
     }
+    if (stripPos == stripAboveMixer) strip.setBounds (r.removeFromBottom (stripH));
 
     const bool hasVideo = project->getSession().video != nullptr;
     const bool detached = videoWindow != nullptr;
@@ -4543,7 +4534,7 @@ void MainComponent::refreshTransportFields (bool force)
         const auto n = (int) (std::upper_bound (v.begin(), v.end(), pos) - v.begin());
         markerEdit.setText (n > 0 ? juce::String (n) : juce::String(), false);
     }
-    if (force) repaint (transportBox);
+    if (force) strip.repaint();
 }
 
 void MainComponent::goToMarkerNumber()
@@ -4580,6 +4571,98 @@ void MainComponent::commitTcEdit()
     grabKeyboardFocus();
     refreshTransportFields (true);
     repaint (timeBox);
+}
+
+void MainComponent::layoutStrip()
+{
+    auto b = strip.getLocalBounds().reduced (8, 4);
+    stripPosBtn.setBounds (b.removeFromRight (26));
+    auto put = [&b] (juce::Component& c, int w, int gap = 4) { c.setBounds (b.removeFromLeft (w)); b.removeFromLeft (gap); };
+    put (rewindBtn, 32); put (playBtn, 38); put (stopBtn, 32); put (recBtn, 38, 16);
+    tcCaption = b.removeFromLeft (66);
+    put (tcEdit, 130, 16);
+    markerCaption = b.removeFromLeft (56);
+    put (prevMarkBtn, 26); put (markerEdit, 44); put (nextMarkBtn, 26, 8);
+    countBox = b.removeFromLeft (70);
+}
+
+void MainComponent::paintStrip (juce::Graphics& g)
+{
+    g.fillAll (panelHi);
+    g.setColour (border);
+    if (stripPos != stripFloating)
+    {
+        g.drawHorizontalLine (0, 0.0f, (float) strip.getWidth());
+        g.drawHorizontalLine (strip.getHeight() - 1, 0.0f, (float) strip.getWidth());
+    }
+    drawCaption (g, TRANS ("TIMECODE"), tcCaption, juce::Justification::centredLeft);
+    drawCaption (g, TRANS ("MARKER"), markerCaption, juce::Justification::centredLeft);
+    const int n = (int) project->getSession().markers.size();
+    drawCaption (g, n == 0 ? TRANS ("nessuno") : TRANS ("di ") + juce::String (n), countBox, juce::Justification::centredLeft);
+}
+
+void MainComponent::stripMenu()
+{
+    juce::PopupMenu m;
+    m.addSectionHeader (TRANS ("Posizione della barra"));
+    m.addItem (1 + stripBelowMixer, TRANS ("Sotto il mixer"), true, stripPos == stripBelowMixer);
+    m.addItem (1 + stripAboveMixer, TRANS ("Sopra il mixer"), true, stripPos == stripAboveMixer);
+    m.addItem (1 + stripTop, TRANS ("In alto"), true, stripPos == stripTop);
+    m.addItem (1 + stripFloating, TRANS ("Staccata (finestra sempre in primo piano)"), true, stripPos == stripFloating);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&stripPosBtn),
+                     [safe = juce::Component::SafePointer<MainComponent> (this)] (int r) { if (safe != nullptr && r > 0) safe->setStripPos (r - 1); });
+}
+
+void MainComponent::setStripPos (int pos)
+{
+    pos = juce::jlimit (0, (int) stripFloating, pos);
+    if (pos == stripFloating && stripWindow == nullptr)
+    {
+        // chiudendo la finestra la barra torna sotto il mixer (asincrono: la finestra non si distrugge dentro il suo callback)
+        stripWindow = std::make_unique<BoothWindow> (TRANS ("Trasporto - ADR Dub Studio"), [safe = juce::Component::SafePointer<MainComponent> (this)]
+        {
+            juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->setStripPos (stripBelowMixer); });
+        });
+        removeChildComponent (&strip);
+        stripWindow->setContentNonOwned (&strip, false);
+        stripWindow->setResizable (false, false);
+        stripWindow->setAlwaysOnTop (true);
+        stripWindow->addKeyListener (commandManager.getKeyMappings());
+        stripWindow->setContentComponentSize (stripContentW, stripH);
+        const auto sb = getScreenBounds();
+        stripWindow->setTopLeftPosition (sb.getCentreX() - stripWindow->getWidth() / 2, sb.getBottom() - stripWindow->getHeight() - 80);
+        stripWindow->setVisible (true);
+    }
+    else if (pos != stripFloating && stripWindow != nullptr)
+    {
+        stripWindow->clearContentComponent();
+        stripWindow.reset();
+        addAndMakeVisible (strip);
+    }
+    stripPos = pos;
+    settings().setValue ("transportPos", pos);
+    settings().saveIfNeeded();
+    layoutAll();
+    strip.repaint();
+}
+
+void MainComponent::snapshotLayouts (const juce::File& dir)
+{
+    dir.createDirectory();
+    juce::PNGImageFormat png;
+    auto save = [&png] (const juce::Image& img, const juce::File& f) { f.deleteFile(); if (auto os = f.createOutputStream()) png.writeImageToStream (img, *os); };
+    const int saved = stripPos;
+    for (int p : { (int) stripBelowMixer, (int) stripAboveMixer, (int) stripTop })
+    {
+        stripPos = p;
+        layoutAll();
+        save (createComponentSnapshot (getLocalBounds(), true, 1.0f), dir.getChildFile ("main_pos" + juce::String (p) + ".png"));
+    }
+    stripPos = stripFloating;
+    strip.setBounds (0, 0, stripContentW, stripH);
+    save (strip.createComponentSnapshot (strip.getLocalBounds(), true, 1.0f), dir.getChildFile ("strip_floating.png"));
+    stripPos = saved;
+    layoutAll();
 }
 
 } // namespace fc
