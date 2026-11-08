@@ -997,11 +997,12 @@ int Project::addCues (std::vector<AdrCue> cues, bool replaceExisting)
     return (int) cues.size();
 }
 
-void Project::removeCue (int id)
+void Project::removeCues (const std::vector<int>& ids)
 {
-    if (findCue (id) == nullptr) return;
+    auto hit = [&ids] (const AdrCue& c) { return std::find (ids.begin(), ids.end(), c.id) != ids.end(); };
+    if (std::none_of (session.cues.begin(), session.cues.end(), hit)) return;
     beginEdit();
-    session.cues.erase (std::remove_if (session.cues.begin(), session.cues.end(), [id] (const AdrCue& c) { return c.id == id; }), session.cues.end());
+    session.cues.erase (std::remove_if (session.cues.begin(), session.cues.end(), hit), session.cues.end());
     changed();
 }
 

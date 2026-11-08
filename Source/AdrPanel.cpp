@@ -29,7 +29,7 @@ AdrImportDialog::AdrImportDialog (const Project& p, const adr::ImportResult& r, 
         l.setColour (juce::Label::textColourId, dim);
         addAndMakeVisible (l);
     };
-    label (tcLbl, TRANS ("FORMATO TIMECODE")); label (startLbl, TRANS ("INIZIO SESSIONE (TC)")); label (durLbl, TRANS ("DURATA SE MANCA L'USCITA (S)"));
+    label (whatLbl, TRANS ("COSA IMPORTARE")); label (tcLbl, TRANS ("FORMATO TIMECODE")); label (startLbl, TRANS ("INIZIO SESSIONE (TC)")); label (durLbl, TRANS ("DURATA SE MANCA L'USCITA (S)"));
 
     juce::String txt = TRANS ("Formato riconosciuto: ") + result.format + TRANS ("\nCue trovati: ") + juce::String ((int) result.cues.size());
     if (result.sessionStartTc.isNotEmpty()) txt << TRANS ("\nInizio sessione dichiarato dal file: ") + result.sessionStartTc;
@@ -56,14 +56,18 @@ AdrImportDialog::AdrImportDialog (const Project& p, const adr::ImportResult& r, 
     duration.setInputRestrictions (5, "0123456789.,");
     duration.setJustification (juce::Justification::centred);
     replace.setToggleState (project.getSession().cues.empty(), juce::dontSendNotification);
-    markers.setToggleState (false, juce::dontSendNotification);
+    what.addItem (TRANS ("Solo cue ADR"), 1);
+    what.addItem (TRANS ("Cue ADR e marker"), 2);
+    what.addItem (TRANS ("Solo marker"), 3);
+    what.setSelectedId (1, juce::dontSendNotification);
+    what.onChange = [this] { const bool cues = what.getSelectedId() != 3; replace.setEnabled (cues); characterTracks.setEnabled (cues); };
     {
         std::set<juce::String> names;
         for (auto& c : result.cues) if (c.character.trim().isNotEmpty()) names.insert (c.character.trim().toLowerCase());
         characterTracks.setToggleState (names.size() >= 2, juce::dontSendNotification);   // utile quando ci sono piu' personaggi
     }
 
-    for (auto* c : std::initializer_list<juce::Component*> { &tcFormat, &start, &duration, &replace, &markers, &characterTracks, &okBtn, &cancelBtn })
+    for (auto* c : std::initializer_list<juce::Component*> { &what, &tcFormat, &start, &duration, &replace, &characterTracks, &okBtn, &cancelBtn })
         addAndMakeVisible (*c);
     okBtn.onClick = [this] { close (true); };
     cancelBtn.onClick = [this] { close (false); };
@@ -75,8 +79,9 @@ void AdrImportDialog::close (bool ok)
     v.tcFormat = tcFormat.getSelectedId() - 1;
     v.defaultDuration = juce::jlimit (0.5, 60.0, duration.getText().replaceCharacter (',', '.').getDoubleValue());
     v.replace = replace.getToggleState();
-    v.makeMarkers = markers.getToggleState();
-    v.makeTracks = characterTracks.getToggleState();
+    v.importCues = what.getSelectedId() != 3;
+    v.makeMarkers = what.getSelectedId() != 1;
+    v.makeTracks = v.importCues && characterTracks.getToggleState();
     v.tcStart = project.tcStartSec;
     if (ok)
     {
@@ -105,11 +110,11 @@ void AdrImportDialog::resized()
         c.setBounds (line);
         r.removeFromTop (8);
     };
+    row (whatLbl, what);
     row (tcLbl, tcFormat);
     row (startLbl, start);
     row (durLbl, duration);
     replace.setBounds (r.removeFromTop (24));
-    markers.setBounds (r.removeFromTop (24));
     characterTracks.setBounds (r.removeFromTop (24));
     auto bottom = r.removeFromBottom (34);
     cancelBtn.setBounds (bottom.removeFromRight (100));
@@ -196,7 +201,7 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     deleteTakeBtn.onClick = [this] { if (viewTake != 0 && shownCueId != 0) project.deleteTake (shownCueId, viewTake); };
     importBtn.onClick = [this] { if (actions.importFile) actions.importFile(); };
     addBtn.onClick = [this] { if (actions.addCue) actions.addCue(); };
-    delBtn.onClick = [this] { if (project.selectedCueId != 0) project.removeCue (project.selectedCueId); };
+    delBtn.onClick = [this] { deleteSelectedCues(); };
     joinBtn.setTooltip (TRANS ("Unisce i cue selezionati (Cmd/Ctrl o Maiusc + clic) in uno solo: entrata del primo, uscita dell'ultimo, battute e note riunite"));
     joinBtn.onClick = [this]
     {
@@ -586,6 +591,21 @@ void AdrPanel::selectedRowsChanged (int lastRow)
         project.sendChangeMessage();
         if (actions.goToCue) actions.goToCue (c->id);
     }
+}
+
+void AdrPanel::deleteSelectedCues()
+{
+    std::vector<int> ids;
+    const auto rows = table.getSelectedRows();
+    for (int i = 0; i < rows.size(); ++i) if (const auto* c = cueAtRow (rows[i])) ids.push_back (c->id);
+    if (ids.empty() && project.selectedCueId != 0) ids.push_back (project.selectedCueId);
+    if (ids.empty()) return;
+    const int firstRow = rows.isEmpty() ? 0 : rows[0];
+    project.removeCues (ids);
+    rebuildShown();
+    table.updateContent();
+    table.deselectAllRows();
+    if (const auto* c = cueAtRow (juce::jmin (firstRow, (int) shown.size() - 1))) { project.selectedCueId = c->id; project.sendChangeMessage(); }   // si resta sulla riga successiva
 }
 
 void AdrPanel::cellDoubleClicked (int row, int, const juce::MouseEvent&)

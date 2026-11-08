@@ -2702,7 +2702,21 @@ void MainComponent::importAdrFile (const juce::File& f)
         juce::StringArray warnings;
         auto cues = adr::toCues (result, p, p.getSampleRate(), v.defaultDuration, warnings);
         const auto firstPos = cues.empty() ? int64_t (0) : cues.front().inPos;
-        if (v.makeMarkers) for (auto& c : cues) p.addMarker (c.inPos, c.character + " " + juce::String (c.scene));
+        if (v.makeMarkers)
+            for (auto& c : cues)
+            {
+                auto name = (c.character + " " + c.scene).trim();
+                if (name.isEmpty()) name = c.dialogue.replaceCharacters ("\r\n", "  ").trim().substring (0, 60);
+                if (name.isEmpty()) name = "Cue " + juce::String (c.number);
+                p.addMarker (c.inPos, name);
+            }
+        if (! v.importCues)
+        {
+            juce::String msg = TRANS ("Importati ") + juce::String ((int) cues.size()) + TRANS (" marker.");
+            if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Importazione ADR"), msg);
+            return;
+        }
         if (v.makeTracks) { const int n = dub::createCharacterTracks (p, cues); if (n > 0) warnings.add (juce::String (n) + TRANS (" tracce Dialoghi create (una per personaggio).")); }
         p.addCues (cues, v.replace);
         if (! p.getSession().cues.empty()) { p.selectedCueId = p.getSession().cues.front().id; p.sendChangeMessage(); }
@@ -2712,7 +2726,7 @@ void MainComponent::importAdrFile (const juce::File& f)
         if (warnings.size() > 0) msg << "\n\n" << warnings.joinIntoString ("\n");
         safe->importTakesFrom (folder, true, msg);   // se vicino al file ci sono take registrate, si propone di importarle
     });
-    dlg->setSize (560, 500);
+    dlg->setSize (560, 536);
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (dlg);
     lo.dialogTitle = TRANS ("Importa cue ADR");

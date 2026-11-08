@@ -1,0 +1,22 @@
+{
+ "it": [
+  [
+   "<li><b>Sostituisci i cue esistenti</b>, <b>Crea anche un marker per ogni cue</b> (come le Memory Location) e <b>Crea una traccia Dialoghi per ogni personaggio</b>",
+   "<li><b>Cosa importare</b>: <b>Solo cue ADR</b>, <b>Cue ADR e marker</b> (un marker per ogni cue, come le Memory Location) oppure <b>Solo marker</b> (nessun cue: il file diventa un elenco di marker con il nome del personaggio e della scena).</li><li><b>Sostituisci i cue esistenti</b> e <b>Crea una traccia Dialoghi per ogni personaggio</b>"
+  ],
+  [
+   "<b>ELIMINA</b>: elimina il cue selezionato.</span>",
+   "<b>ELIMINA</b>: elimina i cue selezionati (anche più di uno, con Cmd/Ctrl o Maiusc + clic); dall'elenco funzionano anche i tasti Canc e Backspace. Si annulla con un solo Annulla.</span>"
+  ]
+ ],
+ "en": [
+  [
+   "<li><b>Replace the existing cues</b>, <b>Also create a marker for each cue</b> (like Memory Locations) and <b>Create a Dialogue track for each character</b>",
+   "<li><b>What to import</b>: <b>ADR cues only</b>, <b>ADR cues and markers</b> (one marker per cue, like Memory Locations) or <b>Markers only</b> (no cues: the file becomes a list of markers named after the character and the scene).</li><li><b>Replace the existing cues</b> and <b>Create a Dialogue track for each character</b>"
+  ],
+  [
+   "<b>DELETE</b>: deletes the selected cue.</span>",
+   "<b>DELETE</b>: deletes the selected cues (several at once too, with Cmd/Ctrl or Shift + click); in the list the Delete and Backspace keys work as well. A single Undo brings them back.</span>"
+  ]
+ ]
+}

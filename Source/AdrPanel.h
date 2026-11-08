@@ -10,7 +10,7 @@ namespace fc
 class AdrImportDialog : public juce::Component
 {
 public:
-    struct Values { int tcFormat; double tcStart; double defaultDuration; bool replace; bool makeMarkers; bool makeTracks; };
+    struct Values { int tcFormat; double tcStart; double defaultDuration; bool replace; bool importCues; bool makeMarkers; bool makeTracks; };
 
     AdrImportDialog (const Project&, const adr::ImportResult&, std::function<void (const Values&)> onAccept);
     void paint (juce::Graphics& g) override { g.fillAll (theme::panel); }
@@ -21,10 +21,10 @@ private:
 
     const Project& project;
     std::function<void (const Values&)> accept;
-    juce::Label info, tcLbl, startLbl, durLbl;
-    juce::ComboBox tcFormat;
+    juce::Label info, whatLbl, tcLbl, startLbl, durLbl;
+    juce::ComboBox what, tcFormat;   // what: 1 solo cue, 2 cue e marker, 3 solo marker
     juce::TextEditor start, duration;
-    juce::ToggleButton replace { TRANS ("Sostituisci i cue esistenti") }, markers { TRANS ("Crea anche un marker per ogni cue (come le Memory Location)") },
+    juce::ToggleButton replace { TRANS ("Sostituisci i cue esistenti") },
                        characterTracks { TRANS ("Crea una traccia Dialoghi per ogni personaggio") };
     juce::TextButton okBtn { TRANS ("Importa") }, cancelBtn { TRANS ("Annulla") };
     adr::ImportResult result;
@@ -89,6 +89,8 @@ private:
     juce::Component* refreshComponentForCell (int row, int columnId, bool isRowSelected, juce::Component* existing) override;
     void selectedRowsChanged (int lastRowSelected) override;
     void cellDoubleClicked (int row, int columnId, const juce::MouseEvent&) override;
+    void deleteKeyPressed (int) override { deleteSelectedCues(); }
+    void deleteSelectedCues();
     void changeListenerCallback (juce::ChangeBroadcaster*) override { refresh(); }
 
     const AdrCue* cueAtRow (int row) const;

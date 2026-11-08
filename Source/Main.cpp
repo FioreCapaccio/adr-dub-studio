@@ -2877,6 +2877,11 @@ private:
         const int m2 = p.mergeCues ({ c1, c3 });
         const auto* k2 = p.findCue (m2);
         expect (k2 != nullptr && k2->character == "Marco / Anna" && k2->outPos == 330000, "unione cue: personaggi diversi riuniti");
+        p.undo();
+        p.removeCues ({ c1, c3 });
+        expect (p.getSession().cues.size() == 1 && p.findCue (c2) != nullptr, "elimina cue: piu' cue selezionati insieme");
+        p.undo();
+        expect (p.getSession().cues.size() == 3, "elimina cue: un solo passo di undo");
     }
 
     // spostando un clip, l'automazione sotto di lui lo segue (anche su un'altra traccia, da tastiera, in Shuffle)
@@ -4970,7 +4975,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.46.0"; }
+    const juce::String getApplicationVersion() override { return "2.47.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
