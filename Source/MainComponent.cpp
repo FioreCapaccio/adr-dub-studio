@@ -4577,13 +4577,17 @@ void MainComponent::layoutStrip()
 {
     auto b = strip.getLocalBounds().reduced (8, 4);
     stripPosBtn.setBounds (b.removeFromRight (26));
+    b.removeFromRight (8);
+    // controlli al centro della barra (senza finire sotto il pulsante a destra)
+    const int x = juce::jlimit (b.getX(), juce::jmax (b.getX(), b.getRight() - stripControlsW), strip.getWidth() / 2 - stripControlsW / 2);
+    b = juce::Rectangle<int> (x, b.getY(), stripControlsW, b.getHeight());
     auto put = [&b] (juce::Component& c, int w, int gap = 4) { c.setBounds (b.removeFromLeft (w)); b.removeFromLeft (gap); };
     put (rewindBtn, 32); put (playBtn, 38); put (stopBtn, 32); put (recBtn, 38, 16);
     tcCaption = b.removeFromLeft (66);
     put (tcEdit, 130, 16);
     markerCaption = b.removeFromLeft (56);
     put (prevMarkBtn, 26); put (markerEdit, 44); put (nextMarkBtn, 26, 8);
-    countBox = b.removeFromLeft (70);
+    countBox = b.removeFromLeft (50);
 }
 
 void MainComponent::paintStrip (juce::Graphics& g)
@@ -4625,7 +4629,8 @@ void MainComponent::setStripPos (int pos)
         });
         removeChildComponent (&strip);
         stripWindow->setContentNonOwned (&strip, false);
-        stripWindow->setResizable (false, false);
+        stripWindow->setResizable (true, false);
+        stripWindow->setResizeLimits (stripContentW, stripH, 4000, stripH);   // si allarga, ma resta alta quanto la barra
         stripWindow->setAlwaysOnTop (true);
         stripWindow->addKeyListener (commandManager.getKeyMappings());
         stripWindow->setContentComponentSize (stripContentW, stripH);
