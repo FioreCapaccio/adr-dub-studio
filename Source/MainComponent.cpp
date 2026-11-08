@@ -319,6 +319,18 @@ MainComponent::MainComponent()
     playBtn.setColour (juce::TextButton::buttonOnColourId, green.darker (0.3f));
 
     rewindBtn.onClick = [this] { engine.setPosition (0); };
+    tcEdit.setFont (mono (24.0f));
+    tcEdit.setJustification (juce::Justification::centred);
+    tcEdit.setInputRestrictions (16, "0123456789:;.,");
+    tcEdit.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff101418));
+    tcEdit.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+    tcEdit.setColour (juce::TextEditor::outlineColourId, accent);
+    tcEdit.setColour (juce::TextEditor::focusedOutlineColourId, accent);
+    tcEdit.onReturnKey = [this] { commitTcEdit(); };
+    tcEdit.onEscapeKey = [this] { tcEdit.setVisible (false); };
+    tcEdit.onFocusLost = [this] { tcEdit.setVisible (false); };
+    tcEdit.setTooltip (TRANS ("Scrivi il timecode (hh:mm:ss:ff, oppure solo le cifre) e premi Invio; Esc annulla"));
+    addChildComponent (tcEdit);
     playBtn.onClick = [this] { toggleTransport(); };
     stopBtn.onClick = [this] { stopAll(); };
     recBtn.onClick = [this] { if (engine.isRecording()) finishRecording(); else startRecording(); };
@@ -576,6 +588,7 @@ void MainComponent::resized()
     put (g1, rewindBtn, 40); put (g1, playBtn, 48); put (g1, stopBtn, 40); put (g1, recBtn, 48, 0);
 
     timeBox = area.removeFromLeft (220);
+    tcEdit.setBounds (timeBox.withTrimmedTop (14).withTrimmedBottom (13).reduced (8, 0));
     area.removeFromLeft (10);
 
     auto g3 = group (56 + 6 + 56 + 6 + 62);
@@ -4449,6 +4462,35 @@ void MainComponent::exportAdrBwf()
         if (errors.size() > 0) msg << "\n\n" << errors.joinIntoString ("\n");
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Esporta take ADR"), msg);
     });
+}
+
+void MainComponent::mouseDown (const juce::MouseEvent& e)
+{
+    if (! timeBox.contains (e.getPosition()) || engine.isRecording()) return;
+    tcEdit.setText (project->formatTc ((double) engine.getPosition() / project->getSampleRate()), false);
+    tcEdit.setVisible (true);
+    tcEdit.grabKeyboardFocus();
+    tcEdit.selectAll();
+}
+
+void MainComponent::commitTcEdit()
+{
+    auto text = tcEdit.getText().trim();
+    if (text.containsOnly ("0123456789") && text.length() <= 8)   // solo cifre: "1000000" -> 01:00:00:00, come nelle DAW
+    {
+        text = text.paddedLeft ('0', 8);
+        text = text.substring (0, 2) + ":" + text.substring (2, 4) + ":" + text.substring (4, 6) + ":" + text.substring (6);
+    }
+    double sec = 0.0;
+    if (! timecodeToSeconds (text, project->tcFmt(), sec))
+    {
+        juce::LookAndFeel::getDefaultLookAndFeel().playAlertSound();
+        tcEdit.selectAll();
+        return;
+    }
+    tcEdit.setVisible (false);
+    engine.setPosition ((int64_t) std::llround (juce::jmax (0.0, sec - project->tcStartSec) * project->getSampleRate()));
+    repaint (timeBox);
 }
 
 } // namespace fc

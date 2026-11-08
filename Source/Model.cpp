@@ -589,12 +589,17 @@ void Project::importFiles (juce::Array<juce::File> files, int trackId, int64_t s
     {
         std::vector<AssetPtr> loaded;
         juce::StringArray errors;
-        for (auto& f : files)
+        const float n = (float) juce::jmax (1, files.size());
+        for (int i = 0; i < files.size(); ++i)
         {
+            const auto& f = files.getReference (i);
+            const auto label = TRANS ("Carico l'audio: ") + f.getFileName() + (files.size() > 1 ? "  (" + juce::String (i + 1) + "/" + juce::String (files.size()) + ")" : juce::String());
+            setTask (label, (float) i / n);
             juce::String err;
-            if (auto a = loadAsset (*fm, f, rate, err)) loaded.push_back (a);
+            if (auto a = loadAsset (*fm, f, rate, err, [&] (float p) { setTask (label, ((float) i + p) / n); })) loaded.push_back (a);
             else errors.add (err);
         }
+        setTask ({}, -1.0f);
 
         return [=, this]
         {

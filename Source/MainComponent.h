@@ -64,6 +64,7 @@ public:
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;   // barra di avanzamento dei caricamenti lunghi
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;   // clic sul timecode: si scrive dove andare
 
     // ApplicationCommandTarget
     ApplicationCommandTarget* getNextCommandTarget() override { return nullptr; }
@@ -174,6 +175,8 @@ private:
 
     static constexpr int toolbarH = 74;
     juce::Rectangle<int> timeBox, statusBox;
+    juce::TextEditor tcEdit;
+    void commitTcEdit();
     std::vector<juce::Rectangle<int>> capsules;
     bool mixerVisible = true, viewerVisible = true;
     int mixerHeight = 420;
