@@ -1,0 +1,14 @@
+{
+ "it": [
+  [
+   "il video staccato si sposta su un altro schermo e si riaggancia con Maiusc + D.",
+   "il video staccato si sposta su un altro schermo, resta sempre in primo piano (come la finestra ADR) e si riaggancia con Maiusc + D."
+  ]
+ ],
+ "en": [
+  [
+   "the detached video can be moved to another screen and re-docked with Shift + D.",
+   "the detached video can be moved to another screen, always stays in front (like the ADR window) and is re-docked with Shift + D."
+  ]
+ ]
+}

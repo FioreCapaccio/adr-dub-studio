@@ -89,6 +89,7 @@ public:
         setUsingNativeTitleBar (true);
         setResizable (true, true);
         setResizeLimits (480, 360, 8000, 6000);
+        setAlwaysOnTop (true);   // staccato, resta davanti come la finestra ADR
     }
 
     void closeButtonPressed() override { if (onClose) onClose(); }
