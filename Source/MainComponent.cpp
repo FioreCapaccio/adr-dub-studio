@@ -4632,12 +4632,15 @@ void MainComponent::setStripPos (int pos)
         stripWindow->setResizable (true, false);
         stripWindow->setAlwaysOnTop (true);
         stripWindow->addKeyListener (commandManager.getKeyMappings());
-        stripWindow->setContentComponentSize (stripContentW, stripH);
-        // i limiti valgono per la finestra intera (titolo e bordi compresi), non per il solo contenuto
-        stripWindow->setResizeLimits (stripWindow->getWidth(), stripWindow->getHeight(), 4000, stripWindow->getHeight());   // si allarga, ma resta alta quanto la barra
         const auto sb = getScreenBounds();
+        stripWindow->setContentComponentSize (stripContentW, stripH);
         stripWindow->setTopLeftPosition (sb.getCentreX() - stripWindow->getWidth() / 2, sb.getBottom() - stripWindow->getHeight() - 80);
         stripWindow->setVisible (true);
+        // i limiti si applicano alla finestra con titolo e bordi di sistema (le misure del componente sono solo il contenuto)
+        const auto frame = stripWindow->getPeer() != nullptr ? stripWindow->getPeer()->getFrameSize() : juce::BorderSize<int>();
+        const int fw = frame.getLeftAndRight(), fh = frame.getTopAndBottom();
+        stripWindow->setResizeLimits (stripContentW + fw, stripH + fh, 4000, stripH + fh);   // si allarga, ma resta alta quanto la barra
+        stripWindow->setContentComponentSize (stripContentW, stripH);
     }
     else if (pos != stripFloating && stripWindow != nullptr)
     {
@@ -4667,6 +4670,17 @@ void MainComponent::snapshotLayouts (const juce::File& dir)
     stripPos = stripFloating;
     strip.setBounds (0, 0, stripContentW, stripH);
     save (strip.createComponentSnapshot (strip.getLocalBounds(), true, 1.0f), dir.getChildFile ("strip_floating.png"));
+    stripPos = saved;
+    layoutAll();
+    // finestra staccata reale: stampa le misure, il contenuto deve avere l'altezza della barra
+    const int savedPersist = settings().getIntValue ("transportPos", 0);
+    setStripPos (stripFloating);
+    if (stripWindow != nullptr)
+        std::cout << "strip-finestra: " << stripWindow->getWidth() << "x" << stripWindow->getHeight()
+                  << " contenuto " << strip.getWidth() << "x" << strip.getHeight() << std::endl;
+    setStripPos (stripBelowMixer);
+    settings().setValue ("transportPos", savedPersist);
+    settings().saveIfNeeded();
     stripPos = saved;
     layoutAll();
 }
