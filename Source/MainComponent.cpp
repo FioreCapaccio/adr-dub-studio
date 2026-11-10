@@ -4630,10 +4630,11 @@ void MainComponent::setStripPos (int pos)
         removeChildComponent (&strip);
         stripWindow->setContentNonOwned (&strip, false);
         stripWindow->setResizable (true, false);
-        stripWindow->setResizeLimits (stripContentW, stripH, 4000, stripH);   // si allarga, ma resta alta quanto la barra
         stripWindow->setAlwaysOnTop (true);
         stripWindow->addKeyListener (commandManager.getKeyMappings());
         stripWindow->setContentComponentSize (stripContentW, stripH);
+        // i limiti valgono per la finestra intera (titolo e bordi compresi), non per il solo contenuto
+        stripWindow->setResizeLimits (stripWindow->getWidth(), stripWindow->getHeight(), 4000, stripWindow->getHeight());   // si allarga, ma resta alta quanto la barra
         const auto sb = getScreenBounds();
         stripWindow->setTopLeftPosition (sb.getCentreX() - stripWindow->getWidth() / 2, sb.getBottom() - stripWindow->getHeight() - 80);
         stripWindow->setVisible (true);
