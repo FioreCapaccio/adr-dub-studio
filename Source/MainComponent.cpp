@@ -4626,7 +4626,7 @@ void MainComponent::setStripPos (int pos)
         stripWindow = std::make_unique<BoothWindow> (TRANS ("Trasporto - ADR Dub Studio"), [safe = juce::Component::SafePointer<MainComponent> (this)]
         {
             juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->setStripPos (stripBelowMixer); });
-        });
+        }, 0);   // senza pulsanti di sistema: si riaggancia dal menu "⋯"
         removeChildComponent (&strip);
         stripWindow->setContentNonOwned (&strip, false);
         stripWindow->setResizable (true, false);

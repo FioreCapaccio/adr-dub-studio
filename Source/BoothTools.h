@@ -76,8 +76,8 @@ private:
 class BoothWindow : public juce::DocumentWindow
 {
 public:
-    BoothWindow (const juce::String& title, std::function<void()> closeCallback)
-        : juce::DocumentWindow (title, theme::bg, juce::DocumentWindow::allButtons), onClose (std::move (closeCallback))
+    BoothWindow (const juce::String& title, std::function<void()> closeCallback, int buttons = juce::DocumentWindow::allButtons)
+        : juce::DocumentWindow (title, theme::bg, buttons), onClose (std::move (closeCallback))
     {
         setUsingNativeTitleBar (true);
         setResizable (true, true);
