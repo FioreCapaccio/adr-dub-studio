@@ -76,10 +76,10 @@ private:
 class BoothWindow : public juce::DocumentWindow
 {
 public:
-    BoothWindow (const juce::String& title, std::function<void()> closeCallback, int buttons = juce::DocumentWindow::allButtons)
+    BoothWindow (const juce::String& title, std::function<void()> closeCallback, int buttons = juce::DocumentWindow::allButtons, bool nativeTitleBar = true)
         : juce::DocumentWindow (title, theme::bg, buttons), onClose (std::move (closeCallback))
     {
-        setUsingNativeTitleBar (true);
+        setUsingNativeTitleBar (nativeTitleBar);
         setResizable (true, true);
     }
     void closeButtonPressed() override { if (onClose) onClose(); }

@@ -4626,7 +4626,7 @@ void MainComponent::setStripPos (int pos)
         stripWindow = std::make_unique<BoothWindow> (TRANS ("Trasporto - ADR Dub Studio"), [safe = juce::Component::SafePointer<MainComponent> (this)]
         {
             juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->setStripPos (stripBelowMixer); });
-        }, 0);   // senza pulsanti di sistema: si riaggancia dal menu "⋯"
+        }, 0, false);   // titolo disegnato dall'app e nessun pulsante (su macOS il verde resterebbe): si riaggancia dal menu "⋯"
         removeChildComponent (&strip);
         stripWindow->setContentNonOwned (&strip, false);
         stripWindow->setResizable (true, false);
@@ -4638,7 +4638,8 @@ void MainComponent::setStripPos (int pos)
         stripWindow->setVisible (true);
         // i limiti si applicano alla finestra con titolo e bordi di sistema (le misure del componente sono solo il contenuto)
         const auto frame = stripWindow->getPeer() != nullptr ? stripWindow->getPeer()->getFrameSize() : juce::BorderSize<int>();
-        const int fw = frame.getLeftAndRight(), fh = frame.getTopAndBottom();
+        const auto inner = stripWindow->getContentComponentBorder();   // titolo/bordi disegnati dall'app (zero con il titolo di sistema)
+        const int fw = frame.getLeftAndRight() + inner.getLeftAndRight(), fh = frame.getTopAndBottom() + inner.getTopAndBottom();
         stripWindow->setResizeLimits (stripContentW + fw, stripH + fh, 4000, stripH + fh);   // si allarga, ma resta alta quanto la barra
         stripWindow->setContentComponentSize (stripContentW, stripH);
     }
@@ -4678,6 +4679,8 @@ void MainComponent::snapshotLayouts (const juce::File& dir)
     if (stripWindow != nullptr)
         std::cout << "strip-finestra: " << stripWindow->getWidth() << "x" << stripWindow->getHeight()
                   << " contenuto " << strip.getWidth() << "x" << strip.getHeight() << std::endl;
+    if (stripWindow != nullptr)
+        save (stripWindow->createComponentSnapshot (stripWindow->getLocalBounds(), true, 1.0f), dir.getChildFile ("strip_window.png"));
     setStripPos (stripBelowMixer);
     settings().setValue ("transportPos", savedPersist);
     settings().saveIfNeeded();
