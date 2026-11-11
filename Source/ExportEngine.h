@@ -17,6 +17,7 @@ struct ExportOptions
     double normTarget = -1.0;         // dBFS (Peak) oppure LUFS (Lufs)
     double ceilingDb = -1.0;          // tetto di true-peak: se la normalizzazione lo supera interviene un limiter
     bool dither = true;               // dither TPDF a 16 bit
+    bool mono = false;                // un solo canale: somma (media) di sinistro e destro
     bool stems = false;               // un file per traccia (senza bus master)
     bool excludeGuide = true;         // le tracce con ruolo Guida (dialogo originale) non entrano in mix e stem
     bool delivery = false;            // pacchetto di consegna: MIX + stem per ruolo (Dialoghi, M&E, Effetti) + rapporto; target = cartella

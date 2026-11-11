@@ -41,6 +41,7 @@ private:
 /** Testo dei cue ADR nel formato dei marker di Pro Tools (rileggibile da adr::parse) e take attivi come BWF con timecode. */
 juce::String adrToProToolsText (const Project&, const juce::String& sessionName);
 int exportAdrTakes (const Project&, const juce::File& folder, juce::StringArray& errors);
+bool convertRecordingRate (const juce::File&, double dstRate, int bits);   // converte un WAV registrato alla frequenza voluta
 
 class ExportJob;
 class VideoExportJob;

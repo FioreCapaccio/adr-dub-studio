@@ -162,6 +162,8 @@ public:
     /** Scrive nello stato salvato l'ingresso preferito (all'avvio nessun ingresso e' aperto). */
     void storePreferredInput (juce::XmlElement& state) const;
     int getNumInputChannels() const noexcept { return numInputs.load(); }
+    std::atomic<int> recBits { 24 };       // profondita' dei file registrati: 16, 24 o 32 (float)
+    std::atomic<int> recRate { 48000 };    // frequenza dei file registrati in Hz (0 = quella della scheda audio)
     std::atomic<int> defaultInput { 0 };   // ingresso delle tracce impostate su "predefinito" (Impostazioni)
     void setNumInputChannelsForTest (int n) { numInputs = n; }
     /** Prepara una registrazione per traccia e poi chiamare play(). Ritorna un messaggio d'errore, o stringa vuota. */

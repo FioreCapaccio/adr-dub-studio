@@ -495,14 +495,14 @@ juce::String AudioEngine::startRecording (const std::vector<TakeSpec>& specs)
         t->latency = latency;
         const auto pick = decodeInput (sp.inputMode, defaultInput.load(), nIn);
         t->srcA = pick.a;
-        t->srcB = pick.b;
-        const int nch = t->srcB >= 0 ? 2 : 1;
+        t->srcB = -1;          // il microfono si registra sempre in mono (di una coppia stereo vale il canale sinistro)
+        const int nch = 1;
 
         sp.file.getParentDirectory().createDirectory();
         sp.file.deleteFile();
         std::unique_ptr<juce::FileOutputStream> os (sp.file.createOutputStream());
         if (os == nullptr) return TRANS ("Impossibile creare ") + sp.file.getFullPathName();
-        std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), rate, (unsigned) nch, 24, {}, 0));
+        std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), rate, (unsigned) nch, recBits.load(), {}, 0));
         if (w == nullptr) return TRANS ("Impossibile creare il file WAV di registrazione.");
         os.release();
         t->writer = std::make_unique<juce::AudioFormatWriter::ThreadedWriter> (w.release(), writerThread, 262144);

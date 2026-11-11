@@ -1,0 +1,22 @@
+{
+ "it": [
+  [
+   "Il pulsante si vede sulle tracce alte almeno 66 pixel.</p><p><b>Buffer audio e plug-in</b>",
+   "Il pulsante si vede sulle tracce alte almeno 66 pixel.</p><p><b>Formato della registrazione</b>: il microfono si registra sempre in <b>mono</b> (di una coppia stereo vale il canale sinistro). In <b>File &gt; Impostazioni &gt; Registrazione ed editing</b> scegli la <b>profondità</b> (16, 24 o 32 bit; di partenza 24) e la <b>frequenza</b> dei file registrati (come la scheda audio, 44,1, 48, 88,2 o 96 kHz; di partenza 48 kHz). Se la frequenza è diversa da quella della scheda, il file viene convertito quando fermi la registrazione. Durante la registrazione la <b>barra spazio</b> la ferma.</p><p><b>Buffer audio e plug-in</b>"
+  ],
+  [
+   "Dither a 16 bit</b></td><td>Un leggero dither contro la distorsione di quantizzazione.</td></tr>",
+   "Dither a 16 bit</b></td><td>Un leggero dither contro la distorsione di quantizzazione.</td></tr><tr><td><b>Esporta in mono</b></td><td>Un solo canale: la media dei canali sinistro e destro (vale anche per gli stem e l'MP3).</td></tr>"
+  ]
+ ],
+ "en": [
+  [
+   "The button is shown on tracks at least 66 pixels tall.</p><p><b>Audio buffer and plug-ins</b>",
+   "The button is shown on tracks at least 66 pixels tall.</p><p><b>Recording format</b>: the microphone is always recorded in <b>mono</b> (for a stereo pair the left channel is used). In <b>File &gt; Settings &gt; Recording and editing</b> choose the <b>bit depth</b> (16, 24 or 32 bit; 24 by default) and the <b>sample rate</b> of the recorded files (same as the interface, 44.1, 48, 88.2 or 96 kHz; 48 kHz by default). If the rate differs from the interface's, the file is converted when you stop recording. While recording, the <b>space bar</b> stops it.</p><p><b>Audio buffer and plug-ins</b>"
+  ],
+  [
+   "Dither at 16 bit</b></td><td>A light dither against quantisation distortion.</td></tr>",
+   "Dither at 16 bit</b></td><td>A light dither against quantisation distortion.</td></tr><tr><td><b>Export in mono</b></td><td>A single channel: the average of the left and right channels (also for stems and MP3).</td></tr>"
+  ]
+ ]
+}

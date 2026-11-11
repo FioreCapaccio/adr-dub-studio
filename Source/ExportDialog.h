@@ -53,7 +53,7 @@ private:
     juce::Label presetLbl, formatLbl, depthLbl, rateLbl, rangeLbl, normLbl, valueLbl, ceilLbl;
     juce::ComboBox preset, format, depth, rate, range, norm;
     juce::TextEditor value, ceiling;
-    juce::ToggleButton dither { TRANS ("Dither a 16 bit") }, stems { TRANS ("Un file per traccia (stem, senza bus master)") },
+    juce::ToggleButton dither { TRANS ("Dither a 16 bit") }, mono { TRANS ("Esporta in mono (somma dei canali sinistro e destro)") }, stems { TRANS ("Un file per traccia (stem, senza bus master)") },
                        excludeGuide { TRANS ("Escludi la traccia Guida (dialogo originale)") },
                        delivery { TRANS ("Pacchetto di consegna: MIX + stem Dialoghi / M&E / Effetti + rapporto") };
     juce::TextButton exportBtn { TRANS ("Esporta...") }, cancelBtn { TRANS ("Annulla") };

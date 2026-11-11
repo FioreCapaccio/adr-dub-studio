@@ -32,7 +32,7 @@ struct OfflinePlugins
 };
 
 std::unique_ptr<juce::AudioFormatWriter> makeWriter (const juce::String& format, const juce::File& file, double rate, int bits,
-                                                     juce::String& error)
+                                                     juce::String& error, int channels = 2)
 {
     file.deleteFile();
     std::unique_ptr<juce::FileOutputStream> out (file.createOutputStream());
@@ -43,7 +43,7 @@ std::unique_ptr<juce::AudioFormatWriter> makeWriter (const juce::String& format,
     else if (format == "flac") { fmt = std::make_unique<juce::FlacAudioFormat>(); bits = juce::jmin (bits, 24); }
     else fmt = std::make_unique<juce::WavAudioFormat>();
 
-    std::unique_ptr<juce::AudioFormatWriter> w (fmt->createWriterFor (out.get(), rate, 2, bits, {}, 0));
+    std::unique_ptr<juce::AudioFormatWriter> w (fmt->createWriterFor (out.get(), rate, (unsigned) channels, bits, {}, 0));
     if (w == nullptr) { error = TRANS ("Formato o profondita' di bit non supportati."); return nullptr; }
     out.release();
     // il writer possiede lo stream, ma non il formato: lo teniamo vivo ricreandolo e' superfluo (nessuno stato condiviso)
@@ -115,7 +115,7 @@ bool convertTemp (const juce::File& temp, double rate, const ExportOptions& o, d
     double outRate = o.outRate > 0.0 ? o.outRate : rate;
     if (mp3) outRate = juce::jmin (outRate, 48000.0);
     const juce::File out16 = mp3 ? juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("arotron_mp3", ".wav") : dest;
-    auto writer = makeWriter (mp3 ? juce::String ("wav") : o.format, out16, outRate, mp3 ? 16 : o.bitDepth, error);
+    auto writer = makeWriter (mp3 ? juce::String ("wav") : o.format, out16, outRate, mp3 ? 16 : o.bitDepth, error, o.mono ? 1 : 2);
     if (writer == nullptr) return false;
 
     const int64_t inTotal = reader->lengthInSamples;
@@ -149,8 +149,14 @@ bool convertTemp (const juce::File& temp, double rate, const ExportOptions& o, d
         if (dropOut > 0) { from = (int) juce::jmin<int64_t> (dropOut, n); dropOut -= from; }
         const int cnt = (int) juce::jmin<int64_t> (n - from, outTotal - written);
         if (cnt <= 0) return;
+        if (o.mono)   // media dei due canali: non supera mai il picco piu' alto dei due
+        {
+            float* l = b.getWritePointer (0);
+            const float* r = b.getReadPointer (1);
+            for (int i = from; i < from + cnt; ++i) l[i] = 0.5f * (l[i] + r[i]);
+        }
         if (dither)
-            for (int c = 0; c < 2; ++c)
+            for (int c = 0; c < (o.mono ? 1 : 2); ++c)
             {
                 float* d = b.getWritePointer (c) + from;
                 for (int i = 0; i < cnt; ++i) d[i] += (rng.nextFloat() - rng.nextFloat()) * lsb;

@@ -422,6 +422,14 @@ private:
             measureFileLufs (formats, f, &pk);
             expect (r.ok && std::abs (pk + 1.0f) < 0.05f, "export: normalizzazione del picco a -1 dBFS (file " + juce::String (pk, 2) + ")");
         }
+        // 2b. esportazione mono: un canale solo
+        {
+            fc::ExportOptions o; o.mono = true; o.bitDepth = 24;
+            auto f = tmpDir.getChildFile ("mono.wav");
+            auto r = go (o, f);
+            std::unique_ptr<juce::AudioFormatReader> rd (formats.createReaderFor (f));
+            expect (r.ok && rd != nullptr && rd->numChannels == 1 && rd->lengthInSamples > 0, "export: con \"mono\" il file ha un solo canale");
+        }
         // 3. limiter true-peak: obiettivo altissimo, tetto -1 dB
         {
             fc::ExportOptions o; o.norm = fc::ExportOptions::Norm::Lufs; o.normTarget = -0.5; o.ceilingDb = -1.0; o.bitDepth = 24;
@@ -2900,6 +2908,7 @@ private:
         fc::AudioEngine eng;
         eng.setNumInputChannelsForTest (4);
         eng.defaultInput = fc::stereoInput (2);
+        eng.recBits = 16;
         eng.publish (std::make_shared<const fc::Session> (p.getSession()));
         const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory);
         const auto fa = dir.getChildFile ("selftest_in3.wav"), fb = dir.getChildFile ("selftest_in34.wav");
@@ -2925,8 +2934,9 @@ private:
         };
         std::unique_ptr<juce::AudioFormatReader> ra (formats.createReaderFor (fa)), rb (formats.createReaderFor (fb));
         expect (ra != nullptr && ra->numChannels == 1 && std::abs (mid (fa, 0) - 0.3f) < 0.01f, "ingressi: la traccia su IN 3 registra il terzo microfono (" + juce::String (mid (fa, 0), 3) + ")");
-        expect (rb != nullptr && rb->numChannels == 2 && std::abs (mid (fb, 0) - 0.3f) < 0.01f && std::abs (mid (fb, 1) - 0.4f) < 0.01f,
-                "ingressi: la traccia su \"predefinito\" registra l'ingresso delle Impostazioni (IN 3+4)");
+        expect (rb != nullptr && rb->numChannels == 1 && std::abs (mid (fb, 0) - 0.3f) < 0.01f,
+                "ingressi: anche una coppia stereo (IN 3+4) si registra sempre in mono (canale sinistro)");
+        expect (ra != nullptr && rb != nullptr && ra->bitsPerSample == 16 && rb->bitsPerSample == 16, "registrazione: profondita' scelta nelle Impostazioni (16 bit)");
         ra.reset(); rb.reset();
         fa.deleteFile(); fb.deleteFile();
     }
@@ -4720,8 +4730,26 @@ private:
             pl = b.getMagnitude (0, 0, b.getNumSamples());
             pr = rd->numChannels > 1 ? b.getMagnitude (1, 0, b.getNumSamples()) : 0.0f;
         }
-        expect (rd != nullptr && rd->numChannels == 2 && rd->bitsPerSample == 24 && std::abs (pl - 0.5f) < 0.01f && std::abs (pr - 0.25f) < 0.01f,
-                "WAV registrato stereo 24 bit, picchi " + juce::String (pl, 3) + " / " + juce::String (pr, 3));
+        expect (rd != nullptr && rd->numChannels == 1 && rd->bitsPerSample == 24 && std::abs (pl - 0.5f) < 0.01f,
+                "WAV registrato mono 24 bit, picco " + juce::String (pl, 3));
+        rd.reset();
+        {   // conversione di frequenza a fine registrazione: 48 kHz -> 44,1 kHz
+            const auto copy = recFile.getSiblingFile ("selftest_rec44.wav");
+            recFile.copyFileTo (copy);
+            expect (fc::convertRecordingRate (copy, 44100.0, 24), "registrazione: conversione a 44,1 kHz riuscita");
+            std::unique_ptr<juce::AudioFormatReader> r44 (formats.createReaderFor (copy));
+            float pk = 0.0f;
+            if (r44 != nullptr)
+            {
+                juce::AudioBuffer<float> b ((int) r44->numChannels, (int) r44->lengthInSamples);
+                r44->read (&b, 0, b.getNumSamples(), 0, true, true);
+                pk = b.getMagnitude (0, 1000, b.getNumSamples() - 2000);
+            }
+            expect (r44 != nullptr && std::abs (r44->sampleRate - 44100.0) < 0.5 && std::abs ((double) r44->lengthInSamples - 88200.0) < 3.0 && std::abs (pk - 0.5f) < 0.02f,
+                    "registrazione: file a 44,1 kHz, " + juce::String (r44 != nullptr ? (juce::int64) r44->lengthInSamples : 0) + " campioni, picco " + juce::String (pk, 3));
+            r44.reset();
+            copy.deleteFile();
+        }
 
         std::vector<fc::Project::RecItem> items;
         for (auto& r : results) items.push_back ({ r.trackId, r.file, r.startPos, 480 });   // latenza simulata: 480 campioni
@@ -4975,7 +5003,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.55.0"; }
+    const juce::String getApplicationVersion() override { return "2.56.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

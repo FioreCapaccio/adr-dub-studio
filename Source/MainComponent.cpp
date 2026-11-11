@@ -309,6 +309,8 @@ MainComponent::MainComponent()
     project->takeFadeInMs = settings().getIntValue ("takeFadeInMs", 0);
     project->takeFadeOutMs = settings().getIntValue ("takeFadeOutMs", 0);
     engine.defaultInput = settings().getIntValue ("defaultInput", 0);
+    engine.recBits = juce::jlimit (16, 32, settings().getIntValue ("recBits", 24));
+    engine.recRate = settings().getIntValue ("recRate", 48000);
     {
         const auto saved = settings().getValue ("layout", "standard");
         for (int i = 0; i < (int) std::size (kLayouts); ++i) if (saved == kLayouts[i].id) { applyLayout (i, false); break; }
@@ -766,6 +768,8 @@ void MainComponent::timerCallback()
         refreshTransportFields (false);
     }
     const bool playing = engine.isPlaying();
+    // mentre scorre il tempo la barra spazio deve fermare: i campi di testo della barra non devono tenere il focus
+    if ((playing || engine.isRecording()) && (tcEdit.hasKeyboardFocus (false) || markerEdit.hasKeyboardFocus (false))) grabKeyboardFocus();
 
     viewer.sync ((double) (pos - (playing ? engine.getPdcLatency() : 0)) / project->getSampleRate(), playing);   // il video segue cio' che si sente
     if (playing || wasPlayingForAdr) updateAdrViewer();   // il testo del dialogo segue la testina (e da fermo torna al cue selezionato)
@@ -923,6 +927,54 @@ void MainComponent::startRecording()
     repaint();
 }
 
+/** Converte un WAV registrato alla frequenza voluta (a fine registrazione, fuori dal thread audio). Sostituisce il file; false se non riesce (resta l'originale). */
+bool convertRecordingRate (const juce::File& f, double dstRate, int bits)
+{
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatReader> rd (wav.createReaderFor (f.createInputStream().release(), true));
+    if (rd == nullptr || dstRate <= 0.0 || std::abs (rd->sampleRate - dstRate) < 0.5) return rd != nullptr;
+    const int nch = (int) juce::jmin (2u, rd->numChannels);
+    const double ratio = rd->sampleRate / dstRate;
+    const int64_t inTotal = rd->lengthInSamples, outTotal = (int64_t) std::llround ((double) inTotal / ratio);
+    const auto tmp = f.getSiblingFile (f.getFileNameWithoutExtension() + "_conv.wav");
+    tmp.deleteFile();
+    std::unique_ptr<juce::FileOutputStream> os (tmp.createOutputStream());
+    if (os == nullptr) return false;
+    std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), dstRate, (unsigned) nch, bits, {}, 0));
+    if (w == nullptr) { tmp.deleteFile(); return false; }
+    os.release();
+
+    juce::WindowedSincInterpolator interp[2];
+    const int numOut = 2048;
+    const size_t needIn = (size_t) std::ceil ((double) numOut * ratio) + 8;
+    int64_t dropOut = (int64_t) std::llround (interp[0].getBaseLatency() / ratio), readPos = 0, written = 0;
+    std::vector<float> pending[2];
+    juce::AudioBuffer<float> in (2, 4096), out (2, numOut);
+    while (written < outTotal)
+    {
+        while (pending[0].size() < needIn)
+        {
+            const int cnt = (int) juce::jmax<int64_t> (0, juce::jmin<int64_t> (4096, inTotal - readPos));
+            in.clear();
+            if (cnt > 0) rd->read (&in, 0, cnt, readPos, true, nch > 1);
+            readPos += cnt;
+            for (int c = 0; c < nch; ++c)
+                pending[c].insert (pending[c].end(), in.getReadPointer (c), in.getReadPointer (c) + (cnt > 0 ? cnt : 4096));   // oltre la fine: silenzio
+        }
+        int used = 0;
+        for (int c = 0; c < nch; ++c) used = interp[c].process (ratio, pending[c].data(), out.getWritePointer (c), numOut);
+        for (int c = 0; c < nch; ++c) pending[c].erase (pending[c].begin(), pending[c].begin() + juce::jmin ((size_t) used, pending[c].size()));
+        const int from = (int) juce::jmin<int64_t> (dropOut, numOut);
+        dropOut -= from;
+        const int cnt = (int) juce::jmin<int64_t> (numOut - from, outTotal - written);
+        if (cnt > 0) { w->writeFromAudioSampleBuffer (out, from, cnt); written += cnt; }
+    }
+    w.reset();
+    rd.reset();
+    f.deleteFile();
+    return tmp.moveFileTo (f);
+}
+
 void MainComponent::finishRecording()
 {
     engine.stop();
@@ -936,6 +988,11 @@ void MainComponent::finishRecording()
     updateAdrViewer();
     repaint();
     if (results.empty()) return;
+
+    if (const int target = engine.recRate.load(); target > 0)   // frequenza di registrazione scelta nelle Impostazioni
+        for (auto& r : results)
+            if (! convertRecordingRate (r.file, (double) target, engine.recBits.load()))
+                showError (TRANS ("Non sono riuscito a convertire la registrazione alla frequenza scelta: resta alla frequenza della scheda audio."));
 
     juce::String takeName;
     if (const auto* cue = project->findCue (cueId))
@@ -1463,7 +1520,7 @@ void MainComponent::exportDialog()
     const auto selLabel = hasSel ? project->formatTc ((double) project->exportIn / rate) + " - " + project->formatTc ((double) project->exportOut / rate) : juce::String();
     auto* dlg = new ExportDialog (hasLoop, engine.getLoopStart(), engine.getLoopEnd(), hasSel, project->exportIn, project->exportOut, selLabel,
                                   [safe] (const ExportOptions& o) { if (safe != nullptr) safe->runExport (o); });
-    dlg->setSize (520, 620);
+    dlg->setSize (520, 646);
 
     juce::DialogWindow::LaunchOptions lo;
     lo.content.setOwned (dlg);
@@ -3116,7 +3173,12 @@ public:
                     mc.timeline->repaint();   // le tracce su "predefinito" mostrano il nuovo ingresso
                 }), TRANS ("Ingresso predefinito"), names, modes);
                 in->setTooltip (TRANS ("Le tracce impostate su \"Predefinito\" registrano da qui. Ogni traccia puo' scegliere il suo ingresso con il pulsante IN nell'intestazione."));
-                pp->addSection (TRANS ("Ingresso di registrazione"), { in });
+                auto* bitsC = new juce::ChoicePropertyComponent (bind (mc.engine.recBits.load(), [this, save] (const juce::var& v) { mc.engine.recBits = (int) v; save ("recBits", v); }),
+                                                                 TRANS ("Profondita' dei file registrati"), juce::StringArray { "16 bit", "24 bit", "32 bit (float)" }, juce::Array<juce::var> { 16, 24, 32 });
+                auto* rateC = new juce::ChoicePropertyComponent (bind (mc.engine.recRate.load(), [this, save] (const juce::var& v) { mc.engine.recRate = (int) v; save ("recRate", v); }),
+                                                                 TRANS ("Frequenza dei file registrati"), juce::StringArray { TRANS ("Come la scheda audio"), "44,1 kHz", "48 kHz", "88,2 kHz", "96 kHz" }, juce::Array<juce::var> { 0, 44100, 48000, 88200, 96000 });
+                rateC->setTooltip (TRANS ("Il microfono si registra sempre in mono. Se scegli una frequenza diversa da quella della scheda audio, il file viene convertito a fine registrazione."));
+                pp->addSection (TRANS ("Ingresso di registrazione"), { in, bitsC, rateC });
             }
             pp->addSection (TRANS ("Dissolvenze delle take registrate o importate (0 = come le automatiche)"), { fi, fo });
             auto* af = new juce::SliderPropertyComponent (bind (p.autoFadeMs, [this, save] (const juce::var& v) { mc.project->autoFadeMs = (int) v; save ("autoFadeMs", v); }), TRANS ("Dissolvenze automatiche (ms, 0 = spente)"), 0.0, 100.0, 1.0);

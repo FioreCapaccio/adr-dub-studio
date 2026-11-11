@@ -118,6 +118,7 @@ ExportDialog::ExportDialog (bool loop, int64_t loopStart, int64_t loopEnd, bool 
         addAndMakeVisible (*t);
     }
     addAndMakeVisible (dither);
+    addAndMakeVisible (mono);
     addAndMakeVisible (stems);
     addAndMakeVisible (excludeGuide);
     addAndMakeVisible (delivery);
@@ -135,6 +136,7 @@ ExportDialog::ExportDialog (bool loop, int64_t loopStart, int64_t loopEnd, bool 
     value.onTextChange = [this] { if (! applying) markCustom(); updateEnabled(); };
     ceiling.onTextChange = [this] { if (! applying) markCustom(); };
     dither.onClick = [this] { if (! applying) markCustom(); };
+    mono.onClick = [this] { if (! applying) markCustom(); };
     stems.onClick = [this] { if (stems.getToggleState()) delivery.setToggleState (false, juce::dontSendNotification); if (! applying) markCustom(); updateEnabled(); };
     delivery.onClick = [this] { if (delivery.getToggleState()) stems.setToggleState (false, juce::dontSendNotification); if (! applying) markCustom(); updateEnabled(); };
     excludeGuide.onClick = [this] { if (! applying) markCustom(); };
@@ -221,6 +223,7 @@ ExportOptions ExportDialog::collect() const
     if (o.norm == ExportOptions::Norm::Lufs) o.normTarget = juce::jlimit (-40.0, 0.0, o.normTarget);
     o.ceilingDb = juce::jlimit (-12.0, -0.1, o.ceilingDb);
     o.dither = dither.getToggleState();
+    o.mono = mono.getToggleState();
     o.stems = stems.getToggleState();
     o.delivery = delivery.getToggleState();
     o.excludeGuide = excludeGuide.getToggleState();
@@ -239,6 +242,7 @@ void ExportDialog::save() const
     s.setValue ("export.value", value.getText());
     s.setValue ("export.ceiling", ceiling.getText());
     s.setValue ("export.dither", dither.getToggleState());
+    s.setValue ("export.mono", mono.getToggleState());
     s.setValue ("export.stems", stems.getToggleState());
     s.setValue ("export.delivery", delivery.getToggleState());
     s.setValue ("export.excludeGuide", excludeGuide.getToggleState());
@@ -266,6 +270,7 @@ void ExportDialog::load()
     ceiling.setText (s.getValue ("export.ceiling", "-1.0"), juce::dontSendNotification);
     dither.setToggleState (s.getBoolValue ("export.dither", true), juce::dontSendNotification);
     stems.setToggleState (s.getBoolValue ("export.stems", false), juce::dontSendNotification);
+    mono.setToggleState (s.getBoolValue ("export.mono", false), juce::dontSendNotification);
     delivery.setToggleState (s.getBoolValue ("export.delivery", false), juce::dontSendNotification);
     excludeGuide.setToggleState (s.getBoolValue ("export.excludeGuide", true), juce::dontSendNotification);
     range.setSelectedId (hasSelRegion ? 3 : 1, juce::dontSendNotification);
@@ -303,6 +308,7 @@ void ExportDialog::resized()
     row (valueLbl, value);
     row (ceilLbl, ceiling);
     dither.setBounds (r.removeFromTop (24));
+    mono.setBounds (r.removeFromTop (24));
     stems.setBounds (r.removeFromTop (24));
     delivery.setBounds (r.removeFromTop (24));
     excludeGuide.setBounds (r.removeFromTop (24));
