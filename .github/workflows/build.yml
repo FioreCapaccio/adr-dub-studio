@@ -2,9 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
+    tags: ['v*']   # solo i rilasci: ogni build costa minuti di Actions (macOS x10, Windows x2)
   workflow_dispatch:
 
 permissions:
