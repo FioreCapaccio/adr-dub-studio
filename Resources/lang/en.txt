@@ -1572,3 +1572,12 @@ language: English
 "Non sono riuscito a convertire la registrazione alla frequenza scelta: resta alla frequenza della scheda audio." = "I could not convert the recording to the chosen rate: it stays at the audio interface's rate."
 
 "La frequenza della scheda audio e' cambiata durante il caricamento: riapri la sessione." = "The audio device sample rate changed while loading: reopen the session."
+
+"Salvo tutto nella cartella" = "Saving everything to the folder"
+"File non trovato (non copiato): " = "File not found (not copied): "
+"Vuoi salvare tutto in una cartella?\n\nLa cartella \"" = "Do you want to save everything in a folder?\n\nThe folder \""
+"\" conterra' il file della sessione (con i cue) e, in \"Media\", il video e tutte le take: si puo' spostare o copiare intera." = "\" will contain the session file (with the cues) and, in \"Media\", the video and all the takes: it can be moved or copied as a whole."
+"Salva in una cartella" = "Save in a folder"
+"Solo il file" = "File only"
+"Tutto salvato nella cartella:\n" = "Everything saved in the folder:\n"
+"Sessione salvata" = "Session saved"

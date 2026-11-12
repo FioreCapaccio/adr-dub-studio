@@ -1847,6 +1847,58 @@ void Project::exportPackage (const juce::File& zip, const std::vector<int>& only
     });
 }
 
+void Project::saveToFolder (const juce::File& folder, std::function<void (juce::String)> done)
+{
+    auto root = toVar();
+    const auto sessionName = folder.getFileName();
+    runAsync ([=, this]() mutable -> std::function<void()>
+    {
+        std::set<juce::String> files;
+        collectFiles (root, files);
+        folder.createDirectory();
+        const auto media = folder.getChildFile ("Media");
+        media.createDirectory();
+        std::map<juce::String, juce::String> rel;       // percorso originale -> percorso relativo scritto nella sessione
+        std::map<juce::String, juce::File> moved;       // percorso originale -> nuovo file
+        juce::String err;
+        int k = 0;
+        for (auto& path : files)
+        {
+            setTask (TRANS ("Salvo tutto nella cartella"), (float) k++ / (float) juce::jmax<size_t> (1, files.size()) * 0.95f);
+            const juce::File src (path);
+            if (! src.existsAsFile()) { err += (err.isEmpty() ? "" : "\n") + juce::String (TRANS ("File non trovato (non copiato): ")) + path; continue; }
+            juce::File dest = src;
+            if (! src.isAChildOf (media))
+            {
+                dest = media.getChildFile (juce::String (k).paddedLeft ('0', 3) + "_" + juce::File::createLegalFileName (src.getFileName()));
+                if (! src.copyFileTo (dest)) { err += (err.isEmpty() ? "" : "\n") + juce::String (TRANS ("Impossibile copiare ")) + path; continue; }
+            }
+            rel[path] = dest.getRelativePathFrom (folder).replaceCharacter ('\\', '/');
+            moved[path] = dest;
+        }
+        relocateFiles (root, rel);
+        const auto adb = folder.getChildFile (sessionName + ".adb");
+        if (! adb.replaceWithText (juce::JSON::toString (root, false))) err += (err.isEmpty() ? "" : "\n") + juce::String (TRANS ("Impossibile scrivere ")) + adb.getFullPathName();
+        setTask ({}, -1.0f);
+        return [=, this]
+        {
+            auto remap = [&] (juce::File& f) { if (auto it = moved.find (f.getFullPathName()); it != moved.end()) f = it->second; };
+            auto remapClips = [&] (std::vector<Clip>& list) { for (auto& c : list) if (c.asset != nullptr) remap (c.asset->file); };
+            for (auto& t : session.tracks)
+            {
+                remapClips (t.clips);
+                for (auto& v : t.versions) remapClips (v.clips);
+                if (t.frozen != nullptr) remap (t.frozen->file);
+            }
+            if (session.video != nullptr) remap (session.video->file);
+            sessionFile = adb;
+            dirty = err.isNotEmpty();
+            sendChangeMessage();
+            if (done) done (err);
+        };
+    });
+}
+
 void Project::appendTracksFrom (const Project& other)
 {
     if (other.session.tracks.empty()) return;
@@ -3927,7 +3979,9 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                             if (it == cache.end())
                             {
                                 juce::String err;
-                                auto a = loadAsset (*fm, resolvePath (path), rate, err);
+                                const auto label = TRANS ("Apro la sessione: ") + resolvePath (path).getFileName();
+                                setTask (label, 0.02f);
+                                auto a = loadAsset (*fm, resolvePath (path), rate, err, [this, label] (float pr) { setTask (label, 0.02f + 0.95f * pr); });
                                 if (a == nullptr)
                                 {
                                     // file mancante: il clip resta, senza audio, e si potra' ricollegare
@@ -4083,11 +4137,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     va->width = info.width;
                     va->height = info.height;
                     va->thumbInterval = juce::jmax (1.0, std::ceil (info.duration / 240.0));
-                    setTask (TRANS ("Carico il video: miniature"), 0.02f);
-                    va->thumbs = video::thumbnails (vf, va->thumbInterval, (int) std::ceil (info.duration / va->thumbInterval), 56,
-                                                    [this] (float p) { setTask (TRANS ("Carico il video: miniature"), 0.02f + 0.9f * p); });
-                    setTask ({}, -1.0f);
-                    va->offsetSec = (double) parsed.getProperty ("videoOffset", 0.0);
+                    va->offsetSec = (double) parsed.getProperty ("videoOffset", 0.0);   // le miniature arrivano dopo l'apertura (su un film lungo servono decine di secondi)
                     result->video = va;
                 }
                 else
@@ -4099,6 +4149,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
             }
         }
 
+        setTask ({}, -1.0f);
         return [=, this]
         {
             if (ok && std::abs (rate - sampleRate) < 0.5)
@@ -4164,6 +4215,15 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 quietUntil = juce::Time::getMillisecondCounterHiRes() + 6000.0;
                 if (onSessionLoaded) onSessionLoaded();
                 dirty = false;
+                if (auto va = session.video; va != nullptr && va->thumbs.empty())
+                    runAsync ([this, va]() -> std::function<void()>
+                    {
+                        setTask (TRANS ("Carico il video: miniature"), 0.02f);
+                        auto thumbs = std::make_shared<std::vector<juce::Image>> (video::thumbnails (va->file, va->thumbInterval, (int) std::ceil (va->duration / va->thumbInterval), 56,
+                                                                                                    [this] (float p) { setTask (TRANS ("Carico il video: miniature"), 0.02f + 0.9f * p); }));
+                        setTask ({}, -1.0f);
+                        return [va, thumbs] { va->thumbs = std::move (*thumbs); };
+                    });
             }
             else if (ok)
             {

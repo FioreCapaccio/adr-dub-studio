@@ -119,7 +119,7 @@ private:
     }
 
     std::function<void (int)> finishCb;
-    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject, dopProject, packProject, unpacked, other, probeProject;
+    std::unique_ptr<fc::Project> takesProject, realProject, joinProject, freezeProject, dopProject, packProject, unpacked, other, probeProject, folderCopy;
     juce::AudioBuffer<float> before;
     int dupsDummy = 0;
 
@@ -1579,8 +1579,10 @@ private:
         const char* env = std::getenv ("ADR_TEST_SESSION");
         if (env == nullptr) { next(); return; }
         probeProject = std::make_unique<fc::Project> (formats, 48000.0);
-        probeProject->loadSession (juce::File (env), [this, next] (juce::String errs)
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        probeProject->loadSession (juce::File (env), [this, next, t0] (juce::String errs)
         {
+            std::cout << "     apertura sessione: " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, 1) << " s" << std::endl;
             const auto& s = probeProject->getSession();
             int clips = 0;
             for (auto& t : s.tracks) clips += (int) t.clips.size();
@@ -4836,11 +4838,33 @@ private:
             auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_video.adb");
             juce::String err;
             expect (project->save (tmp, err), "salva sessione con video");
+            {
+                // salva tutto in una cartella: la cartella copiata altrove si riapre con video e clip (percorsi relativi)
+                const auto base = juce::File::getSpecialLocation (juce::File::tempDirectory);
+                const auto fa = base.getChildFile ("selftest_cartella"), fb = base.getChildFile ("selftest_cartella_copia");
+                fa.deleteRecursively(); fb.deleteRecursively();
+                const int nClips = (int) project->getSession().tracks.front().clips.size();
+                project->saveToFolder (fa, [this, fa, fb, nClips] (juce::String e)
+                {
+                    const auto txt = fa.getChildFile ("selftest_cartella.adb").loadFileAsString();
+                    expect (e.isEmpty() && txt.contains ("\"video\": \"Media/") && ! txt.contains (fa.getFullPathName()), "salva in cartella: sessione con percorsi relativi " + e);
+                    expect (fa.copyDirectoryTo (fb), "salva in cartella: cartella copiata");
+                    folderCopy = std::make_unique<fc::Project> (formats, 48000.0);
+                    folderCopy->loadSession (fb.getChildFile ("selftest_cartella.adb"), [this, fb, nClips] (juce::String e2)
+                    {
+                        const auto& s = folderCopy->getSession();
+                        expect (e2.isEmpty() && s.video != nullptr && s.video->file.isAChildOf (fb) && ! s.tracks.empty() && (int) s.tracks.front().clips.size() == nClips
+                                    && s.tracks.front().clips[0].asset != nullptr && ! s.tracks.front().clips[0].asset->offline && s.tracks.front().clips[0].asset->file.isAChildOf (fb),
+                                "salva in cartella: la cartella copiata si riapre con video e audio " + e2);
+                    });
+                });
+            }
             project2 = std::make_unique<fc::Project> (formats, 48000.0);
             project2->loadSession (tmp, [this] (juce::String e)
             {
-                expect (e.isEmpty() && project2->getSession().video != nullptr && project2->getSession().video->thumbs.size() == 20,
-                        "ricarica sessione con video " + e);
+                expect (e.isEmpty() && project2->getSession().video != nullptr, "ricarica sessione con video " + e);
+                // le miniature arrivano dopo l'apertura (in background)
+                juce::Timer::callAfterDelay (15000, [this] { expect (project2 != nullptr && project2->getSession().video != nullptr && project2->getSession().video->thumbs.size() == 20, "ricarica sessione con video: miniature caricate in background"); });
 
                 // esportazione video con il mix
                 auto wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_vmix.wav");
@@ -5003,7 +5027,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.56.1"; }
+    const juce::String getApplicationVersion() override { return "2.57.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -5164,7 +5188,7 @@ public:
         window = std::make_unique<MainWindow> (getApplicationName());
         window->main().importFromCommandLine (juce::StringArray::fromTokens (commandLine, true));
         if (const auto dumpPath = juce::SystemStats::getEnvironmentVariable ("ADR_UIDUMP", {}); dumpPath.isNotEmpty())   // elenco dei testi visibili (controllo traduzioni)
-            juce::Timer::callAfterDelay (7000, [this, dumpPath] { if (window != nullptr) window->main().dumpUiTexts (juce::File (dumpPath)); quit(); });
+            juce::Timer::callAfterDelay (juce::jmax (7000, juce::SystemStats::getEnvironmentVariable ("ADR_UIDUMP_MS", "7000").getIntValue()), [this, dumpPath] { if (window != nullptr) window->main().dumpUiTexts (juce::File (dumpPath)); quit(); });
     }
 
     void shutdown() override

@@ -649,6 +649,8 @@ public:
     void setTracksLanes (const std::vector<int>& ids, bool on);
     // Clip Package / Track Archive: la sessione (o le tracce scelte) con tutti i file audio e il video in un solo .zip, con percorsi relativi
     void exportPackage (const juce::File& zip, const std::vector<int>& onlyTrackIds, std::function<void (juce::String)> done);
+    /** Salva la sessione in una cartella con tutto dentro: <cartella>/<nome>.adb (percorsi relativi) e <cartella>/Media con video e take. */
+    void saveToFolder (const juce::File& folder, std::function<void (juce::String)> done);
     /** Importa un archivio di tracce: i file vanno in 'extractTo' e le tracce si aggiungono alla sessione (clip con id nuovi, fuori dai gruppi). */
     void importTrackArchive (const juce::File& zip, const juce::File& extractTo, std::function<void (juce::String)> done);
     void appendTracksFrom (const Project& other);

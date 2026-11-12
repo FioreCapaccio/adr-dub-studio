@@ -1651,9 +1651,32 @@ void MainComponent::saveAs()
     {
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
-        juce::String err;
-        if (! safe->project->save (f.withFileExtension ("adb"), err)) safe->showError (err);
-        else { safe->addRecent (f.withFileExtension ("adb")); safe->offerCollectRecordings(); }
+        // dove salvare: solo il file della sessione, oppure una cartella con tutto dentro (sessione con i cue, video e take)
+        auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, TRANS ("Salva sessione"),
+                                                                     TRANS ("Vuoi salvare tutto in una cartella?\n\nLa cartella \"") + f.getFileNameWithoutExtension() + TRANS ("\" conterra' il file della sessione (con i cue) e, in \"Media\", il video e tutte le take: si puo' spostare o copiare intera."),
+                                                                     TRANS ("Salva in una cartella"), TRANS ("Solo il file"), TRANS ("Annulla"));
+        juce::NativeMessageBox::showAsync (opts, [safe, f] (int r)   // 0 = cartella, 1 = solo il file, 2 = annulla
+        {
+            if (safe == nullptr || r == 2) return;
+            if (r == 0)
+            {
+                const auto folder = f.getParentDirectory().getChildFile (f.getFileNameWithoutExtension());
+                safe->project->saveToFolder (folder, [safe, folder] (juce::String err)
+                {
+                    if (safe == nullptr) return;
+                    if (err.isNotEmpty()) safe->showError (err);
+                    else
+                    {
+                        safe->addRecent (folder.getChildFile (folder.getFileName() + ".adb"));
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Sessione salvata"), TRANS ("Tutto salvato nella cartella:\n") + folder.getFullPathName());
+                    }
+                });
+                return;
+            }
+            juce::String err;
+            if (! safe->project->save (f.withFileExtension ("adb"), err)) safe->showError (err);
+            else { safe->addRecent (f.withFileExtension ("adb")); safe->offerCollectRecordings(); }
+        });
     });
 }
 
