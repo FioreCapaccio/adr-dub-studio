@@ -1570,3 +1570,5 @@ language: English
 "Come la scheda audio" = "Same as the audio interface"
 "Il microfono si registra sempre in mono. Se scegli una frequenza diversa da quella della scheda audio, il file viene convertito a fine registrazione." = "The microphone is always recorded in mono. If you choose a rate different from the audio interface's, the file is converted when the recording ends."
 "Non sono riuscito a convertire la registrazione alla frequenza scelta: resta alla frequenza della scheda audio." = "I could not convert the recording to the chosen rate: it stays at the audio interface's rate."
+
+"La frequenza della scheda audio e' cambiata durante il caricamento: riapri la sessione." = "The audio device sample rate changed while loading: reopen the session."

@@ -3822,7 +3822,7 @@ void Project::newSession (bool withDefaultTrack)
     sendChangeMessage();
 }
 
-void Project::loadSession (const juce::File& f, std::function<void (juce::String)> done)
+void Project::loadSession (const juce::File& f, std::function<void (juce::String)> done, int retries)
 {
     const double rate = sampleRate;
     auto* fm = &formats;
@@ -4164,6 +4164,13 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 quietUntil = juce::Time::getMillisecondCounterHiRes() + 6000.0;
                 if (onSessionLoaded) onSessionLoaded();
                 dirty = false;
+            }
+            else if (ok)
+            {
+                // la frequenza del progetto e' cambiata durante il caricamento (la scheda audio si assesta all'avvio): si ricarica con quella nuova
+                if (retries < 3) { loadSession (f, done, retries + 1); return; }
+                if (done) done (errors + (errors.isEmpty() ? juce::String() : juce::String ("\n")) + TRANS ("La frequenza della scheda audio e' cambiata durante il caricamento: riapri la sessione."));
+                return;
             }
             if (done) done (errors);
         };

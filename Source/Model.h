@@ -895,7 +895,7 @@ public:
     bool saveCopy (const juce::File& f, juce::String& error) const;
     void setFile (const juce::File& f) { sessionFile = f; sendChangeMessage(); }
     void markDirty() { dirty = true; sendChangeMessage(); }
-    void loadSession (const juce::File& f, std::function<void (juce::String)> done);
+    void loadSession (const juce::File& f, std::function<void (juce::String)> done, int retries = 0);
     void newSession (bool withDefaultTrack = true);
 
     /** ReConform: sposta clip, cue e marker secondo il piano. Con apply = false calcola solo il rapporto (nulla cambia). Un solo passo di undo. */
