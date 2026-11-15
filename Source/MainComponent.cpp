@@ -364,6 +364,7 @@ MainComponent::MainComponent()
         if (saved != stripBelowMixer)   // la finestra flottante si crea quando la principale e' gia' sullo schermo
             juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this), saved] { if (safe != nullptr) safe->setStripPos (saved); });
     }
+    if (surface::savedDevice().isNotEmpty()) { ensureSurface(); surface->open (surface::savedDevice()); }   // il controller scelto l'ultima volta si riattiva da solo
     playBtn.onClick = [this] { toggleTransport(); };
     stopBtn.onClick = [this] { stopAll(); };
     recBtn.onClick = [this] { if (engine.isRecording()) finishRecording(); else startRecording(); };
@@ -440,6 +441,8 @@ MainComponent::~MainComponent()
     cueWindow.reset();
     mtcWindow.reset();
     mtcSync.reset();
+    surfaceWindow.reset();
+    surface.reset();
     adrWindow.reset();
     infoWindow.reset();
     notesWindow.reset();
@@ -1746,7 +1749,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAddPlugin, cmdAddMasterPlugin, cmdPdc,
                   cmdAddMarker, cmdPrevMarker, cmdNextMarker, cmdExportMarkers, cmdToolAuto, cmdClearAutomation,
                   cmdShortcuts, cmdCollectMedia, cmdClearRecent, cmdSessionSettings, cmdRulerTc,
-                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
+                  cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdSurface, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
                   cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack, cmdSplitVoices,
@@ -1852,6 +1855,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAdrExportPT:   i.setInfo (TRANS ("Esporta cue come marker Pro Tools (testo)..."), "", TRANS ("ADR"), 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdAdrExportBwf:  i.setInfo (TRANS ("Esporta take attivi (BWF con timecode)..."), "", TRANS ("ADR"), 0); i.setActive (! project->getSession().cues.empty()); break;
         case cmdMtc:           i.setInfo (TRANS ("Sincronia esterna (MTC)..."), "", TRANS ("Trasporto"), 0); i.setTicked (mtcSync != nullptr && mtcSync->isEnabled()); break;
+        case cmdSurface:       i.setInfo (TRANS ("Controller MIDI (mixer)..."), "", TRANS ("Trasporto"), 0); i.setTicked (surface != nullptr && surface->isOpen()); break;
         case cmdKeyEditor:     i.setInfo (TRANS ("Personalizza le scorciatoie da tastiera..."), "", TRANS ("Aiuto"), 0); break;
         case cmdReConform:     i.setInfo (TRANS ("ReConform: nuovo montaggio da EDL..."), "", TRANS ("Modifica"), 0); break;
         case cmdRelink:        i.setInfo (TRANS ("Ricollega i media mancanti..."), "", TRANS ("File"), 0); i.setActive (project->hasOfflineMedia()); break;
@@ -2151,6 +2155,7 @@ bool MainComponent::perform (const InvocationInfo& info)
             }
             break;
         case cmdMtc:           toggleMtcWindow(); break;
+        case cmdSurface:       toggleSurfaceWindow(); break;
         case cmdKeyEditor:     keyEditorDialog(); break;
         case cmdReConform:     reconformDialog(); break;
         case cmdRelink:        relinkMedia(); break;
@@ -2424,7 +2429,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrImportTakes, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, cmdDirectorMix, 0, cmdSessionSettings }); break;
-        case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc }); break;
+        case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc, cmdSurface }); break;
         case 8:
         {
             add ({ cmdManual, cmdManualOther, 0, cmdWorkflow, cmdShortcuts, cmdKeyEditor, 0, cmdLicense, cmdEula, cmdThirdParty });
@@ -3096,6 +3101,36 @@ private:
     juce::ToggleButton markers { TRANS ("Aggiungi un marker sul materiale nuovo (senza audio)") }, saveVersion { TRANS ("Salva prima una versione della sessione (consigliato)") };
 };
 } // namespace
+
+void MainComponent::ensureSurface()
+{
+    if (surface != nullptr) return;
+    surface = std::make_unique<surface::Surface> (*project, surface::Surface::Transport {
+        [this] { if (! engine.isPlaying() && ! engine.isRecording()) toggleTransport(); },
+        [this] { stopAll(); },
+        [this] { if (engine.isRecording()) finishRecording(); else startRecording(); },
+        // « » : con delle battute ADR nella sessione saltano alla battuta precedente/successiva, altrimenti al marker
+        [this] { commandManager.invokeDirectly (project->getSession().cues.empty() ? cmdPrevMarker : cmdAdrPrevCue, false); refreshTransportFields (true); },
+        [this] { commandManager.invokeDirectly (project->getSession().cues.empty() ? cmdNextMarker : cmdAdrNextCue, false); refreshTransportFields (true); },
+        [this] (Track& t) { t.live->armed = ! t.live->armed.load(); if (t.live->armed.load()) engine.ensureInput(); project->liveChanged(); } });
+}
+
+void MainComponent::toggleSurfaceWindow()
+{
+    if (surfaceWindow != nullptr) { surfaceWindow.reset(); commandManager.commandStatusChanged(); return; }
+    ensureSurface();
+    juce::Component::SafePointer<MainComponent> safe (this);
+    surfaceWindow = std::make_unique<BoothWindow> (TRANS ("Controller MIDI (mixer) - ADR Dub Studio"), [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->surfaceWindow.reset(); safe->commandManager.commandStatusChanged(); } });
+    });
+    surfaceWindow->setContentOwned (new surface::Panel (*surface), false);
+    surfaceWindow->setResizable (false, false);
+    surfaceWindow->setSize (520, 300);
+    surfaceWindow->centreAroundComponent (this, 520, 300);
+    surfaceWindow->setVisible (true);
+    commandManager.commandStatusChanged();
+}
 
 void MainComponent::toggleMtcWindow()
 {
@@ -3862,7 +3897,7 @@ juce::PopupMenu MainComponent::buildPresetMenu()
 
 void MainComponent::dumpUiTexts (const juce::File& out)
 {
-    for (auto id : { cmdAdrWindow, cmdInfoLine, cmdNotes, cmdMtc, cmdScriptReader, cmdCueMix, cmdDirectorMix, cmdPool })
+    for (auto id : { cmdAdrWindow, cmdInfoLine, cmdNotes, cmdMtc, cmdSurface, cmdScriptReader, cmdCueMix, cmdDirectorMix, cmdPool })
         commandManager.invokeDirectly (id, false);
     if (! project->getSession().tracks.empty() && ! project->getSession().tracks[0].clips.empty())
         openSampleEditor (project->getSession().tracks[0].clips[0].id);

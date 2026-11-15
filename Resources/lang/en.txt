@@ -1581,3 +1581,13 @@ language: English
 "Solo il file" = "File only"
 "Tutto salvato nella cartella:\n" = "Everything saved in the folder:\n"
 "Sessione salvata" = "Session saved"
+"Controller MIDI (mixer)..." = "MIDI controller (mixer)..."
+"Controller MIDI (mixer) - ADR Dub Studio" = "MIDI controller (mixer) - ADR Dub Studio"
+"CONTROLLER MIDI (MACKIE CONTROL)" = "MIDI CONTROLLER (MACKIE CONTROL)"
+"(disattivato)" = "(off)"
+"Tutti gli ingressi MIDI" = "All MIDI inputs"
+"Disattivato" = "Off"
+"Fader 1-8: volume delle 8 tracce visibili. Manopole: pan. Tasti Rec, Solo, Mute, Select per traccia; Stop, Play, Record per il trasporto; « e » per la battuta ADR (o il marker, se non ci sono battute) precedente/successiva; Banco -/+ per passare alle 8 tracce successive. I fader non sono motorizzati: se la posizione non corrisponde al volume, il volume salta al primo movimento. Se il mixer ha piu' porte MIDI e non risponde, scegli \"Tutti gli ingressi MIDI\"." = "Faders 1-8: volume of the 8 visible tracks. Knobs: pan. Rec, Solo, Mute and Select buttons per track; Stop, Play and Record for the transport; « and » for the previous/next ADR cue (or marker, if there are no cues); Bank -/+ to move to the next 8 tracks. The faders are not motorised: if the position does not match the volume, the volume jumps at the first move. If the mixer has several MIDI ports and does not respond, choose \"All MIDI inputs\"."
+
+"Attivo - ultimo comando ricevuto: " = "On - last command received: "
+"nessuna traccia" = "no track"

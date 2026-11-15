@@ -134,6 +134,7 @@ private:
         stepBooth();
         stepConform();
         stepMtc();
+        stepSurface();
         stepLang();
         stepLicense();
         stepStems();
@@ -3717,6 +3718,40 @@ private:
         expect (lf == "KEYBOARD SHORTCUTS\n\n", "Lingua: a capo nel testo chiave e traduzione");
     }
 
+    void stepSurface()
+    {
+        namespace sf = fc::surface;
+        using K = sf::Event::Kind;
+        auto fader = sf::decode (juce::MidiMessage::pitchWheel (3, 16383));
+        expect (fader.kind == K::Fader && fader.index == 2 && fader.value == 1.0f, "Controller: pitch bend sul canale 3 = fader 3 a fondo corsa");
+        expect (sf::decode (juce::MidiMessage::pitchWheel (9, 100)).kind == K::None, "Controller: il fader master (canale 9) non e' mappato");
+        const auto cw = sf::decode (juce::MidiMessage::controllerEvent (1, 0x12, 0x03)), ccw = sf::decode (juce::MidiMessage::controllerEvent (1, 0x12, 0x42));
+        expect (cw.kind == K::Knob && cw.index == 2 && cw.value == 3.0f && ccw.value == -2.0f, "Controller: manopole, scatti a destra e a sinistra");
+        expect (sf::decode (juce::MidiMessage::noteOn (1, 0x10, (juce::uint8) 127)).kind == K::Mute && sf::decode (juce::MidiMessage::noteOn (1, 0x08, (juce::uint8) 127)).kind == K::Solo
+                && sf::decode (juce::MidiMessage::noteOn (1, 0x5E, (juce::uint8) 127)).kind == K::Play, "Controller: tasti mute, solo, play");
+        expect (sf::decode (juce::MidiMessage::noteOn (1, 0x10, (juce::uint8) 0)).kind == K::None, "Controller: il rilascio del tasto non fa nulla");
+        expect (sf::faderToDb (0.0f) == -80.0f && std::abs (sf::faderToDb (1.0f) - 6.0f) < 0.2f && sf::faderToDb (0.5f) > sf::faderToDb (0.4f), "Controller: curva dei fader da -80 a +6 dB");
+
+        fc::Project p (formats, 48000.0);
+        while (p.getSession().tracks.size() < 10) p.addTrack();
+        int played = 0, armed = 0;
+        sf::Surface s (p, { [&] { ++played; }, {}, {}, {}, {}, [&] (fc::Track& t) { ++armed; t.live->armed = true; } });
+        auto ev = [&] (K k, int i, float v = 0.0f) { sf::Event e; e.kind = k; e.index = i; e.value = v; s.apply (e); };
+        ev (K::Fader, 1, 1.0f);
+        ev (K::Knob, 1, -4.0f);
+        ev (K::Mute, 0); ev (K::Solo, 0); ev (K::Rec, 2); ev (K::Play, 0); ev (K::Select, 3);
+        auto& t = p.getSession().tracks;
+        expect (std::abs (t[1].live->volumeDb.load() - 6.0f) < 0.2f && std::abs (t[1].live->pan.load() + 0.2f) < 1.0e-4f, "Controller: fader 2 e manopola 2 agiscono sulla traccia 2");
+        expect (t[0].live->mute.load() && t[0].live->solo.load() && armed == 1 && t[2].live->armed.load() && played == 1 && p.selectedTrackId == t[3].id, "Controller: mute, solo, rec, play, select");
+        ev (K::Mute, 0);
+        expect (! t[0].live->mute.load(), "Controller: il secondo tocco su mute lo toglie");
+        ev (K::BankUp, 0); ev (K::Fader, 0, 1.0f);
+        expect (std::abs (t[8].live->volumeDb.load() - 6.0f) < 0.2f && std::abs (t[0].live->volumeDb.load()) < 0.01f, "Controller: il banco successivo comanda le tracce 9-16");
+        ev (K::BankUp, 0); ev (K::BankUp, 0);
+        ev (K::Fader, 0, 0.0f);
+        expect (t[8].live->volumeDb.load() == -80.0f, "Controller: il banco non va oltre l'ultima traccia");
+    }
+
     void stepMtc()
     {
         namespace mt = fc::mtc;
@@ -5027,7 +5062,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.57.1"; }
+    const juce::String getApplicationVersion() override { return "2.58.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -5119,6 +5154,30 @@ public:
             }
             setApplicationReturnValue (r == nullptr ? 1 : 0);
             quit();
+            return;
+        }
+        if (commandLine.contains ("--midi-listen"))   // ADR Dub Studio --midi-listen: per 20 s stampa i comandi che il controller manda alla app (prova del mixer)
+        {
+            static juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+            static fc::Project proj (fm, 48000.0);
+            while (proj.getSession().tracks.size() < 8) proj.addTrack();
+            for (auto& d : juce::MidiInput::getAvailableDevices()) std::cout << "ingresso MIDI: " << d.name << std::endl;
+            static fc::surface::Surface surf (proj, {});
+            const auto err = surf.open ("*");
+            std::cout << "apertura: " << (err.isEmpty() ? "ok" : err) << std::endl;
+            struct Poll : juce::Timer
+            {
+                juce::String prev; int n = 0;
+                void timerCallback() override
+                {
+                    const auto l = surf.lastEvent();
+                    if (l != prev) { prev = l; std::cout << "ricevuto: " << l << std::endl; }
+                    if (++n > 2400 || (n > 200 && std::getenv ("ADR_MIDI_TEST") != nullptr)) { std::cout << "mute traccia 1: " << (int) proj.getSession().tracks[0].live->mute.load() << std::endl; std::cout << "fine" << std::endl; juce::JUCEApplication::getInstance()->quit(); }
+                }
+            };
+            static Poll poll;
+            poll.startTimer (50);
             return;
         }
         if (commandLine.contains ("--gender"))   // ADR Dub Studio --gender audio.wav: stampa i segmenti di voce maschile / femminile (prova del riconoscimento)

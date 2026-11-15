@@ -8,6 +8,7 @@
 #include "InfoLine.h"
 #include "AudioEngine.h"
 #include "ExternalSync.h"
+#include "ControlSurface.h"
 #include "EditBar.h"
 #include "ExportEngine.h"
 #include "MixerView.h"
@@ -221,6 +222,8 @@ private:
     std::unique_ptr<InfoLineWindow> infoWindow;
     std::unique_ptr<class BoothWindow> scriptWindow, cueWindow;
     void toggleMtcWindow();
+    void toggleSurfaceWindow();
+    void ensureSurface();
     void keyEditorDialog();
     void settingsDialog();
     void adviseBuffer (bool dropouts);   // propone un buffer audio piu' grande (plug-in esterni)
@@ -232,7 +235,8 @@ public:
     void snapshotLayouts (const juce::File& dir);    // verifica: finestra con la barra del trasporto in ogni posizione (non salva le preferenze)
 private:
     friend class SettingsPanel;
-    std::unique_ptr<class BoothWindow> mtcWindow;
+    std::unique_ptr<class BoothWindow> mtcWindow, surfaceWindow;
+    std::unique_ptr<surface::Surface> surface;   // controller MIDI (Mackie Control)
     std::unique_ptr<mtc::Sync> mtcSync;   // ingresso MIDI e aggancio al timecode esterno
     void reconformDialog();
     juce::String reconformRun (const juce::File& oldEdl, const juce::File& newEdl, bool markers, bool saveVersion, bool apply);
