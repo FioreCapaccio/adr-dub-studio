@@ -340,8 +340,13 @@ MainComponent::MainComponent()
     markerEdit.setInputRestrictions (4, "0123456789");
     markerEdit.onReturnKey = [this] { goToMarkerNumber(); };
     markerEdit.setTooltip (TRANS ("Scrivi il numero del marker (1 = il primo sulla timeline) e premi Invio"));
-    prevMarkBtn.onClick = [this] { commandManager.invokeDirectly (cmdPrevMarker, false); refreshTransportFields (true); };
-    nextMarkBtn.onClick = [this] { commandManager.invokeDirectly (cmdNextMarker, false); refreshTransportFields (true); };
+    // i campi timecode/marker restano attivi solo se ci si clicca dentro: dopo i tasti il focus torna alla finestra, cosi' lo spazio fa play/stop
+    prevMarkBtn.onClick = [this] { grabKeyboardFocus(); commandManager.invokeDirectly (cmdPrevMarker, false); refreshTransportFields (true); };
+    nextMarkBtn.onClick = [this] { grabKeyboardFocus(); commandManager.invokeDirectly (cmdNextMarker, false); refreshTransportFields (true); };
+    // senza questo JUCE, al clic, passa il focus al primo campo della barra (il timecode)
+    for (auto* c : { (juce::Component*) &rewindBtn, (juce::Component*) &playBtn, (juce::Component*) &stopBtn, (juce::Component*) &recBtn,
+                     (juce::Component*) &prevMarkBtn, (juce::Component*) &nextMarkBtn, (juce::Component*) &stripPosBtn })
+    { c->setWantsKeyboardFocus (false); c->setMouseClickGrabsKeyboardFocus (false); }
     prevMarkBtn.setTooltip (TRANS ("Marker precedente"));
     nextMarkBtn.setTooltip (TRANS ("Marker successivo"));
     prevMarkBtn.setWantsKeyboardFocus (false); nextMarkBtn.setWantsKeyboardFocus (false);
