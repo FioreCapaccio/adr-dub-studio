@@ -1651,3 +1651,4 @@ language: English
 ". Il microfono del direttore e' un ingresso della scheda principale." = ". The director's microphone is an input of the main card."
 
 "Preroll nella registrazione libera: premendo Rec la testina torna indietro della durata del preroll (Impostazioni sessione) e parte il conto alla rovescia; si registra dal punto della testina" = "Pre-roll for free recording: pressing Rec moves the playhead back by the pre-roll time (Session settings) and starts the countdown; recording starts at the playhead position"
+"PREROLL" = "PRE-ROLL"

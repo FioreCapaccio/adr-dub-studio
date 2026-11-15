@@ -33,7 +33,7 @@ public:
     /** Striscia ADR sotto l'immagine: cue, dialogo e streamer (il video nativo non si puo' coprire con disegni). */
     struct AdrInfo { bool active = false, recording = false, streamer = true; int countdown = 3; juce::String title, dialogue; double inSec = 0.0, outSec = 0.0; int dialogueSize = 30; };
     /** Conto alla rovescia sul video per la registrazione libera: grande numero nei 'lead' secondi prima di inSec (inSec < 0 = spento). */
-    void setCountIn (double inSec, int lead) { countInSec = inSec; countInLead = juce::jmax (1, lead); repaint(); }
+    void setCountIn (double inSec, int lead);
     void setAdr (const AdrInfo& a) { adr = a; resized(); repaint(); }
 
     /** Da chiamare a ~30 Hz con la posizione dell'audio (timeline) in secondi. */
@@ -65,6 +65,11 @@ private:
     juce::Rectangle<int> adrStrip() const { return getLocalBounds().withTrimmedBottom (bottomH).removeFromBottom (adrH()); }
 
     juce::Rectangle<int> pictureArea() const;
+    struct CountOverlay;   // finestra trasparente sopra il video (il video e' un componente nativo: non si puo' disegnare sopra dal viewer)
+    std::unique_ptr<CountOverlay> overlay;
+    int countValue() const;
+    juce::Rectangle<int> topArea() const { return getLocalBounds().removeFromTop (topH); }
+    void updateOverlay();
     void nudge (double seconds);
     void commitLabel();
 

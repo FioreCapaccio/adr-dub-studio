@@ -5,6 +5,54 @@ namespace fc
 {
 using namespace theme;
 
+struct VideoViewer::CountOverlay : juce::Component
+{
+    int value = 0;
+    CountOverlay() { setOpaque (false); setInterceptsMouseClicks (false, false); }
+    void paint (juce::Graphics& g) override
+    {
+        const auto box = getLocalBounds().toFloat().reduced (2.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.6f));
+        g.fillEllipse (box);
+        g.setColour (juce::Colour (0xffffc94d));
+        g.setFont (juce::Font (juce::FontOptions (box.getHeight() * 0.6f, juce::Font::bold)));
+        g.drawText (juce::String (value), box.toNearestInt(), juce::Justification::centred);
+    }
+};
+
+int VideoViewer::countValue() const
+{
+    if (countInSec < 0.0 || curT < countInSec - (double) countInLead || curT >= countInSec) return 0;
+    return (int) std::ceil (countInSec - curT);
+}
+
+void VideoViewer::setCountIn (double inSec, int lead)
+{
+    countInSec = inSec;
+    countInLead = juce::jmax (1, lead);
+    updateOverlay();
+    repaint();
+}
+
+void VideoViewer::updateOverlay()
+{
+    const int v = asset != nullptr && isShowing() ? countValue() : 0;
+    if (v == 0)
+    {
+        if (overlay != nullptr) overlay->setVisible (false);
+        return;
+    }
+    if (overlay == nullptr) overlay = std::make_unique<CountOverlay>();
+    const auto pa = pictureArea();
+    const int d = juce::jmin (200, pa.getWidth(), pa.getHeight());
+    overlay->setBounds (localAreaToGlobal (pa.withSizeKeepingCentre (d, d)));
+    if (! overlay->isOnDesktop())
+        overlay->addToDesktop (juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowIgnoresMouseClicks);
+    if (overlay->value != v) { overlay->value = v; overlay->repaint(); }
+    overlay->setVisible (true);
+    overlay->setAlwaysOnTop (true);
+}
+
 VideoViewer::VideoViewer()
 {
     addChildComponent (video);
@@ -45,6 +93,7 @@ VideoViewer::VideoViewer()
 
 VideoViewer::~VideoViewer()
 {
+    overlay.reset();
     video.closeVideo();
 }
 
@@ -155,7 +204,7 @@ void VideoViewer::mouseDoubleClick (const juce::MouseEvent& e)
 void VideoViewer::sync (double t, bool playing)
 {
     curT = t;
-    if (countInSec >= 0.0) repaint (pictureArea());
+    if (countInSec >= 0.0) { repaint (topArea()); updateOverlay(); }
     if (adr.active) repaint (adrStrip());
     if (adr.active && adr.recording)   // la cornice rossa lampeggia
     {
@@ -355,15 +404,11 @@ void VideoViewer::paint (juce::Graphics& g)
         g.drawRect (getLocalBounds().withTrimmedBottom (bottomH), 3);
     }
 
-    if (countInSec >= 0.0 && curT >= countInSec - (double) countInLead && curT < countInSec)   // conto alla rovescia della registrazione libera
+    if (const int cv = countValue(); cv > 0)   // anche nella barra alta, che non e' coperta dal video
     {
-        auto pa = pictureArea();
-        const auto box = pa.withSizeKeepingCentre (juce::jmin (pa.getWidth(), 200), juce::jmin (pa.getHeight(), 200)).toFloat();
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.fillEllipse (box);
         g.setColour (juce::Colour (0xffffc94d));
-        g.setFont (font (box.getHeight() * 0.6f, true));
-        g.drawText (juce::String ((int) std::ceil (countInSec - curT)), box.toNearestInt(), juce::Justification::centred);
+        g.setFont (font (16.0f, true));
+        g.drawText (TRANS ("PREROLL") + "  " + juce::String (cv), getLocalBounds().removeFromTop (topH).withSizeKeepingCentre (200, topH), juce::Justification::centred);
     }
 
     // barra inferiore
