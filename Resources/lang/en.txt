@@ -1649,3 +1649,5 @@ language: English
 "Le cuffie usano la seconda scheda audio (scelta in Impostazioni > Scheda del direttore)" = "The headphones use the second audio card (chosen in Settings > Director's audio card)"
 ", insieme al microfono del direttore." = ", together with the director's microphone."
 ". Il microfono del direttore e' un ingresso della scheda principale." = ". The director's microphone is an input of the main card."
+
+"Preroll nella registrazione libera: premendo Rec la testina torna indietro della durata del preroll (Impostazioni sessione) e parte il conto alla rovescia; si registra dal punto della testina" = "Pre-roll for free recording: pressing Rec moves the playhead back by the pre-roll time (Session settings) and starts the countdown; recording starts at the playhead position"

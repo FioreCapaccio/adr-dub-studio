@@ -866,6 +866,7 @@ public:
     double tcStartSec = 0.0;       // timecode della posizione 0 della timeline, in secondi (es. 3600 = 01:00:00:00)
     bool rulerTimecode = true;     // il righello mostra il timecode invece dei minuti:secondi
     double adrPreRoll = 3.0, adrPostRoll = 1.0;   // secondi
+    bool recPreRoll = true;        // registrazione libera: parte dal preroll prima della testina, con il conto alla rovescia
     int adrBeeps = 3;              // numero di bip prima dell'ingresso (0 = nessuno)
     bool adrStreamer = true;       // streamer visivo sul video
     int adrOverlay = 31;           // sovrimpressione ADR sul video (bit): 1 numero, 2 personaggio, 4 scena, 8 timecode, 16 battuta

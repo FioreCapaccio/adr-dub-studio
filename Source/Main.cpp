@@ -3083,7 +3083,7 @@ private:
             live->sendDb[0] = -12.0f; live->sendDb[1] = -80.0f; live->autoParam = fc::AutoSendB;
             {
                 fc::ChannelStrip strip (p, host, live, p.getSession().tracks[0].id, false);
-                strip.setSize (fc::MixerView::stripW, 640);
+                strip.setSize (fc::MixerView::stripW, juce::jmax (200, juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_SENDS_H", "640").getIntValue()));
                 strip.syncFromLive();
                 auto img = strip.createComponentSnapshot (strip.getLocalBounds(), true, 2.0f);
                 juce::File (snapFile).deleteFile();
@@ -5022,6 +5022,29 @@ private:
         expect (results.size() == 1 && results[0].startPos == 50 * block && results[0].length == 100 * block,
                 "punch: registrati solo i 100 blocchi tra ingresso e uscita (" + juce::String (results.empty() ? 0 : (juce::int64) results[0].length) + " campioni, inizio "
                     + juce::String (results.empty() ? 0 : (juce::int64) results[0].startPos) + ")");
+
+        // preroll della registrazione libera: si riparte prima della testina (blocco 50) e si scrive da li' fino allo stop (uscita aperta)
+        {
+            fc::AudioEngine e2;
+            e2.setNumInputChannelsForTest (2);
+            e2.publish (std::make_shared<const fc::Session> (p.getSession()));
+            auto f2 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_preroll.wav");
+            e2.setPosition (0);
+            expect (e2.startRecording ({ { trackId, f2, 0 } }).isEmpty(), "preroll libero: start");
+            e2.setPunch (50 * block, std::numeric_limits<int64_t>::max());
+            e2.play();
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (int i = 0; i < block; ++i) inL[(size_t) i] = inR[(size_t) i] = 0.5f;
+                const float* ins[2] = { inL.data(), inR.data() };
+                float* outs[2] = { outL.data(), outR.data() };
+                e2.audioDeviceIOCallbackWithContext (ins, 2, outs, 2, block, juce::AudioIODeviceCallbackContext());
+            }
+            e2.stop();
+            const auto r2 = e2.stopRecording();
+            expect (r2.size() == 1 && r2[0].startPos == 50 * block && r2[0].length == 150 * block,
+                    "preroll libero: si registra dalla posizione della testina fino allo stop, non dal preroll (" + juce::String (r2.empty() ? 0 : (juce::int64) r2[0].length) + " campioni)");
+        }
         next();
     }
 
@@ -5258,7 +5281,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.61.0"; }
+    const juce::String getApplicationVersion() override { return "2.62.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

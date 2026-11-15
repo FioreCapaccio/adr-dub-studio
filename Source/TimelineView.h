@@ -133,8 +133,8 @@ private:
     juce::Rectangle<int> armRect (int ti) const { return { headerW - knobW - 98, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
     juce::Rectangle<int> muteRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
     juce::Rectangle<int> soloRect (int ti) const { return { headerW - knobW - 42, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
-    juce::Rectangle<int> inputRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 36 + nameRow (ti), 56, 18 }; }
-    juce::Rectangle<int> monRect (int ti) const { return { headerW - knobW - 98, laneTop (ti) + 36 + nameRow (ti), 24, 18 }; }   // ascolto in cuffia, accanto all'ingresso
+    juce::Rectangle<int> inputRect (int ti) const { return { 160, laneTop (ti) + 36 + nameRow (ti), 46, 18 }; }
+    juce::Rectangle<int> monRect (int ti) const { return { 134, laneTop (ti) + 36 + nameRow (ti), 22, 18 }; }   // ascolto in cuffia, accanto all'ingresso
     juce::Rectangle<int> trimRect (int ti) const { return { headerW - knobW + 4, laneTop (ti) + 4, knobW - 10, 64 }; }   // manopola del guadagno in ingresso
     // vu-meter orizzontale in basso nell'intestazione: con la scala (traccia alta) o ridotto (traccia bassa)
     juce::Rectangle<int> meterRect (int ti) const   // sotto i pulsanti, con un margine dal bordo
@@ -145,7 +145,7 @@ private:
         if (h >= 66) return { 42, y + h - 16, w, 8 };
         return { 42, y + 36, w, 8 };
     }
-    juce::Rectangle<int> autoRect (int ti) const { return { 42, laneTop (ti) + 36 + nameRow (ti), 46, 18 }; }
+    juce::Rectangle<int> autoRect (int ti) const { return { 42, laneTop (ti) + 36 + nameRow (ti), 40, 18 }; }
     int trackIndexAtY (int y) const noexcept;
 
     Hit hitTest (juce::Point<int>) const;
@@ -188,7 +188,7 @@ private:
     // automazione del volume
     float autoYForValue (int ti, int param, float v) const;
     float autoValueForY (int ti, int param, int y) const;
-    juce::Rectangle<int> paramRect (int ti) const { return { 92, laneTop (ti) + 36 + nameRow (ti), 48, 18 }; }
+    juce::Rectangle<int> paramRect (int ti) const { return { 86, laneTop (ti) + 36 + nameRow (ti), 44, 18 }; }
     bool findAutoPointAt (juce::Point<int> p, int& trackIndex, int& pointId) const;
     bool findAutoSegmentAt (juce::Point<int> p, int& trackIndex, int& idA, int& idB) const;   // linea tra due punti
     void drawWaveformChannel (juce::Graphics&, const Clip&, juce::Rectangle<float>, juce::Rectangle<int>, int channel);   // -1 = tutti i canali sovrapposti

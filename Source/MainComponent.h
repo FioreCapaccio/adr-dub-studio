@@ -183,6 +183,7 @@ private:
     void stopPlayback();
     juce::TextButton loopBtn   { TRANS ("LOOP") }, snapBtn { "SNAP" }, followBtn { TRANS ("SEGUI") },
                      monBtn    { "MON" },
+                     preBtn    { "PRE" },
                      zoomOutBtn { "-" }, zoomInBtn { "+" }, fitBtn { TRANS ("ADATTA") },
                      importBtn { TRANS ("IMPORTA") }, exportBtn { TRANS ("ESPORTA") }, addTrackBtn { TRANS ("+ TRACCIA") },
                      videoBtn { "VIDEO" }, mixerBtn { "MIXER" };

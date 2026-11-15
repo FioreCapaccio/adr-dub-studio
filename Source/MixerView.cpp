@@ -586,10 +586,19 @@ void ChannelStrip::resized()
 {
     auto r = getLocalBounds().reduced (5);
     r.removeFromTop (28);
+    // finestra del mixer bassa: spariscono prima gli inserti e i tasti EQ/uscita/limiter, poi manopole e mandate, cosi' il fader resta alto
+    const int level = getHeight() >= 470 ? 0 : (getHeight() >= 360 ? 1 : 2);
+    auto show = [] (bool on, std::initializer_list<juce::Component*> cs) { for (auto* c : cs) c->setVisible (on); };
     if (! master && ! aux)
     {
-        pan.setBounds (r.removeFromTop (46).withSizeKeepingCentre (46, 46));
-        panLabel = r.removeFromTop (12);
+        show (level < 2, { &pan, &sendA, &sendB });
+        show (level < 1, { &eqBtn, &routeBtn, &trackLimBtn, &trackLimMenuBtn });
+        panLabel = sendCaptionA = sendCaptionB = {};
+        if (level < 2)
+        {
+            pan.setBounds (r.removeFromTop (46).withSizeKeepingCentre (46, 46));
+            panLabel = r.removeFromTop (12);
+        }
         auto row = r.removeFromTop (26).reduced (2, 2);
         const int bw = (row.getWidth() - 8) / 3;
         muteBtn.setBounds (row.removeFromLeft (bw));
@@ -598,24 +607,30 @@ void ChannelStrip::resized()
         row.removeFromLeft (4);
         invertBtn.setBounds (row);
         r.removeFromTop (2);
-        auto sends = r.removeFromTop (44);
-        auto left = sends.removeFromLeft (sends.getWidth() / 2);
-        sendA.setBounds (left.withSizeKeepingCentre (44, 44));
-        sendB.setBounds (sends.withSizeKeepingCentre (44, 44));
-        auto caps = r.removeFromTop (13);
-        sendCaptionA = caps.removeFromLeft (caps.getWidth() / 2);
-        sendCaptionB = caps;
+        if (level < 2)
         {
-            auto row = r.removeFromTop (22).reduced (2, 1);
-            eqBtn.setBounds (row.removeFromLeft (34));
-            row.removeFromLeft (3);
-            routeBtn.setBounds (row);
+            auto sends = r.removeFromTop (44);
+            auto left = sends.removeFromLeft (sends.getWidth() / 2);
+            sendA.setBounds (left.withSizeKeepingCentre (44, 44));
+            sendB.setBounds (sends.withSizeKeepingCentre (44, 44));
+            auto caps = r.removeFromTop (13);
+            sendCaptionA = caps.removeFromLeft (caps.getWidth() / 2);
+            sendCaptionB = caps;
         }
+        if (level < 1)
         {
-            auto row = r.removeFromTop (22).reduced (2, 1);
-            trackLimMenuBtn.setBounds (row.removeFromRight (24));
-            row.removeFromRight (2);
-            trackLimBtn.setBounds (row);
+            {
+                auto row2 = r.removeFromTop (22).reduced (2, 1);
+                eqBtn.setBounds (row2.removeFromLeft (34));
+                row2.removeFromLeft (3);
+                routeBtn.setBounds (row2);
+            }
+            {
+                auto row2 = r.removeFromTop (22).reduced (2, 1);
+                trackLimMenuBtn.setBounds (row2.removeFromRight (24));
+                row2.removeFromRight (2);
+                trackLimBtn.setBounds (row2);
+            }
         }
     }
     else if (aux)
@@ -625,21 +640,30 @@ void ChannelStrip::resized()
     }
     else
     {
+        show (level < 2, { &ceil });
+        ceilLabel = {};
         limBtn.setBounds (r.removeFromTop (26).reduced (4, 2));
         {
             auto mrow = r.removeFromTop (22).reduced (4, 1);
             monoBtn.setBounds (mrow.removeFromLeft (mrow.getWidth() / 2 - 2));
             dimBtn.setBounds (mrow.withTrimmedLeft (4));
         }
-        ceil.setBounds (r.removeFromTop (48).withSizeKeepingCentre (46, 46));
-        ceilLabel = r.removeFromTop (14);
+        if (level < 2)
+        {
+            ceil.setBounds (r.removeFromTop (48).withSizeKeepingCentre (46, 46));
+            ceilLabel = r.removeFromTop (14);
+        }
     }
 
-    r.removeFromTop (4);
-    for (auto& ins : inserts)
+    for (auto& ins : inserts) ins.setVisible (level < 1);
+    if (level < 1)
     {
-        ins.setBounds (r.removeFromTop (17).reduced (1, 0));
-        r.removeFromTop (1);
+        r.removeFromTop (4);
+        for (auto& ins : inserts)
+        {
+            ins.setBounds (r.removeFromTop (17).reduced (1, 0));
+            r.removeFromTop (1);
+        }
     }
     r.removeFromTop (4);
 

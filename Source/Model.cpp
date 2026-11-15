@@ -3416,6 +3416,7 @@ juce::var Project::toVar() const
     root->setProperty ("rulerTimecode", rulerTimecode);
     root->setProperty ("adrPreRoll", adrPreRoll);
     root->setProperty ("adrPostRoll", adrPostRoll);
+    root->setProperty ("recPreRoll", recPreRoll);
     root->setProperty ("adrBeeps", adrBeeps);
     root->setProperty ("adrStreamer", adrStreamer);
     root->setProperty ("adrOverlay", adrOverlay);
@@ -3908,6 +3909,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
         const bool prulerTc = (bool) parsed.getProperty ("rulerTimecode", true);
         const double pPre = (double) parsed.getProperty ("adrPreRoll", 3.0), pPost = (double) parsed.getProperty ("adrPostRoll", 1.0);
         const int pBeeps = (int) parsed.getProperty ("adrBeeps", 3);
+        const bool pRecPre = (bool) parsed.getProperty ("recPreRoll", true);
         const bool pStreamer = (bool) parsed.getProperty ("adrStreamer", true);
         const int pOverlay = (int) parsed.getProperty ("adrOverlay", 31);
         const int pDialogueSize = juce::jlimit (12, 120, (int) parsed.getProperty ("adrDialogueSize", 30));
@@ -4222,7 +4224,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                 tcFormat = juce::jlimit (0, numTcFormats - 1, ptcFormat);
                 tcStartSec = ptcStart;
                 rulerTimecode = prulerTc;
-                adrPreRoll = pPre; adrPostRoll = pPost; adrBeeps = pBeeps; adrStreamer = pStreamer; adrOverlay = pOverlay; adrDialogueSize = pDialogueSize; adrNaming = pNaming; exportIn = pExportIn; exportOut = pExportOut;
+                recPreRoll = pRecPre; adrPreRoll = pPre; adrPostRoll = pPost; adrBeeps = pBeeps; adrStreamer = pStreamer; adrOverlay = pOverlay; adrDialogueSize = pDialogueSize; adrNaming = pNaming; exportIn = pExportIn; exportOut = pExportOut;
                 missingVideoPath = lostVideoPath;
                 missingVideoOffset = lostVideoOffset;
                 publish();

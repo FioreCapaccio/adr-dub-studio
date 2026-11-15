@@ -292,13 +292,13 @@ MainComponent::MainComponent()
     viewer.tcFormatter = [this] (double s) { return project->formatTc (s); };
     addAndMakeVisible (inMeter);
 
-    for (juce::Button* b : std::initializer_list<juce::Button*> { &rewindBtn, &playBtn, &stopBtn, &recBtn, &loopBtn, &snapBtn, &followBtn, &monBtn, &zoomOutBtn, &zoomInBtn,
+    for (juce::Button* b : std::initializer_list<juce::Button*> { &rewindBtn, &playBtn, &stopBtn, &recBtn, &loopBtn, &snapBtn, &followBtn, &monBtn, &preBtn, &zoomOutBtn, &zoomInBtn,
                      &fitBtn, &importBtn, &exportBtn, &addTrackBtn, &videoBtn, &mixerBtn, &exitBtn })
     {
         b->setWantsKeyboardFocus (false);
         addAndMakeVisible (*b);
     }
-    for (auto* b : { &loopBtn, &snapBtn, &followBtn, &monBtn, &videoBtn, &mixerBtn })
+    for (auto* b : { &loopBtn, &snapBtn, &followBtn, &monBtn, &preBtn, &videoBtn, &mixerBtn })
         b->setClickingTogglesState (true);
     exitBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4a2523));
     exitBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffff8a7d));
@@ -371,6 +371,9 @@ MainComponent::MainComponent()
     stopBtn.onClick = [this] { stopAll(); };
     recBtn.onClick = [this] { if (engine.isRecording()) finishRecording(); else startRecording(); };
     monBtn.onClick = [this] { toggleMonitorArmed(); };
+    preBtn.setToggleState (project->recPreRoll, juce::dontSendNotification);
+    preBtn.onClick = [this] { project->recPreRoll = preBtn.getToggleState(); };
+    preBtn.setTooltip (TRANS ("Preroll nella registrazione libera: premendo Rec la testina torna indietro della durata del preroll (Impostazioni sessione) e parte il conto alla rovescia; si registra dal punto della testina"));
     loopBtn.onClick = [this] { toggleLoop(); };
     snapBtn.onClick = [this] { timeline->snapEnabled = snapBtn.getToggleState(); };
     followBtn.onClick = [this] { timeline->followEnabled = followBtn.getToggleState(); };
@@ -631,10 +634,10 @@ void MainComponent::resized()
     auto g3 = group (56 + 6 + 56 + 6 + 62);
     put (g3, loopBtn, 56); put (g3, snapBtn, 56); put (g3, followBtn, 62, 0);
 
-    auto g4 = group (16 + 8 + 48);
+    auto g4 = group (16 + 8 + 48 + 6 + 48);
     inMeter.setBounds (g4.removeFromLeft (16).reduced (0, 1));
     g4.removeFromLeft (8);
-    put (g4, monBtn, 48, 0);
+    put (g4, monBtn, 48); put (g4, preBtn, 48, 0);
 
     auto g5 = group (32 + 6 + 32 + 6 + 62);
     put (g5, zoomOutBtn, 32); put (g5, zoomInBtn, 32); put (g5, fitBtn, 62, 0);
@@ -859,6 +862,7 @@ void MainComponent::updateTitle()
 void MainComponent::syncToggles()
 {
     loopBtn.setToggleState (engine.isLooping(), juce::dontSendNotification);
+    preBtn.setToggleState (project->recPreRoll, juce::dontSendNotification);
 }
 
 void MainComponent::showError (const juce::String& msg)
@@ -949,6 +953,30 @@ void MainComponent::startRecording()
                                recordingsFolder (*project).getChildFile (juce::File::createLegalFileName (session + "_" + t.name + "_" + stamp) + ".wav"),
                                t.live->inputMode.load() });
 
+    // preroll anche nella registrazione libera: si riparte prima della testina e si scrive solo da dove era la testina
+    const double rate = project->getSampleRate();
+    const int64_t here = engine.getPosition();
+    const int64_t start = juce::jmax<int64_t> (0, here - (int64_t) (project->adrPreRoll * rate));
+    const bool pre = project->recPreRoll && start < here;
+    if (pre)
+    {
+        const auto beeps = adrBeepPositions (here, start, project->adrBeeps, rate);
+        if (project->getSession().video != nullptr && ! viewerVisible)   // il conto alla rovescia sta sul video
+        {
+            viewerVisible = true;
+            videoBtn.setToggleState (true, juce::dontSendNotification);
+            layoutAll();
+        }
+        engine.setPosition (start);
+        const auto err = engine.startRecording (specs);
+        if (err.isNotEmpty()) { engine.setPosition (here); showError (err); return; }
+        engine.setPunch (here, std::numeric_limits<int64_t>::max());
+        engine.setBeeps (beeps);
+        viewer.setCountIn ((double) here / rate, project->adrBeeps > 0 ? project->adrBeeps : 3);
+        engine.play();
+        repaint();
+        return;
+    }
     const auto err = engine.startRecording (specs);
     if (err.isNotEmpty()) { showError (err); return; }
     engine.play();
@@ -1009,6 +1037,7 @@ void MainComponent::finishRecording()
     engine.setExcludeTakes (false);
     engine.clearPunch();
     engine.clearBeeps();
+    viewer.setCountIn (-1.0, 3);
     const int drops = engine.getDroppedBlocks();
     const auto results = engine.stopRecording();
     const int cueId = adrRecCue;

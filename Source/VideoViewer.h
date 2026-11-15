@@ -32,6 +32,8 @@ public:
 
     /** Striscia ADR sotto l'immagine: cue, dialogo e streamer (il video nativo non si puo' coprire con disegni). */
     struct AdrInfo { bool active = false, recording = false, streamer = true; int countdown = 3; juce::String title, dialogue; double inSec = 0.0, outSec = 0.0; int dialogueSize = 30; };
+    /** Conto alla rovescia sul video per la registrazione libera: grande numero nei 'lead' secondi prima di inSec (inSec < 0 = spento). */
+    void setCountIn (double inSec, int lead) { countInSec = inSec; countInLead = juce::jmax (1, lead); repaint(); }
     void setAdr (const AdrInfo& a) { adr = a; resized(); repaint(); }
 
     /** Da chiamare a ~30 Hz con la posizione dell'audio (timeline) in secondi. */
@@ -53,7 +55,8 @@ private:
     static constexpr int topH = 34, bottomH = 58;
     int adrH() const { return adr.active ? 44 + (int) std::round ((float) adr.dialogueSize * 1.3f * 2.0f) : 0; }   // spazio per due righe di dialogo
     AdrInfo adr;
-    double curT = 0.0;
+    double curT = 0.0, countInSec = -1.0;
+    int countInLead = 3;
     double startLead = 0.09, displayLead = 0.0, lastSpeed = 1.0;   // anticipo alla partenza (si impara), e velocita' corrente
     bool measuredStart = false;
     int seekCount = 0;

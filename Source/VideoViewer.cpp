@@ -155,6 +155,7 @@ void VideoViewer::mouseDoubleClick (const juce::MouseEvent& e)
 void VideoViewer::sync (double t, bool playing)
 {
     curT = t;
+    if (countInSec >= 0.0) repaint (pictureArea());
     if (adr.active) repaint (adrStrip());
     if (adr.active && adr.recording)   // la cornice rossa lampeggia
     {
@@ -352,6 +353,17 @@ void VideoViewer::paint (juce::Graphics& g)
     {
         g.setColour (accent.withAlpha (((int) (curT * 2.0) % 2 == 0) ? 0.95f : 0.45f));
         g.drawRect (getLocalBounds().withTrimmedBottom (bottomH), 3);
+    }
+
+    if (countInSec >= 0.0 && curT >= countInSec - (double) countInLead && curT < countInSec)   // conto alla rovescia della registrazione libera
+    {
+        auto pa = pictureArea();
+        const auto box = pa.withSizeKeepingCentre (juce::jmin (pa.getWidth(), 200), juce::jmin (pa.getHeight(), 200)).toFloat();
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillEllipse (box);
+        g.setColour (juce::Colour (0xffffc94d));
+        g.setFont (font (box.getHeight() * 0.6f, true));
+        g.drawText (juce::String ((int) std::ceil (countInSec - curT)), box.toNearestInt(), juce::Justification::centred);
     }
 
     // barra inferiore
