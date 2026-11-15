@@ -3582,6 +3582,7 @@ juce::var Project::toVar() const
         o->setProperty ("mute", t.live->mute.load());
         o->setProperty ("solo", t.live->solo.load());
         o->setProperty ("inputMode", t.live->inputMode.load());
+        if (t.live->monitor.load()) o->setProperty ("monitor", true);
         o->setProperty ("height", t.live->height.load());
         o->setProperty ("inserts", insertsToVar (*t.live));
         o->setProperty ("autoMode", t.live->autoMode.load());
@@ -4058,6 +4059,7 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     t.live->mute = (bool) tv.getProperty ("mute", false);
                     t.live->solo = (bool) tv.getProperty ("solo", false);
                     t.live->inputMode = (int) tv.getProperty ("inputMode", 0);
+                    t.live->monitor = (bool) tv.getProperty ("monitor", false);
                     t.live->height = juce::jlimit (48, 400, (int) tv.getProperty ("height", 96));
                     insertsFromVar (tv.getProperty ("inserts", {}), *t.live);
                     t.live->autoMode = (int) tv.getProperty ("autoMode", 0);

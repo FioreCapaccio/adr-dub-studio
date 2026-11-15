@@ -228,7 +228,6 @@ public:
     int getNumOutputChannels() const noexcept { return numOutputs.load(); }
     /** Apre le uscite necessarie alla coppia indicata (thread messaggi). Ritorna un errore, o stringa vuota se va bene. */
     juce::String openCueOutputs (int pair);
-    std::atomic<bool> monitorInput { false };
     std::atomic<float> inPeakL { 0.0f }, inPeakR { 0.0f };
     std::function<void (double)> onSampleRateChanged; // thread messaggi
 
@@ -254,6 +253,7 @@ private:
     std::vector<std::shared_ptr<LivePeaks>> livePeaks;
 
     void processChunk (int n, const float* const* in, int numIn, int inOffset);
+    void addInputMonitor (int n, const float* const* in, int numIn, int inOffset);
     void processChunkMain (int n, const float* const* in, int numIn, int inOffset);
     void finishCue (int n, const float* const* in, int numIn, int inOffset);
     juce::AudioBuffer<float> cueBuf { 2, Mixer::kChunk }, cueSumBuf { 2, Mixer::kChunk };

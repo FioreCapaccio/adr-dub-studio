@@ -370,7 +370,7 @@ MainComponent::MainComponent()
     playBtn.onClick = [this] { toggleTransport(); };
     stopBtn.onClick = [this] { stopAll(); };
     recBtn.onClick = [this] { if (engine.isRecording()) finishRecording(); else startRecording(); };
-    monBtn.onClick = [this] { engine.monitorInput = monBtn.getToggleState(); };
+    monBtn.onClick = [this] { toggleMonitorArmed(); };
     loopBtn.onClick = [this] { toggleLoop(); };
     snapBtn.onClick = [this] { timeline->snapEnabled = snapBtn.getToggleState(); };
     followBtn.onClick = [this] { timeline->followEnabled = followBtn.getToggleState(); };
@@ -390,7 +390,7 @@ MainComponent::MainComponent()
     loopBtn.setTooltip (TRANS ("Loop (L). Maiusc + trascina sul righello per definire la regione"));
     snapBtn.setTooltip (TRANS ("Aggancio ai bordi dei clip, alla testina e ai fotogrammi (N)"));
     followBtn.setTooltip (TRANS ("La vista segue la testina durante la riproduzione (F)"));
-    monBtn.setTooltip (TRANS ("Ascolta l'ingresso durante la registrazione (I). Usa le cuffie per evitare il feedback"));
+    monBtn.setTooltip (TRANS ("Ascolta in cuffia l'ingresso delle tracce armate (I). Si puo' scegliere per traccia con il tasto I nell'intestazione. Usa le cuffie per evitare il feedback"));
     zoomOutBtn.setTooltip (TRANS ("Zoom indietro (-)"));
     zoomInBtn.setTooltip (TRANS ("Zoom avanti (+)"));
     fitBtn.setTooltip (TRANS ("Adatta il progetto alla finestra (Maiusc + Z)"));
@@ -906,6 +906,22 @@ void MainComponent::armSelectedTrack()
         if (t->live->armed.load()) engine.ensureInput();   // il vu-meter della traccia funziona anche prima di registrare
         project->liveChanged();
     }
+}
+
+bool MainComponent::monitorArmedOn() const
+{
+    for (auto& t : project->getSession().tracks) if (t.live->armed.load() && t.live->monitor.load()) return true;
+    return false;
+}
+
+// tutte le tracce armate insieme: se almeno una e' in ascolto le spegne, altrimenti le accende
+void MainComponent::toggleMonitorArmed()
+{
+    const bool on = ! monitorArmedOn();
+    for (auto& t : project->getSession().tracks) if (t.live->armed.load()) t.live->monitor = on;
+    if (on) engine.ensureInput();
+    project->liveChanged();
+    monBtn.setToggleState (on, juce::dontSendNotification);
 }
 
 void MainComponent::startRecording()
@@ -1810,7 +1826,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdMixer:         i.setInfo (TRANS ("Mostra mixer"), "", TRANS ("Vista"), 0); i.addDefaultKeypress ('m', shift); i.setTicked (mixerVisible); break;
         case cmdRecord:        i.setInfo (engine.isRecording() ? TRANS ("Ferma registrazione") : TRANS ("Registra"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress ('r', 0); i.setTicked (engine.isRecording()); break;
         case cmdArm:           i.setInfo (TRANS ("Arma/disarma traccia selezionata"), "", TRANS ("Traccia"), 0); i.addDefaultKeypress ('a', 0); break;
-        case cmdMonitor:       i.setInfo (TRANS ("Ascolta l'ingresso durante la registrazione"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress ('i', 0); i.setTicked (engine.monitorInput.load()); break;
+        case cmdMonitor:       i.setInfo (TRANS ("Ascolta in cuffia l'ingresso delle tracce armate"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress ('i', 0); i.setTicked (monitorArmedOn()); break;
         case cmdImportVideo:   i.setInfo (TRANS ("Importa video..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('i', cmd | shift); break;
         case cmdRemoveVideo:   i.setInfo (TRANS ("Rimuovi video"), "", TRANS ("File"), 0); i.setActive (project->getSession().video != nullptr); break;
         case cmdExportVideo:   i.setInfo (TRANS ("Esporta video con mix..."), "", TRANS ("File"), 0); i.addDefaultKeypress ('e', cmd | shift); i.setActive (project->getSession().video != nullptr); break;
@@ -1991,7 +2007,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNudgeR:        engine.setPosition (engine.getPosition() + (int64_t) (rate / project->frameRate())); break;
         case cmdRecord:        if (engine.isRecording()) finishRecording(); else startRecording(); break;
         case cmdArm:           armSelectedTrack(); break;
-        case cmdMonitor:       engine.monitorInput = ! engine.monitorInput.load(); monBtn.setToggleState (engine.monitorInput.load(), juce::dontSendNotification); break;
+        case cmdMonitor:       toggleMonitorArmed(); break;
         case cmdImportVideo:   importVideoDialog(); break;
         case cmdRemoveVideo:   project->clearVideo(); break;
         case cmdExportVideo:   exportVideoDialog(); break;

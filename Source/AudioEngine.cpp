@@ -765,6 +765,24 @@ void AudioEngine::processChunk (int n, const float* const* in, int numIn, int in
     finishCue (n, in, numIn, inOffset);
 }
 
+// ascolto in cuffia dell'ingresso delle tracce armate con l'ascolto acceso (come "input monitoring" di Reaper);
+// la registrazione non dipende da questo: scrive comunque, qualunque sia lo stato dell'ascolto
+void AudioEngine::addInputMonitor (int n, const float* const* in, int numIn, int inOffset)
+{
+    if (current == nullptr || numIn <= 0 || in == nullptr) return;
+    for (auto& t : current->tracks)
+    {
+        auto& live = *t.live;
+        if (! live.armed.load() || ! live.monitor.load()) continue;
+        const auto pick = decodeInput (live.inputMode.load(), defaultInput.load(), numIn);
+        const int a = pick.a, b = pick.b >= 0 ? pick.b : a;
+        if (a >= numIn || b >= numIn || in[a] == nullptr || in[b] == nullptr) continue;
+        const float g = dbToGain (live.trimDb.load());
+        juce::FloatVectorOperations::addWithMultiply (master.getWritePointer (0), in[a] + inOffset, g, n);
+        juce::FloatVectorOperations::addWithMultiply (master.getWritePointer (1), in[b] + inOffset, g, n);
+    }
+}
+
 void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, int inOffset)
 {
     int64_t pos = position.load();
@@ -777,6 +795,7 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
     if (! wantPlay && playGain <= 0.0f)
     {
         master.clear (0, n);
+        addInputMonitor (n, in, numIn, inOffset);   // l'ascolto dell'ingresso vale anche a trasporto fermo
         busNeedsReset = true;
         return;
     }
@@ -847,20 +866,7 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
     master.applyGainRamp (1, 0, n, playGain, newPlayGain);
     playGain = newPlayGain;
 
-    // ascolto dell'ingresso durante la registrazione
-    if (wantPlay && recording.load() && monitorInput.load() && numIn > 0 && in != nullptr)
-    {
-        const juce::SpinLock::ScopedTryLockType l (recLock);
-        if (l.isLocked())
-            for (auto& t : takes)
-            {
-                if (t->srcA >= numIn || in[t->srcA] == nullptr) continue;
-                const float* a = in[t->srcA] + inOffset;
-                const float* b = (t->srcB >= 0 && t->srcB < numIn && in[t->srcB] != nullptr) ? in[t->srcB] + inOffset : a;
-                juce::FloatVectorOperations::add (master.getWritePointer (0), a, n);
-                juce::FloatVectorOperations::add (master.getWritePointer (1), b, n);
-            }
-    }
+    addInputMonitor (n, in, numIn, inOffset);
 
     // master: inserti, fader, limiter, misuratori
     masterBus.process (*current->master, master, n);

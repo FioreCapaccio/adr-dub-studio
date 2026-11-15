@@ -92,7 +92,7 @@ public:
 private:
     enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, Trim, AutoSegment, TrackResize, VideoMove,
                       Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove, Range, Comp, Warp, Scrub, Envelope };
-    enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderInput, TrackResize,
+    enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderMon, HeaderInput, TrackResize,
                          Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane, GroupBar, HeaderLock, GlobalMute, GlobalSolo, GlobalVisibility };
     struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; int group = 0, groupPart = 0; /* 0 barra, 1 muto, 2 solo */ };
     struct Origin { int64_t id, start, offset, length, fadeIn, fadeOut; int track; };
@@ -134,6 +134,7 @@ private:
     juce::Rectangle<int> muteRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
     juce::Rectangle<int> soloRect (int ti) const { return { headerW - knobW - 42, laneTop (ti) + 9 + nameRow (ti), 26, 20 }; }
     juce::Rectangle<int> inputRect (int ti) const { return { headerW - knobW - 70, laneTop (ti) + 36 + nameRow (ti), 56, 18 }; }
+    juce::Rectangle<int> monRect (int ti) const { return { headerW - knobW - 98, laneTop (ti) + 36 + nameRow (ti), 24, 18 }; }   // ascolto in cuffia, accanto all'ingresso
     juce::Rectangle<int> trimRect (int ti) const { return { headerW - knobW + 4, laneTop (ti) + 4, knobW - 10, 64 }; }   // manopola del guadagno in ingresso
     // vu-meter orizzontale in basso nell'intestazione: con la scala (traccia alta) o ridotto (traccia bassa)
     juce::Rectangle<int> meterRect (int ti) const   // sotto i pulsanti, con un margine dal bordo

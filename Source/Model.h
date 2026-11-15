@@ -269,13 +269,14 @@ struct TrackLive
         if (old != nullptr) retire (old);
     }
     std::atomic<bool> armed { false };     // armata per la registrazione
+    std::atomic<bool> monitor { false };   // ascolto dell'ingresso in cuffia (solo se armata); non influisce sulla registrazione
     std::atomic<int> inputMode { -1 };     // ingresso di registrazione (vedi decodeInput); -1 = predefinito delle Impostazioni
 
     void copyFrom (const TrackLive& o)
     {
         volumeDb = o.volumeDb.load(); pan = o.pan.load();
         mute = o.mute.load(); solo = o.solo.load();
-        armed = o.armed.load(); inputMode = o.inputMode.load(); height = o.height.load(); autoMode = o.autoMode.load(); autoParam = o.autoParam.load(); invert = o.invert.load(); outBus = o.outBus.load();
+        armed = o.armed.load(); monitor = o.monitor.load(); inputMode = o.inputMode.load(); height = o.height.load(); autoMode = o.autoMode.load(); autoParam = o.autoParam.load(); invert = o.invert.load(); outBus = o.outBus.load();
         cueDb = o.cueDb.load(); delayMs = o.delayMs.load(); trimDb = o.trimDb.load(); eq.copyFrom (o.eq); comp.copyFrom (o.comp); trackType = o.trackType.load();
         limiterOn = o.limiterOn.load(); ceilingDb = o.ceilingDb.load();
         sendDb[0] = o.sendDb[0].load(); sendDb[1] = o.sendDb[1].load();

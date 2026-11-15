@@ -639,6 +639,7 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         g.setColour (armed ? text : dim);
         g.setFont (font (10.5f, true));
         g.drawText (inputName (t.live->inputMode.load(), engine.defaultInput.load()), ir.toNearestInt(), juce::Justification::centred);
+        drawBtn (monRect (ti), "I", t.live->monitor.load(), juce::Colour (0xff4ad0ff));
         }
     }
 
@@ -1473,6 +1474,7 @@ TimelineView::Hit TimelineView::hitTest (juce::Point<int> p) const
         h.type = HitType::Header;
         if (shows (CtlLock) && lockRect (ti).contains (p)) h.type = HitType::HeaderLock;
         else if (shows (CtlRec) && armRect (ti).contains (p)) h.type = HitType::HeaderArm;
+        else if (shows (CtlInput) && heightOf (ti) >= 66 && monRect (ti).contains (p)) h.type = HitType::HeaderMon;
         else if (shows (CtlInput) && heightOf (ti) >= 66 && inputRect (ti).contains (p)) h.type = HitType::HeaderInput;
         else if (shows (CtlAutomation) && heightOf (ti) >= 66 && autoRect (ti).contains (p)) h.type = HitType::HeaderAuto;
         else if (shows (CtlAutomation) && heightOf (ti) >= 66 && paramRect (ti).contains (p)) h.type = HitType::HeaderAutoParam;
@@ -2069,6 +2071,14 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
             {
                 t->live->armed = ! t->live->armed.load();
                 if (t->live->armed.load()) engine.ensureInput();   // apre l'ingresso subito, cosi' il vu-meter mostra il livello prima di registrare
+                project.liveChanged();
+            }
+            break;
+        case HitType::HeaderMon:
+            if (auto* t = project.findTrack (hit.track))
+            {
+                t->live->monitor = ! t->live->monitor.load();
+                if (t->live->monitor.load()) { t->live->armed = true; engine.ensureInput(); }   // ascoltare vuol dire armare
                 project.liveChanged();
             }
             break;

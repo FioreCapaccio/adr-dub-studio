@@ -1,0 +1,6 @@
+{
+ "it": [["<b>MON</b> (I): ascolta l'ingresso mentre si registra (usare le cuffie per evitare il feedback).",
+         "<b>MON</b> (I): ascolta in cuffia l'ingresso di tutte le tracce armate, anche a trasporto fermo; per una traccia sola usa il tasto <b>I</b> nella sua intestazione (nelle tracce alte almeno 66 px, accanto all'ingresso). La registrazione avviene comunque, con l'ascolto acceso o spento: smette solo se disarmi la traccia. Usare le cuffie per evitare il feedback."]],
+ "en": [["<b>MON</b> (I): hear the input while recording (use headphones to avoid feedback).",
+         "<b>MON</b> (I): hear the input of all armed tracks in the headphones, even with the transport stopped; for a single track use the <b>I</b> button in its header (on tracks at least 66 px tall, next to the input). Recording always happens, with monitoring on or off: it stops only if you disarm the track. Use headphones to avoid feedback."]]
+}
