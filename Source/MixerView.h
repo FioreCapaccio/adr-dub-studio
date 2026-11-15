@@ -53,6 +53,7 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
 
     void setInfo (const juce::String& n, juce::Colour c, bool selected);
+    void setBadge (const juce::Image& image, int icon);   // icona o immagine della traccia (accanto al nome)
     void syncFromLive();
     void updateMeter();
     /** Mostra il valore dell'automazione sul fader (senza modificarlo). */
@@ -77,6 +78,8 @@ private:
     bool aux;
     juce::String name;
     juce::Colour colour;
+    juce::Image badgeImage;
+    int badgeIcon = 0;
     bool selected = false;
 
     juce::Slider pan { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };

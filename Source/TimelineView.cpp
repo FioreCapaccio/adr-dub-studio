@@ -1,5 +1,6 @@
 #include "TimelineView.h"
 #include "TrackPresets.h"
+#include "TrackIcons.h"
 #include "AdrImport.h"
 #include "VideoSupport.h"
 
@@ -524,7 +525,16 @@ void TimelineView::drawHeader (juce::Graphics& g, int ti)
         if (shows (CtlRec)) btnLeft = juce::jmin (btnLeft, armRect (ti).getX() - 4);
         if (shows (CtlLock)) btnLeft = juce::jmin (btnLeft, lockRect (ti).getX() - 4);
         if (nameRow (ti) == 0) right = juce::jmin (right, btnLeft);
-        g.drawText ((t.reference ? juce::String ("[RIF] ") : juce::String()) + t.name, 42, ny, juce::jmax (30, right - 42), 20, juce::Justification::centredLeft, true);
+        const bool badgeOn = hasTrackBadge (t.image, t.icon, t.live->trackType.load());
+        // l'icona cresce con l'altezza ma sta nello spazio libero sotto il vu-meter; se non c'e' (traccia bassa) e' piccola, accanto al nome
+        const int freeTop = meterRect (ti).getBottom() + 8, space = y + h - 6 - freeTop;
+        const bool below = badgeOn && h >= 96 && space >= 24;
+        const int bs = below ? juce::jmin (64, space) : 18;
+        const int nx = badgeOn && ! below ? 42 + bs + 6 : 42;
+        if (badgeOn)
+            drawTrackBadge (g, t.image, t.icon, t.live->trackType.load(),
+                            below ? juce::Rectangle<float> (42.0f, (float) freeTop, (float) bs, (float) bs) : juce::Rectangle<float> (42.0f, (float) ny - 1.0f, (float) bs, (float) bs), t.colour);
+        g.drawText ((t.reference ? juce::String ("[RIF] ") : juce::String()) + t.name, nx, ny, juce::jmax (30, right - nx), 20, juce::Justification::centredLeft, true);
         if (t.versions.size() > 1)   // Track Versions: la versione attiva sotto il nome
         {
             juce::String vn;
@@ -2987,6 +2997,19 @@ void TimelineView::showMarkerMenu (int markerId)
     });
 }
 
+void TimelineView::chooseTrackImage (std::vector<int> ids)
+{
+    auto chooser = std::make_shared<juce::FileChooser> (TRANS ("Immagine per la traccia"), juce::File(), "*.png;*.jpg;*.jpeg;*.gif;*.bmp");
+    juce::Component::SafePointer<TimelineView> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe, chooser, ids] (const juce::FileChooser& fc)
+    {
+        if (safe == nullptr || fc.getResult() == juce::File()) return;
+        const auto img = makeTrackImage (fc.getResult());
+        if (! img.isValid()) { juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, TRANS ("Immagine"), TRANS ("Non riesco a leggere questa immagine.")); return; }
+        safe->project.setTracksIcon (ids, 0, img);
+    });
+}
+
 void TimelineView::trackDelayDialog (int trackId)
 {
     const auto* t = project.findTrack (trackId);
@@ -3019,6 +3042,18 @@ void TimelineView::showTrackMenu (int trackId)
         for (int i = 0; i < numPaletteColours; ++i)
             colours.addColouredItem (100 + i, "Colore " + juce::String (i + 1), trackPalette[i]);
         m.addSubMenu (TRANS ("Colore"), colours);
+        {
+            const auto* tr = project.findTrack (trackId);
+            const int cur = tr != nullptr ? tr->icon : 0;
+            juce::PopupMenu ic;
+            ic.addItem (700, TRANS ("Predefinita (dal tipo di traccia)"), true, cur == 0 && (tr == nullptr || ! tr->image.isValid()));
+            ic.addItem (701, TRANS ("Nessuna"), true, cur == -1 && (tr == nullptr || ! tr->image.isValid()));
+            ic.addSeparator();
+            for (int i : { 1, 3 }) ic.addItem (700 + 1 + i, trackIconName (i), true, cur == i && (tr == nullptr || ! tr->image.isValid()));
+            ic.addSeparator();
+            ic.addItem (720, TRANS ("Carica un'immagine..."));
+            m.addSubMenu (TRANS ("Icona"), ic);
+        }
         m.addItem (2, TRANS ("Elimina traccia"));
         m.addItem (13, TRANS ("Blocca la traccia (Lock)"), true, project.trackLocked (trackId));
         m.addItem (14, TRANS ("Nascondi la traccia"));
@@ -3085,7 +3120,9 @@ void TimelineView::showTrackMenu (int trackId)
         else if (r == 13) p.setTracksLocked (targets, ! p.trackLocked (trackId));
         else if (r == 14) p.setTracksHidden (targets, true);
         else if (r == 380) safe->trackDelayDialog (trackId);
-        else if (r >= 500) p.switchVersion (trackId, r - 500);
+        else if (r == 720) safe->chooseTrackImage (targets);
+        else if (r >= 700 && r <= 701 + kNumTrackIcons) p.setTracksIcon (targets, r == 700 ? 0 : r == 701 ? -1 : r - 701, {});
+        else if (r >= 500 && r < 700) p.switchVersion (trackId, r - 500);
         else if (r == 490 || r == 491) safe->versionNameDialog (trackId, r == 491);
         else if (r == 492) { if (const auto* tr = p.findTrack (trackId)) safe->versionRenameDialog (trackId, tr->activeVersion); }
         else if (r == 493) { if (const auto* tr = p.findTrack (trackId)) p.deleteVersion (trackId, tr->activeVersion); }

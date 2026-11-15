@@ -223,6 +223,7 @@ private:
     std::unique_ptr<class BoothWindow> scriptWindow, cueWindow;
     void toggleMtcWindow();
     void toggleSurfaceWindow();
+    void toggleThemeEditor();
     void ensureSurface();
     void keyEditorDialog();
     void settingsDialog();
@@ -235,7 +236,7 @@ public:
     void snapshotLayouts (const juce::File& dir);    // verifica: finestra con la barra del trasporto in ogni posizione (non salva le preferenze)
 private:
     friend class SettingsPanel;
-    std::unique_ptr<class BoothWindow> mtcWindow, surfaceWindow;
+    std::unique_ptr<class BoothWindow> mtcWindow, surfaceWindow, themeWindow;
     std::unique_ptr<surface::Surface> surface;   // controller MIDI (Mackie Control)
     std::unique_ptr<mtc::Sync> mtcSync;   // ingresso MIDI e aggancio al timecode esterno
     void reconformDialog();

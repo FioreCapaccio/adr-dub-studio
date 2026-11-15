@@ -354,6 +354,8 @@ struct Track
     bool hidden = false;   // traccia nascosta nella timeline e nel mixer (non nel mix)
     juce::String name;
     juce::Colour colour;
+    int icon = 0;           // icona: 0 = quella del tipo di traccia, -1 = nessuna, 1.. = icona disegnata (TrackIcons.h)
+    juce::Image image;      // immagine scelta dall'utente (miniatura 96 px, salvata nella sessione); ha la precedenza sull'icona
     std::shared_ptr<TrackLive> live = std::make_shared<TrackLive>();
     std::vector<Clip> clips;
     std::vector<AutoPoint> volAuto, panAuto, sendAAuto, sendBAuto;   // curve di automazione (ordinate per posizione)
@@ -692,6 +694,7 @@ public:
     void clearAllMute();    // "Annulla tutti i mute" di Nuendo
     void clearAllSolo();    // "Disattiva tutti i solo"
     void setTrackColour (int id, juce::Colour c);
+    void setTracksIcon (const std::vector<int>& ids, int icon, const juce::Image& image);   // un solo undo
 
     // registrazione: un clip per ogni take, posizionato compensando la latenza
     struct RecItem { int trackId; juce::File file; int64_t startPos; int64_t latency; int cueId = 0; juce::String takeName; };

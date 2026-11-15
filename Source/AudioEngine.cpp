@@ -603,6 +603,7 @@ void AudioEngine::shutdown()
 {
     deviceManager.removeAudioCallback (this);
     writerThread.stopThread (2000);
+    card2.shutdown();
     deviceManager.closeAudioDevice();
 }
 
@@ -622,6 +623,7 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     busNeedsReset = true;
     numInputs = device->getActiveInputChannels().countNumberOfSetBits();
     numOutputs = device->getActiveOutputChannels().countNumberOfSetBits();
+    card2.setMainFormat (rate, device->getCurrentBufferSizeSamples());
     playGain = 0.0f;
     juce::MessageManager::callAsync ([this, rate]
     {
@@ -701,7 +703,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* in, int 
             for (int c = 0; c < juce::jmin (2, numOut); ++c)
                 if (out[c] != nullptr) juce::FloatVectorOperations::copy (out[c] + done, master.getReadPointer (c), n);
         }
-        if (cue.enabled.load())   // cuffie dell'attore sulla coppia scelta
+        if (cue.enabled.load() && ! card2.outOn.load())   // cuffie dell'attore sulla coppia scelta (se non stanno sulla seconda scheda)
         {
             const int first = 2 * cue.pair.load();
             for (int c = 0; c < 2; ++c)
@@ -729,7 +731,16 @@ void AudioEngine::finishCue (int n, const float* const* in, int numIn, int inOff
 {
     if (! cue.enabled.load()) return;
     if (! cueReady) cueBuf.clear (0, n);
-    if (cue.talkOn.load() && in != nullptr)
+    if (card2.inOn.load())   // il microfono del direttore sta sulla seconda scheda: va letto sempre, anche a talkback spento, per non accumulare ritardo
+    {
+        card2.pullMic (micBuf, n);
+        if (cue.talkOn.load())
+        {
+            const float g = dbToGain (cue.talkDb.load());
+            for (int c = 0; c < 2; ++c) juce::FloatVectorOperations::addWithMultiply (cueBuf.getWritePointer (c), micBuf, g, n);
+        }
+    }
+    else if (cue.talkOn.load() && in != nullptr)
     {
         const int ch = cue.talkInput.load();
         if (ch >= 0 && ch < numIn && in[ch] != nullptr)
@@ -738,6 +749,7 @@ void AudioEngine::finishCue (int n, const float* const* in, int numIn, int inOff
             for (int c = 0; c < 2; ++c) juce::FloatVectorOperations::addWithMultiply (cueBuf.getWritePointer (c), in[ch] + inOffset, g, n);
         }
     }
+    if (card2.outOn.load()) card2.pushCue (cueBuf.getReadPointer (0), cueBuf.getReadPointer (1), n);
     for (int c = 0; c < 2; ++c)
     {
         const float pk = cueBuf.getMagnitude (c, 0, n);

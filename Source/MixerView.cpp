@@ -1,4 +1,5 @@
 #include "MixerView.h"
+#include "TrackIcons.h"
 
 namespace fc
 {
@@ -331,6 +332,15 @@ void ChannelStrip::setInfo (const juce::String& n, juce::Colour c, bool sel)
     }
 }
 
+void ChannelStrip::setBadge (const juce::Image& image, int icon)
+{
+    if (image.isValid() != badgeImage.isValid() || (image.isValid() && image.getPixelData() != badgeImage.getPixelData()) || icon != badgeIcon)
+    {
+        badgeImage = image; badgeIcon = icon;
+        repaint();
+    }
+}
+
 void ChannelStrip::syncFromLive()
 {
     fader.setValue (live->volumeDb.load(), juce::dontSendNotification);
@@ -514,8 +524,10 @@ void ChannelStrip::paint (juce::Graphics& g)
     g.setColour (text);
     g.setFont (font (12.0f, true));
     const int type = (! master && ! aux) ? live->trackType.load() : 0;
-    g.drawText (master ? TRANS ("MASTER") : name, getLocalBounds().withHeight (type > 0 ? 22 : 28).withTrimmedTop (type > 0 ? 1 : 4).reduced (8, 0),
+    const bool badgeOn = ! master && ! aux && hasTrackBadge (badgeImage, badgeIcon, type);
+    g.drawText (master ? TRANS ("MASTER") : name, getLocalBounds().withHeight (type > 0 ? 22 : 28).withTrimmedTop (type > 0 ? 1 : 4).reduced (8, 0).withTrimmedLeft (badgeOn ? 20 : 0),
                 juce::Justification::centred, true);
+    if (badgeOn) drawTrackBadge (g, badgeImage, badgeIcon, type, juce::Rectangle<float> (7.0f, 5.0f, 18.0f, 18.0f), colour);
     if (type > 0)   // tipo di traccia (dialogo, musica, effetti) sotto il nome
     {
         g.setColour (trackTypeColour (type));
@@ -1003,6 +1015,7 @@ void MixerView::changeListenerCallback (juce::ChangeBroadcaster*)
     for (size_t i = 0; i < strips.size() && i < tracks.size(); ++i)
     {
         strips[i]->setInfo (tracks[i].name, tracks[i].colour, tracks[i].id == project.selectedTrackId);
+        strips[i]->setBadge (tracks[i].image, tracks[i].icon);
         strips[i]->syncFromLive();
     }
 }

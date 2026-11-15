@@ -1,4 +1,5 @@
 #include "Model.h"
+#include "TrackIcons.h"
 #include "ExportEngine.h"
 #include "AudioTools.h"
 #include "TimeStretch.h"
@@ -547,6 +548,14 @@ void Project::renameTrack (int id, const juce::String& name)
         t->name = name.trim().isEmpty() ? t->name : name.trim();
         changed();
     }
+}
+
+void Project::setTracksIcon (const std::vector<int>& ids, int icon, const juce::Image& image)
+{
+    beginEdit();
+    for (auto id : ids)
+        if (auto* t = findTrack (id)) { t->icon = icon; t->image = image; }
+    changed();
 }
 
 void Project::setTrackColour (int id, juce::Colour c)
@@ -3566,6 +3575,8 @@ juce::var Project::toVar() const
         if (t.reference) o->setProperty ("reference", true);
         if (t.showLanes) o->setProperty ("lanes", true);
         o->setProperty ("colour", t.colour.toString());
+        if (t.icon != 0) o->setProperty ("icon", t.icon);
+        if (t.image.isValid()) o->setProperty ("image", trackImageToBase64 (t.image));
         o->setProperty ("volumeDb", (double) t.live->volumeDb.load());
         o->setProperty ("pan", (double) t.live->pan.load());
         o->setProperty ("mute", t.live->mute.load());
@@ -4040,6 +4051,8 @@ void Project::loadSession (const juce::File& f, std::function<void (juce::String
                     t.reference = (bool) tv.getProperty ("reference", false);
                     t.showLanes = (bool) tv.getProperty ("lanes", false);
                     t.colour = juce::Colour::fromString (tv.getProperty ("colour", "ffe5584c").toString());
+                    t.icon = juce::jlimit (-1, kNumTrackIcons, (int) tv.getProperty ("icon", 0));
+                    t.image = trackImageFromBase64 (tv.getProperty ("image", {}).toString());
                     t.live->volumeDb = (float) (double) tv.getProperty ("volumeDb", 0.0);
                     t.live->pan = (float) (double) tv.getProperty ("pan", 0.0);
                     t.live->mute = (bool) tv.getProperty ("mute", false);

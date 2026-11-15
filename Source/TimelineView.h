@@ -64,6 +64,7 @@ public:
 
     void renameTrackDialog (int trackId);
     void trackDelayDialog (int trackId);
+    void chooseTrackImage (std::vector<int> trackIds);
     void renameMarkerDialog (int markerId);
 
     // Component

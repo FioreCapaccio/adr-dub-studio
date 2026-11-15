@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "ThemeManager.h"
+#include "ThemeEditor.h"
 #include "DubWorkflow.h"
 #include "CueSheet.h"
 #include "AudioAlign.h"
@@ -34,8 +35,8 @@ using namespace theme;
 
 namespace
 {
-struct LayoutPreset { const char* id; const char* name; int headerW, stripW, trackH; };
-const LayoutPreset kLayouts[] = { { "compact", TRX ("Compatto"), 244, 100, 72 }, { "standard", TRX ("Standard"), 264, 108, 96 }, { "large", TRX ("Ampio"), 300, 124, 128 } };
+struct LayoutPreset { const char* id; const char* name; int headerW, stripW, trackH; float scale; };   // scale: ingrandimento di tutta l'interfaccia (testi e pulsanti compresi)
+const LayoutPreset kLayouts[] = { { "compact", TRX ("Compatto"), 232, 96, 60, 0.85f }, { "standard", TRX ("Standard"), 264, 108, 96, 1.0f }, { "large", TRX ("Ampio"), 320, 136, 150, 1.15f } };
 
 
 juce::File settingsFile()
@@ -364,6 +365,7 @@ MainComponent::MainComponent()
         if (saved != stripBelowMixer)   // la finestra flottante si crea quando la principale e' gia' sullo schermo
             juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this), saved] { if (safe != nullptr) safe->setStripPos (saved); });
     }
+    ThemeManager::onSelected = [this] { menuItemsChanged(); };   // la spunta del menu Tema segue il tema scelto, da qualunque parte
     if (surface::savedDevice().isNotEmpty()) { ensureSurface(); surface->open (surface::savedDevice()); }   // il controller scelto l'ultima volta si riattiva da solo
     playBtn.onClick = [this] { toggleTransport(); };
     stopBtn.onClick = [this] { stopAll(); };
@@ -443,6 +445,8 @@ MainComponent::~MainComponent()
     mtcSync.reset();
     surfaceWindow.reset();
     surface.reset();
+    themeWindow.reset();
+    ThemeManager::onSelected = nullptr;
     adrWindow.reset();
     infoWindow.reset();
     notesWindow.reset();
@@ -2316,7 +2320,24 @@ juce::PopupMenu MainComponent::buildThemeMenu()
     for (auto& t : ThemeManager::builtins())
         addAction (sub, t.name, current == t.id, [id = t.id] { ThemeManager::select (id); });
 
+    sub.addSeparator();
+    addAction (sub, TRANS ("Colori del tema..."), false, [this] { toggleThemeEditor(); });
     return sub;
+}
+
+void MainComponent::toggleThemeEditor()
+{
+    if (themeWindow != nullptr) { themeWindow->toFront (true); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    themeWindow = std::make_unique<BoothWindow> (TRANS ("Colori del tema - ADR Dub Studio"), [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->themeWindow.reset(); });
+    });
+    themeWindow->setContentOwned (new ThemeEditor(), false);
+    themeWindow->setResizable (false, false);
+    themeWindow->setSize (440, 640);
+    themeWindow->centreAroundComponent (this, 440, 640);
+    themeWindow->setVisible (true);
 }
 
 void MainComponent::importThemeFile (const juce::File& f)
@@ -2355,6 +2376,21 @@ void MainComponent::applyLayout (int index, bool resizeTracks)
 {
     index = juce::jlimit (0, (int) std::size (kLayouts) - 1, index);
     layoutIndex = index;
+    {   // l'ingrandimento non deve far uscire dallo schermo la finestra principale (minimo 1400 x 700 punti)
+        auto& desk = juce::Desktop::getInstance();
+        const float cur = desk.getGlobalScaleFactor();
+        float s = kLayouts[index].scale;
+        if (const auto* d = desk.getDisplays().getPrimaryDisplay())
+            s = juce::jmin (s, (float) d->userArea.getWidth() * cur / 1400.0f, (float) d->userArea.getHeight() * cur / 700.0f);
+        s = juce::jmax (0.7f, s);
+        if (std::abs (s - cur) > 0.001f)
+        {
+            auto* top = getTopLevelComponent();
+            const auto size = top != nullptr && top != this ? top->getBounds() : juce::Rectangle<int>();
+            desk.setGlobalScaleFactor (s);
+            if (! size.isEmpty()) top->setSize (juce::roundToInt ((float) size.getWidth() * cur / s), juce::roundToInt ((float) size.getHeight() * cur / s));   // stessa grandezza sullo schermo
+        }
+    }
     TimelineView::headerW = kLayouts[index].headerW;
     MixerView::stripW = kLayouts[index].stripW;
     if (timeline == nullptr) return;   // all'avvio: si imposta solo la misura, i componenti non ci sono ancora
@@ -3215,6 +3251,7 @@ public:
 
         // audio
         tabs.addTab (TRANS ("Audio"), theme::panel, new juce::AudioDeviceSelectorComponent (mc.engine.deviceManager, 0, 8, 0, 2, false, false, true, false), true);
+        tabs.addTab (TRANS ("Scheda del direttore"), theme::panel, new SecondCardPanel (mc.engine.card2), true);
 
         // registrazione ed editing
         {
@@ -4798,6 +4835,16 @@ void MainComponent::snapshotLayouts (const juce::File& dir)
     save (strip.createComponentSnapshot (strip.getLocalBounds(), true, 1.0f), dir.getChildFile ("strip_floating.png"));
     stripPos = saved;
     layoutAll();
+    {   // i tre layout (Compatto, Standard, Ampio) con qualche traccia
+        while (project->getSession().tracks.size() < 4) project->addTrack();
+        const int savedLayout = layoutIndex;
+        for (int i = 0; i < (int) std::size (kLayouts); ++i)
+        {
+            applyLayout (i, true);
+            save (createComponentSnapshot (getLocalBounds(), true, 1.0f), dir.getChildFile ("main_layout" + juce::String (i) + ".png"));
+        }
+        applyLayout (savedLayout, true);
+    }
     // finestra staccata reale: stampa le misure, il contenuto deve avere l'altezza della barra
     const int savedPersist = settings().getIntValue ("transportPos", 0);
     setStripPos (stripFloating);

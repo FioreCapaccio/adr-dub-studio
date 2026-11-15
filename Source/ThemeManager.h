@@ -26,6 +26,11 @@ public:
     static bool importReaperTheme (const juce::File&, ThemeEntry& out, juce::String& error);
     static void remove (const ThemeEntry&);
 
+    /** Il tema "Personalizzato" (ritoccato dall'utente): salvato nelle preferenze, applicato e scelto subito. */
+    static void saveCustom (const theme::Palette&);
+    /** Chiamata dopo ogni cambio di tema (il menu deve rifare le spunte). */
+    static inline std::function<void()> onSelected;
+
     static juce::String currentId();
     /** Applica il tema e lo ricorda; ritorna false se l'id non esiste. */
     static bool select (const juce::String& id);

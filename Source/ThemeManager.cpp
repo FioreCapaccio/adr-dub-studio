@@ -19,6 +19,9 @@ std::vector<ThemeEntry> ThemeManager::builtins()
     v.push_back ({ "dark", TRANS ("Scuro"), theme::Palette::dark(), true });
     v.push_back ({ "light", TRANS ("Chiaro"), theme::Palette::light(), true });
     v.push_back ({ "contrast", TRANS ("Alto contrasto"), theme::Palette::highContrast(), true });
+    v.push_back ({ "contrast-colour", TRANS ("Alto contrasto colorato"), theme::Palette::highContrastColour(), true });
+    if (const auto custom = settings().getValue ("theme.custom", ""); custom.isNotEmpty())
+        v.push_back ({ "custom", TRANS ("Personalizzato"), theme::Palette::fromVar (juce::JSON::parse (custom)), true });
     // il tema predefinito di Reaper 5.0 (grigio neutro con accenti turchesi)
     static const char* default5 = R"({ "name": "Default 5", "bg": "FF1C1C1C", "panel": "FF333333", "panelHi": "FF3B3B3B", "panelTop": "FF373737", "lane": "FF232323", "laneAlt": "FF2F2F2F",
         "grid": "FF2F2F2F", "border": "FF414141", "text": "FFAAAAAA", "dim": "FF747474", "accent": "FFFF5A47", "blue": "FF466168", "playhead": "FFFF4136",
@@ -83,9 +86,16 @@ bool ThemeManager::select (const juce::String& id)
             theme::apply (t.palette);
             settings().setValue ("theme", id);
             settings().saveIfNeeded();
+            if (onSelected) onSelected();
             return true;
         }
     return false;
+}
+
+void ThemeManager::saveCustom (const theme::Palette& p)
+{
+    settings().setValue ("theme.custom", juce::JSON::toString (p.toVar()));
+    select ("custom");
 }
 
 void ThemeManager::applySaved()

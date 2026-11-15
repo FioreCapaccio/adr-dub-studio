@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SecondCard.h"
+
 #include "Model.h"
 #include "Limiter.h"
 #include "Loudness.h"
@@ -222,6 +224,7 @@ public:
         std::atomic<float> peakL { 0.0f }, peakR { 0.0f };
     };
     CueMix cue;
+    SecondCard card2;   // seconda scheda audio per le cuffie dell'attore e/o il microfono del direttore
     int getNumOutputChannels() const noexcept { return numOutputs.load(); }
     /** Apre le uscite necessarie alla coppia indicata (thread messaggi). Ritorna un errore, o stringa vuota se va bene. */
     juce::String openCueOutputs (int pair);
@@ -254,6 +257,7 @@ private:
     void processChunkMain (int n, const float* const* in, int numIn, int inOffset);
     void finishCue (int n, const float* const* in, int numIn, int inOffset);
     juce::AudioBuffer<float> cueBuf { 2, Mixer::kChunk }, cueSumBuf { 2, Mixer::kChunk };
+    float micBuf[Mixer::kChunk] = {};   // microfono del direttore dalla seconda scheda
     bool cueReady = false;
     std::atomic<int> numOutputs { 2 };
 

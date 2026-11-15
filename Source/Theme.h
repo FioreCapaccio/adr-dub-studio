@@ -184,6 +184,20 @@ struct Palette
         return p;
     }
 
+    /** Alto contrasto con superfici blu notte e accenti saturi (ciano, magenta, verde, giallo): testo bianco su fondi molto scuri. */
+    static Palette highContrastColour()
+    {
+        Palette p;
+        p.name = "Alto contrasto colorato";
+        p.bg = juce::Colour (0xff04051a);      p.panel = juce::Colour (0xff0a1038);   p.panelHi = juce::Colour (0xff1a2478);
+        p.panelTop = juce::Colour (0xff121a58); p.lane = juce::Colour (0xff060924);    p.laneAlt = juce::Colour (0xff0d1240);
+        p.grid = juce::Colour (0xff2c3da6);     p.border = juce::Colour (0xff00d9ff);  p.text = juce::Colour (0xffffffff);
+        p.dim = juce::Colour (0xffffd166);      p.accent = juce::Colour (0xffff2e93);  p.blue = juce::Colour (0xff00b8ff);
+        p.playhead = juce::Colour (0xffff1744); p.green = juce::Colour (0xff00ff85);   p.yellow = juce::Colour (0xffffe600);
+        p.muteCol = juce::Colour (0xff00b8ff);  p.soloCol = juce::Colour (0xffffe600);
+        return p;
+    }
+
     /** Copia dei colori attuali (i token vivi dell'app). */
     static Palette current();
 

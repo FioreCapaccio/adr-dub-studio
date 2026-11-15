@@ -1,3 +1,4 @@
+#include "TrackIcons.h"
 #include "MainComponent.h"
 #include <iostream>
 #include "VideoSupport.h"
@@ -25,6 +26,7 @@
 #include "Conform.h"
 #include "ExternalSync.h"
 #include "ThemeManager.h"
+#include "ThemeEditor.h"
 #include "MixerView.h"
 #include "Lang.h"
 #include "License.h"
@@ -135,6 +137,7 @@ private:
         stepConform();
         stepMtc();
         stepSurface();
+        stepSecondCard();
         stepLang();
         stepLicense();
         stepStems();
@@ -3718,6 +3721,144 @@ private:
         expect (lf == "KEYBOARD SHORTCUTS\n\n", "Lingua: a capo nel testo chiave e traduzione");
     }
 
+    void stepSecondCard()
+    {
+        // buffer fra due clock: simulazione a tempo (produttore e consumatore con frequenze diverse e deriva)
+        struct Result { int under = 0, over = 0, fillEnd = 0, target = 0; float maxStep = 0.0f; long frames = 0; };
+        auto simulate = [] (double prodRate, double consRate, double seconds, float freq) -> Result
+        {
+            fc::DriftFifo f;
+            f.prepare (1);
+            f.setTarget (1152);
+            const int blk = 512;
+            double tp = 0.0, tc = 0.0;
+            double phase = 0.0;
+            std::vector<float> in ((size_t) blk), out ((size_t) blk);
+            float last = 0.0f;
+            bool have = false;
+            Result r;
+            const double ratio = prodRate / consRate;
+            const double inc = 2.0 * juce::MathConstants<double>::pi * freq / prodRate;
+            while (tp < seconds && tc < seconds)
+            {
+                if (tp <= tc)
+                {
+                    for (int i = 0; i < blk; ++i) { in[(size_t) i] = (float) std::sin (phase); phase += inc; }
+                    const float* d[1] = { in.data() };
+                    f.write (d, blk);
+                    tp += (double) blk / prodRate;
+                }
+                else
+                {
+                    float* o[1] = { out.data() };
+                    const int u = f.getUnderruns();
+                    f.read (o, blk, ratio);
+                    if (u == f.getUnderruns() && f.getFill() > 0)
+                        for (int i = 0; i < blk; ++i)
+                        {
+                            if (have && std::abs (out[(size_t) i] - last) > r.maxStep) r.maxStep = std::abs (out[(size_t) i] - last);
+                            last = out[(size_t) i]; have = true; ++r.frames;
+                        }
+                    else have = false;   // dopo un'interruzione il confronto riparte
+                    tc += (double) blk / consRate;
+                }
+            }
+            r.under = f.getUnderruns(); r.over = f.getOverruns(); r.fillEnd = f.getFill(); r.target = 1152;
+            return r;
+        };
+        {
+            const auto a = simulate (48000.0 * 1.0001, 48000.0, 180.0, 1000.0f);   // il produttore e' 100 ppm piu' veloce, per tre minuti
+            expect (a.under == 0 && a.over == 0 && a.frames > 7000000 && a.maxStep < 0.14f && std::abs (a.fillEnd - a.target) < a.target / 2,
+                    "seconda scheda: deriva di 100 ppm per 3 minuti senza interruzioni (riempimento " + juce::String (a.fillEnd) + ", salto massimo " + juce::String (a.maxStep, 3) + ")");
+            const auto b = simulate (48000.0 * 0.9997, 48000.0, 180.0, 1000.0f);   // e piu' lento
+            expect (b.under == 0 && b.over == 0 && b.maxStep < 0.14f && std::abs (b.fillEnd - b.target) < b.target / 2,
+                    "seconda scheda: deriva di -300 ppm per 3 minuti senza interruzioni (riempimento " + juce::String (b.fillEnd) + ")");
+            const auto c = simulate (48000.0, 44100.0, 120.0, 1000.0f);   // frequenze diverse: 48 kHz -> 44,1 kHz
+            expect (c.under == 0 && c.over == 0 && c.maxStep < 0.16f, "seconda scheda: da 48 a 44,1 kHz senza interruzioni (salto massimo " + juce::String (c.maxStep, 3) + ")");
+            const auto d = simulate (44100.0, 48000.0, 120.0, 1000.0f);
+            expect (d.under == 0 && d.over == 0 && d.maxStep < 0.14f, "seconda scheda: da 44,1 a 48 kHz senza interruzioni (salto massimo " + juce::String (d.maxStep, 3) + ")");
+        }
+        {   // stessa frequenza e nessuna deriva: il segnale passa uguale (solo ritardato)
+            fc::DriftFifo f;
+            f.prepare (1);
+            f.setTarget (640);
+            std::vector<float> in (256), out (256);
+            float maxErr = 0.0f;
+            std::vector<float> all;
+            for (int b = 0; b < 40; ++b)
+            {
+                for (int i = 0; i < 256; ++i) in[(size_t) i] = (float) (b * 256 + i) * 1.0e-4f;
+                const float* d[1] = { in.data() };
+                f.write (d, 256);
+                float* o[1] = { out.data() };
+                f.read (o, 256, 1.0);
+                for (auto v : out) all.push_back (v);
+            }
+            int first = 0;
+            while (first < (int) all.size() && all[(size_t) first] == 0.0f) ++first;
+            for (int i = first + 1; i < (int) all.size(); ++i) maxErr = juce::jmax (maxErr, std::abs (all[(size_t) i] - all[(size_t) i - 1] - 1.0e-4f));
+            expect (first > 0 && maxErr < 1.0e-6f, "seconda scheda: a frequenza uguale il segnale passa senza alterazioni");
+        }
+
+        if (const auto snap = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_CARD2", {}); snap.isNotEmpty())   // pannello della seconda scheda su file
+        {
+            fc::SecondCard card;
+            fc::SecondCardPanel panel (card);
+            panel.setSize (740, 520);
+            auto img = panel.createComponentSnapshot (panel.getLocalBounds(), true, 1.0f);
+            juce::File (snap).deleteFile();
+            if (auto os = juce::File (snap).createOutputStream()) juce::PNGImageFormat().writeImageToStream (img, *os);
+        }
+
+        // nel motore: le cuffie e il microfono del direttore passano dalla seconda scheda
+        {
+            fc::Project p (formats, 48000.0);
+            auto a = std::make_shared<fc::Asset>();
+            a->name = "tono"; a->audio.setSize (2, 96000);
+            for (int i = 0; i < 96000; ++i) { a->audio.setSample (0, i, 0.4f); a->audio.setSample (1, i, 0.4f); }
+            a->buildPeaks();
+            auto& t = p.edit().tracks[0];
+            fc::Clip c; c.id = 1; c.asset = a; c.start = 0; c.length = 96000;
+            t.clips = { c };
+            t.live->limiterOn = false; t.live->eq.enabled = false; t.live->comp.enabled = false; t.live->volumeDb = 0.0f;
+            p.edit().master->limiterOn = false;
+            constexpr int block = 256;
+            auto run = [&] (bool playing, float micLevel, bool talk, float& cuePeak, float& outPairPeak)
+            {
+                fc::AudioEngine eng;
+                eng.publish (std::make_shared<const fc::Session> (p.getSession()));
+                eng.cue.enabled = true; eng.cue.mixDb = 0.0f; eng.cue.talkDb = 0.0f; eng.cue.talkOn = talk; eng.cue.mixDuckDb = 0.0f;
+                eng.card2.outOn = true; eng.card2.inOn = true;
+                eng.card2.setMainFormat (48000.0, block);
+                eng.card2.cueFifo.setTarget (640); eng.card2.micFifo.setTarget (640);
+                if (playing) eng.play();
+                std::vector<std::vector<float>> outs (4, std::vector<float> (block, 0.0f));
+                std::vector<float> mic ((size_t) block, micLevel), c0 ((size_t) block), c1 ((size_t) block);
+                cuePeak = 0.0f; outPairPeak = 0.0f;
+                for (int b = 0; b < 30; ++b)
+                {
+                    const float* md[1] = { mic.data() };
+                    eng.card2.micFifo.write (md, block);   // quello che farebbe la seconda scheda
+                    std::vector<float*> ptr; for (auto& o : outs) ptr.push_back (o.data());
+                    eng.audioDeviceIOCallbackWithContext (nullptr, 0, ptr.data(), 4, block, juce::AudioIODeviceCallbackContext());
+                    float* co[2] = { c0.data(), c1.data() };
+                    eng.card2.cueFifo.read (co, block, 1.0);   // e quello che porterebbe in cuffia
+                    if (b >= 20)
+                        for (int i = 0; i < block; ++i) cuePeak = juce::jmax (cuePeak, std::abs (c0[(size_t) i]));
+                    for (auto v : outs[2]) outPairPeak = juce::jmax (outPairPeak, std::abs (v));
+                    for (auto v : outs[3]) outPairPeak = juce::jmax (outPairPeak, std::abs (v));
+                }
+            };
+            float cp = 0.0f, op = 0.0f;
+            run (true, 0.3f, false, cp, op);
+            expect (std::abs (cp - 0.4f) < 0.02f && op == 0.0f, "seconda scheda: il mix arriva alle cuffie (" + juce::String (cp, 3) + ") e le uscite 3-4 della principale restano mute");
+            run (false, 0.3f, true, cp, op);
+            expect (std::abs (cp - 0.3f) < 0.02f && op == 0.0f, "seconda scheda: il talkback dal microfono del direttore arriva alle cuffie (" + juce::String (cp, 3) + ")");
+            run (false, 0.3f, false, cp, op);
+            expect (cp < 0.001f, "seconda scheda: senza talkback il microfono non si sente");
+        }
+    }
+
     void stepSurface()
     {
         namespace sf = fc::surface;
@@ -4408,6 +4549,34 @@ private:
         const auto colors = rp::parseColorTheme (ini);
         expect (colors.size() == 9 && colors.at ("col_mixerbg") == 3355443 && colors.count ("ui_img") == 0, "tema Reaper: legge solo la sezione [color theme] (" + juce::String ((int) colors.size()) + " chiavi)");
 
+        {
+            const auto pc = fc::theme::Palette::highContrastColour();
+            expect (rp::contrastRatio (pc.text, pc.panel) >= 12.0f && rp::contrastRatio (pc.dim, pc.panel) >= 7.0f && rp::contrastRatio (pc.text, pc.panelHi) >= 7.0f
+                        && rp::contrastRatio (pc.border, pc.panel) >= 7.0f && rp::contrastRatio (pc.accent, pc.panel) >= 4.5f && rp::contrastRatio (pc.green, pc.lane) >= 7.0f,
+                    "tema alto contrasto colorato: testo, bordi e accenti molto leggibili (testo " + juce::String (rp::contrastRatio (pc.text, pc.panel), 1) + ")");
+            auto near = [] (juce::Colour a, juce::Colour b, int tol) { return std::abs (a.getRed() - b.getRed()) <= tol && std::abs (a.getGreen() - b.getGreen()) <= tol && std::abs (a.getBlue() - b.getBlue()) <= tol; };
+            const auto id0 = fc::transformPalette (pc, 0.0f, 1.0f, 0.0f);
+            expect (near (id0.accent, pc.accent, 2) && near (id0.bg, pc.bg, 2) && near (id0.text, pc.text, 0), "editor colori: nessuna variazione lascia il tema com'e'");
+            const auto grey = fc::transformPalette (pc, 0.0f, 0.0f, 0.0f);
+            expect (grey.accent.getSaturation() < 0.02f && grey.blue.getSaturation() < 0.02f, "editor colori: saturazione a zero = tutto grigio");
+            const auto rot = fc::transformPalette (pc, 120.0f, 1.0f, 0.0f);
+            expect (std::abs (rot.accent.getHue() - pc.accent.getHue()) > 0.2f && rot.text == pc.text, "editor colori: la tinta ruota i colori ma non il bianco");
+            const auto lum = fc::transformPalette (pc, 0.0f, 1.0f, 0.15f);
+            expect (lum.bg.getBrightness() > pc.bg.getBrightness() + 0.1f && lum.text == pc.text && near (lum.accent, pc.accent, 2), "editor colori: la luminosita' sposta solo i fondi");
+            expect (near (fc::transformPalette (fc::transformPalette (pc, 40.0f, 1.0f, 0.0f), -40.0f, 1.0f, 0.0f).blue, pc.blue, 4), "editor colori: le variazioni si compongono e si annullano");
+            expect (near (fc::theme::Palette::fromVar (pc.toVar()).green, pc.green, 0), "editor colori: la palette si salva e si rilegge");
+            if (const auto snap = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_THEMEEDIT", {}); snap.isNotEmpty())   // finestra dei colori del tema su file
+            {
+                fc::ThemeEditor ed;
+                ed.setSize (440, 640);
+                auto img = ed.createComponentSnapshot (ed.getLocalBounds(), true, 1.0f);
+                juce::File (snap).deleteFile();
+                if (auto os = juce::File (snap).createOutputStream()) juce::PNGImageFormat().writeImageToStream (img, *os);
+            }
+            bool listed = false;
+            for (auto& t : fc::ThemeManager::builtins()) listed |= t.id == "contrast-colour";
+            expect (listed, "tema alto contrasto colorato: presente nell'elenco dei temi");
+        }
         auto p = rp::paletteFromColors (colors, "Prova");
         expect (p.panel == juce::Colour (0x33, 0x33, 0x33) && p.lane == juce::Colour (0x42, 0x42, 0x42) && p.laneAlt == juce::Colour (0x45, 0x45, 0x45),
                 "tema Reaper: pannello e tracce presi dal tema");
@@ -4742,6 +4911,18 @@ private:
         expect (eng.getRecordStart() == startPos, "inizio registrazione sulla testina: " + juce::String ((juce::int64) eng.getRecordStart()));
         expect (eng.getLivePeaks().size() == 1 && eng.getLivePeaks()[0]->count.load() == block * blocks / fc::AudioEngine::LivePeaks::kBucket
                     && eng.getLivePeaks()[0]->startPos.load() == startPos, "registrazione: la forma d'onda si forma durante la registrazione");
+        if (const auto snap = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_ICON", {}); snap.isNotEmpty())   // intestazioni di tracce di varie altezze con l'icona, su file
+        {
+            auto& ts = project->edit().tracks;
+            const int hs[] = { 60, 100, 130, 190 };
+            for (int i = 0; i < 4 && i < (int) ts.size(); ++i) { ts[(size_t) i].live->height = hs[i]; ts[(size_t) i].icon = 1; }
+            fc::TimelineView tv (*project, eng);
+            tv.setSize (700, 560);
+            auto img = tv.createComponentSnapshot (tv.getLocalBounds(), true, 1.0f);
+            juce::PNGImageFormat png;
+            juce::File (snap).deleteFile();
+            if (auto os = juce::File (snap).createOutputStream()) png.writeImageToStream (img, *os);
+        }
         if (const auto snap = juce::SystemStats::getEnvironmentVariable ("ADR_SNAPSHOT_REC", {}); snap.isNotEmpty())   // timeline durante la registrazione, su file
         {
             s.tracks.back().live->armed = true;
@@ -4972,6 +5153,20 @@ private:
                 // offset e altezze tracce sopravvivono a salvataggio e caricamento
                 project->setVideoOffset (0.123);
                 project->getSession().tracks[0].live->height = 150;
+                {   // icone e immagini delle tracce: un solo undo, e sopravvivono al salvataggio
+                    juce::Image pic (juce::Image::ARGB, 96, 96, true);
+                    pic.clear (pic.getBounds(), juce::Colour (0xff3366cc));
+                    const auto id0 = project->getSession().tracks[0].id;
+                    project->setTracksIcon ({ id0 }, 3, {});
+                    project->setTracksIcon ({ id0 }, 0, pic);
+                    expect (project->getSession().tracks[0].image.isValid(), "icone: l'immagine e' assegnata alla traccia");
+                    project->undo();
+                    expect (! project->getSession().tracks[0].image.isValid() && project->getSession().tracks[0].icon == 3, "icone: un solo undo torna all'icona precedente");
+                    expect (fc::trackImageFromBase64 (fc::trackImageToBase64 (pic)).getWidth() == 96, "icone: l'immagine fa il giro in base64");
+                    expect (fc::effectiveTrackIcon (0, fc::TrackDialogue) == 1 && fc::effectiveTrackIcon (-1, fc::TrackDialogue) == 0 && fc::effectiveTrackIcon (3, 0) == 3, "icone: predefinita dal tipo, nessuna, scelta");
+                    project->setTracksIcon ({ id0 }, 0, pic);
+                    for (int ic = 1; ic <= fc::kNumTrackIcons; ++ic) expect (fc::trackIconName (ic).isNotEmpty(), "icone: ogni icona ha un nome");
+                }
                 auto tmp3 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_offset.adb");
                 juce::String err3;
                 project->save (tmp3, err3);
@@ -4982,6 +5177,7 @@ private:
                     expect (e3.isEmpty() && v3 != nullptr && std::abs (v3->offsetSec - 0.123) < 1.0e-9
                                 && project3->getSession().tracks[0].live->height.load() == 150,
                             "offset video e altezza traccia persistono nella sessione");
+                    expect (project3->getSession().tracks[0].image.isValid() && project3->getSession().tracks[0].image.getWidth() == 96, "icone: l'immagine della traccia persiste nella sessione");
                     finishCb (fails);
                 });
                 return;
@@ -5062,7 +5258,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.58.0"; }
+    const juce::String getApplicationVersion() override { return "2.60.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -5153,6 +5349,21 @@ public:
                 std::cout << "mediana del parlato " << juce::String (pl.speechMedian, 1) << " LUFS, variazione " << juce::String (pl.spreadBefore, 1) << " -> " << juce::String (pl.spreadAfter, 1) << " dB" << std::endl;
             }
             setApplicationReturnValue (r == nullptr ? 1 : 0);
+            quit();
+            return;
+        }
+        if (commandLine.contains ("--icons-png"))   // ADR Dub Studio --icons-png file.png: disegna tutte le icone delle tracce (prova dell'aspetto)
+        {
+            auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--icons-png", false, false), true);
+            args.removeEmptyStrings();
+            juce::Image sheet (juce::Image::ARGB, 4 * 80, 80 + 40, true);
+            juce::Graphics g (sheet);
+            g.fillAll (juce::Colour (0xff1c2026));
+            for (int i = 1; i <= fc::kNumTrackIcons; ++i)
+                fc::drawTrackIcon (g, i, juce::Rectangle<float> ((float) (i - 1) * 80.0f + 12.0f, 12.0f, 56.0f, 56.0f), fc::theme::trackPalette[(i * 3) % fc::theme::numPaletteColours]);
+            for (int i = 1; i <= 4; ++i)
+                fc::drawTrackIcon (g, i, juce::Rectangle<float> ((float) (i - 1) * 80.0f + 30.0f, 90.0f, 20.0f, 20.0f), juce::Colours::white);
+            if (! args.isEmpty()) { juce::File outf (args[0]); juce::FileOutputStream o (outf); if (o.openedOk()) { o.setPosition (0); o.truncate(); juce::PNGImageFormat().writeImageToStream (sheet, o); } }
             quit();
             return;
         }

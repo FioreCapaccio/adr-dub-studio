@@ -197,6 +197,7 @@ CueMixPanel::CueMixPanel (AudioEngine& e) : engine (e)
     status.setJustificationType (juce::Justification::topLeft);
 
     auto& s = settings();
+    engine.card2.loadSettings();   // cosa fa la seconda scheda (si sceglie in Impostazioni)
     loading = true;
     enable.setToggleState (false, juce::dontSendNotification);   // si accende sempre a mano: la seconda uscita puo' non esistere
     duckMix.setToggleState (s.getBoolValue ("cue.duck", true), juce::dontSendNotification);
@@ -229,10 +230,14 @@ void CueMixPanel::refreshOutputs()
     int inputs = 0;
     if (auto* dev = engine.deviceManager.getCurrentAudioDevice()) inputs = dev->getInputChannelNames().size();
     for (int i = 0; i < juce::jmax (1, inputs); ++i) talkInput.addItem (TRANS ("Ingresso ") + juce::String (i + 1), i + 1);
-    const bool ok = outputs.getNumItems() > 0;
+    const bool second = engine.card2.outOn.load();
+    const bool ok = outputs.getNumItems() > 0 || second;
     enable.setEnabled (ok);
-    outputs.setEnabled (ok);
-    status.setText (ok ? TRANS ("Le cuffie ricevono il mix (con il suo livello), i bip e il microfono del direttore. La prima coppia di uscite resta il master.")
+    outputs.setEnabled (outputs.getNumItems() > 0 && ! second);
+    talkInput.setEnabled (! engine.card2.inOn.load());
+    status.setText (second ? TRANS ("Le cuffie usano la seconda scheda audio (scelta in Impostazioni > Scheda del direttore)")
+                              + (engine.card2.inOn.load() ? TRANS (", insieme al microfono del direttore.") : TRANS (". Il microfono del direttore e' un ingresso della scheda principale."))
+                    : ok ? TRANS ("Le cuffie ricevono il mix (con il suo livello), i bip e il microfono del direttore. La prima coppia di uscite resta il master.")
                        : TRANS ("La scheda audio attuale ha solo ") + juce::String (avail) + TRANS (" uscite: per le cuffie dell'attore serve un'interfaccia con almeno 4 uscite (si sceglie in File > Impostazioni audio)."),
                     juce::dontSendNotification);
     if (ok && outputs.getSelectedId() == 0) outputs.setSelectedId (outputs.getItemId (0), juce::dontSendNotification);
@@ -255,7 +260,9 @@ void CueMixPanel::apply()
     const int pair = juce::jmax (1, outputs.getSelectedId() - 1);
     if (enable.getToggleState())
     {
-        auto err = engine.openCueOutputs (pair);
+        juce::String err;
+        if (engine.card2.outOn.load() || engine.card2.inOn.load()) err = engine.card2.ensureOpen();   // la seconda scheda si apre solo quando serve
+        if (err.isEmpty() && ! engine.card2.outOn.load()) err = engine.openCueOutputs (pair);
         if (err.isNotEmpty())
         {
             enable.setToggleState (false, juce::dontSendNotification);
@@ -263,9 +270,9 @@ void CueMixPanel::apply()
             engine.cue.enabled = false;
             return;
         }
-        engine.ensureInput();   // il microfono del direttore e' un ingresso: serve aperto
+        if (! engine.card2.inOn.load()) engine.ensureInput();   // il microfono del direttore e' un ingresso: serve aperto
         refreshOutputs();
-        outputs.setSelectedId (pair + 1, juce::dontSendNotification);
+        if (outputs.getNumItems() > 0) outputs.setSelectedId (pair + 1, juce::dontSendNotification);
     }
     engine.cue.pair = pair;
     engine.cue.mixDb = (float) mix.getValue();
