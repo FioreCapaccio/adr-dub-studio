@@ -147,8 +147,7 @@ private:
     void toggleLoop();
     void setLoopFromSelection();
     void startRecording();
-    bool monitorArmedOn() const;
-    void toggleMonitorArmed();
+    void applyMonitorArmed (bool on);
     void finishRecording();
     void armSelectedTrack();
     void setViewerDetached (bool detach);
