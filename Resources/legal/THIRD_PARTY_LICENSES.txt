@@ -23,7 +23,8 @@ Index / Indice
  12. ONNX Runtime (downloaded engine)                    - MIT
  13. Bandit v2 separation model (downloaded engine)      - CC BY-SA 4.0
  14. LAME MP3 encoder (macOS version)                 - LGPL
- 15. Other notes / Altre note
+ 15. ARA SDK (Celemony Software GmbH)                    - Apache License 2.0
+ 16. Other notes / Altre note
 
 ==============================================================================
 1. JUCE framework
@@ -795,7 +796,18 @@ su https://lame.sourceforge.io e, su richiesta, presso l'autore di ADR Dub Studi
 esporta in MP3 con FFmpeg (libmp3lame, LGPL, sezione 10).
 
 ==============================================================================
-15. Other notes / Altre note
+15. ARA SDK (Celemony Software GmbH) - Apache License 2.0
+==============================================================================
+
+ADR Dub Studio uses the ARA (Audio Random Access) API and ARA Library, version 2.1.0, to host ARA 2
+plug-ins. ARA Audio Random Access SDK, Copyright (c) Celemony Software GmbH, is distributed under the
+Apache License 2.0 (full text in section 7 above; https://www.apache.org/licenses/LICENSE-2.0).
+ARA is a trademark of Celemony Software GmbH. Source: https://github.com/Celemony/ARA_SDK
+ADR Dub Studio usa le API ARA e la ARA Library 2.1.0 di Celemony per ospitare plug-in ARA 2, con licenza
+Apache 2.0 (testo completo alla sezione 7).
+
+==============================================================================
+16. Other notes / Altre note
 
 ==============================================================================
 

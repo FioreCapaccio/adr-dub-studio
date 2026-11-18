@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ArotronStudio VERSION 2.62.2 LANGUAGES C CXX)
+project(ArotronStudio VERSION 2.63.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,25 @@ FetchContent_Declare(JUCE
     GIT_SHALLOW    ON)
 FetchContent_MakeAvailable(JUCE)
 
+# Host ARA (plug-in ARA2 come Photon o Melodyne): SDK di Celemony (Apache 2.0) scaricato da git, solo ARA_API e ARA_Library.
+# Per usare una copia locale: -DADR_ARA_SDK=<cartella>; per escluderlo: -DADR_ARA=OFF
+option(ADR_ARA "Supporto ai plug-in ARA" ON)
+if(ADR_ARA AND NOT ADR_ARA_SDK)
+    FetchContent_Declare(ARA_SDK
+        GIT_REPOSITORY https://github.com/Celemony/ARA_SDK.git
+        GIT_TAG        releases/2.1.0
+        GIT_SHALLOW    ON
+        GIT_SUBMODULES "ARA_API;ARA_Library")
+    FetchContent_MakeAvailable(ARA_SDK)
+    set(ADR_ARA_SDK "${ara_sdk_SOURCE_DIR}")
+endif()
+if(NOT ADR_ARA)
+    set(ADR_ARA_SDK "")
+endif()
+if(ADR_ARA_SDK)
+    juce_set_ara_sdk_path("${ADR_ARA_SDK}")
+endif()
+
 # Windows: il manuale si mostra dentro l'app con WebView2 (SDK da NuGet: -DJUCE_WEBVIEW2_PACKAGE_LOCATION=<cartella>)
 if(WIN32)
     set(_adr_wv2 NEEDS_WEBVIEW2 TRUE)
@@ -24,8 +43,8 @@ endif()
 juce_add_gui_app(ArotronStudio
     ${_adr_wv2}
     PRODUCT_NAME "ADR Dub Studio"
-    VERSION 2.62.2
-    BUNDLE_VERSION 2.62.2
+    VERSION 2.63.0
+    BUNDLE_VERSION 2.63.0
     COMPANY_NAME "Arotron"
     BUNDLE_ID "com.arotron.studio"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png"
@@ -50,6 +69,8 @@ target_link_libraries(ArotronStudio PRIVATE ArotronEula)
 
 target_sources(ArotronStudio PRIVATE
     Source/Main.cpp
+    Source/AraProbe.cpp
+    Source/AraEdit.cpp
     Source/Model.cpp
     Source/AudioEngine.cpp
     Source/VideoViewer.cpp
@@ -134,9 +155,11 @@ target_compile_definitions(ArotronStudio PRIVATE
     JUCE_USE_CURL=0
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=0
+    JUCE_PLUGINHOST_ARA=$<BOOL:${ADR_ARA_SDK}>
+    ADR_ARA=$<BOOL:${ADR_ARA_SDK}>
     JUCE_MODAL_LOOPS_PERMITTED=0
     JUCE_APPLICATION_NAME_STRING="ADR Dub Studio"
-    JUCE_APPLICATION_VERSION_STRING="2.62.2")
+    JUCE_APPLICATION_VERSION_STRING="2.63.0")
 
 if(ADR_FFMPEG_VIDEO)
     target_compile_definitions(ArotronStudio PRIVATE ADR_FFMPEG_VIDEO=1)

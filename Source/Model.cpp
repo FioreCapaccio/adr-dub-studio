@@ -3818,6 +3818,19 @@ bool Project::hasOfflineMedia() const noexcept
     return false;
 }
 
+void Project::replaceClipAudio (int64_t clipId, AssetPtr a)
+{
+    if (findClip (clipId) == nullptr || a == nullptr) return;
+    beginEdit();
+    auto* c = findClip (clipId);
+    for (auto& p : c->env) p.pos -= c->offset;
+    if (c->syncPoint >= 0) c->syncPoint -= c->offset;
+    c->asset = std::move (a);
+    c->offset = 0;
+    c->length = juce::jmin (c->length, c->asset->length());
+    changed();
+}
+
 void Project::replaceAssets (const std::map<const Asset*, AssetPtr>& replacements)
 {
     if (replacements.empty()) return;

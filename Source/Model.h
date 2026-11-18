@@ -913,6 +913,8 @@ public:
     double missingVideoOffset = 0.0;
     bool hasOfflineMedia() const noexcept;
     /** Sostituisce, in tutti i clip, gli asset indicati (per esempio quelli offline appena ricollegati). Un solo passo di undo. */
+    /** Sostituisce l'audio di un clip con un file nuovo che contiene solo la porzione del clip (offset 0): sposta di conseguenza inviluppo e punto di sincronia. */
+    void replaceClipAudio (int64_t clipId, AssetPtr a);
     void replaceAssets (const std::map<const Asset*, AssetPtr>& replacements);
     /** Rilega il video mancante senza toccare l'audio della sessione; mantiene l'offset salvato. */
     void relinkVideo (const juce::File& f, std::function<void (juce::String)> done);

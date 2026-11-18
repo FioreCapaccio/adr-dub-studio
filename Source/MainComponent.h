@@ -267,6 +267,7 @@ private:
     bool nagDone = false;   // la schermata di avvio senza licenza si mostra una volta per avvio
     std::unique_ptr<juce::DocumentWindow> manualWindow;
     void separateStemsDialog();
+    void araEditDialog();
     void levelTrackDialog (std::vector<int> ids = {});
     void splitVoicesDialog();
     std::unique_ptr<juce::ThreadWithProgressWindow> voiceJob;

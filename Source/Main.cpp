@@ -5277,15 +5277,40 @@ struct VideoBench : public juce::Timer
     }
 };
 
+#if ADR_ARA
+void runAraProbe (const juce::String&, const juce::String&, const juce::String&, std::function<void (int)>);
+void runAraUi (const juce::String&, const juce::String&, const juce::String&, std::function<void (int)>);
+#endif
+
 class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.62.2"; }
+    const juce::String getApplicationVersion() override { return "2.63.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
     {
+        if (commandLine.contains ("--ara-ui "))   // prova con la finestra del plug-in ARA
+        {
+           #if ADR_ARA
+            auto a = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--ara-ui ", false, false), true);
+            if (a.size() < 3) { setApplicationReturnValue (1); quit(); return; }
+            runAraUi (a[0].unquoted(), a[1].unquoted(), a[2].unquoted(), [this] (int rc) { setApplicationReturnValue (rc); quit(); });
+           #endif
+            return;
+        }
+        if (commandLine.contains ("--ara "))   // --ara plugin.vst3 entrata.wav uscita.wav: prova dell'host ARA
+        {
+           #if ADR_ARA
+            auto a = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--ara ", false, false), true);
+            if (a.size() < 3) { setApplicationReturnValue (1); quit(); return; }
+            runAraProbe (a[0].unquoted(), a[1].unquoted(), a[2].unquoted(), [this] (int rc) { setApplicationReturnValue (rc); quit(); });
+            return;
+           #else
+            std::cout << "compilato senza ARA" << std::endl; setApplicationReturnValue (1); quit(); return;
+           #endif
+        }
         if (commandLine.contains ("--separate"))   // ADR Dub Studio --separate entrata.wav cartella [alta]: separa in dialoghi / musica / effetti (prova del motore)
         {
             auto args = juce::StringArray::fromTokens (commandLine.fromFirstOccurrenceOf ("--separate", false, false), true);

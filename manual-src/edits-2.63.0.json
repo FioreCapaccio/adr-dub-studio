@@ -1,0 +1,14 @@
+{
+ "it": [
+  [
+   "<h3 id=\"s11_5\">",
+   "<p><b>Modifica &gt; Modifica con plug-in ARA…</b> apre un plug-in ARA 2 (per esempio Photon, Melodyne o SpectraLayers) sul clip selezionato. Si sceglie il plug-in tra quelli installati, oppure con <b>Altro plug-in ARA…</b>; si lavora nella sua interfaccia (il tasto play del plug-in suona sull'uscita audio dell'app) e con <b>Applica al clip</b> l'audio modificato sostituisce quello del clip (si annulla con Modifica &gt; Annulla; il file originale non viene toccato). L'audio modificato si salva in un file nuovo nella cartella <i>ARA</i> delle registrazioni.</p><h3 id=\"s11_5\">"
+  ]
+ ],
+ "en": [
+  [
+   "<h3 id=\"s11_5\">",
+   "<p><b>Edit &gt; Edit with ARA plug-in…</b> opens an ARA 2 plug-in (for example Photon, Melodyne or SpectraLayers) on the selected clip. Choose the plug-in among the installed ones, or with <b>Other ARA plug-in…</b>; work in its interface (the plug-in's play button plays through the app's audio output) and with <b>Apply to clip</b> the edited audio replaces the clip's audio (undo with Edit &gt; Undo; the original file is not touched). The edited audio is saved to a new file in the <i>ARA</i> folder of the recordings.</p><h3 id=\"s11_5\">"
+  ]
+ ]
+}

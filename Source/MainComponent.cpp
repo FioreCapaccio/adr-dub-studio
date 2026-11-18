@@ -12,6 +12,7 @@
 #include "Manual.h"
 #include "LicenseUi.h"
 #include "StemSeparatorUi.h"
+#include "AraEdit.h"
 #include "AutoDuck.h"
 #include "BoothTools.h"
 #include "Relink.h"
@@ -1793,7 +1794,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdAdrWindow, cmdAdrImport, cmdAdrAddCue, cmdAdrRecord, cmdAdrNextCue, cmdAdrPrevCue, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdTimeStretch, cmdToolStretch, cmdReturnToStart, cmdQuit, cmdAdrCueSheet, cmdAlignToGuide, cmdAutoDuck, cmdDetectCuts, cmdScriptReader, cmdCueMix, cmdRelink, cmdSaveVersion, cmdVersions, cmdCheckSession, cmdWorkflow, cmdReConform, cmdMtc, cmdSurface, cmdKeyEditor, cmdAdrImportTakes, cmdJoin,
                   cmdToolRange, cmdToolMute, cmdToolErase, cmdToolComp, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode,
                   cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, cmdInfoLine, cmdSnapZero, cmdAutoFade, cmdCrossfade, cmdBatchExport, cmdExportPackage, cmdExportTrackArchive, cmdImportTrackArchive, cmdNotes, cmdCycleMarker,
-                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack, cmdSplitVoices,
+                  cmdToolWarp, cmdToolScrub, cmdWarpApply, cmdWarpCancel, cmdSyncSet, cmdSyncClear, cmdSyncToCue, cmdAlignPhrases, cmdToolEnvelope, cmdClearEnvelope, cmdSampleEditor, cmdSliceHits, cmdInsertTime, cmdRemoveTime, cmdPool, cmdLogicalEditor, cmdBatchRename, cmdRefAB, cmdRefTrack, cmdDirectorMix, cmdManual, cmdManualOther, cmdLicense, cmdEula, cmdThirdParty, cmdSeparateStems, cmdLevelTrack, cmdSplitVoices, cmdAraEdit,
                   cmdClipNudgeL, cmdClipNudgeR, cmdClipNudgeLBig, cmdClipNudgeRBig });
 }
 
@@ -1909,6 +1910,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdLicense:       i.setInfo (TRANS ("Licenza...") + " (" + license::shortLabel (licenseStatus) + ")", "", TRANS ("Aiuto"), 0); break;
         case cmdEula:          i.setInfo (TRANS ("Condizioni d'uso..."), "", TRANS ("Aiuto"), 0); break;
         case cmdThirdParty:    i.setInfo (TRANS ("Licenze di terze parti..."), "", TRANS ("Aiuto"), 0); break;
+        case cmdAraEdit:       i.setInfo (TRANS ("Modifica con plug-in ARA (Photon, Melodyne...)..."), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
         case cmdSeparateStems: i.setInfo (TRANS ("Separa dialoghi / musica / effetti..."), "", TRANS ("Modifica"), 0); i.setActive (hasSel); break;
         case cmdSplitVoices:
         {
@@ -2146,6 +2148,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAlignToGuide:  alignSelectedToGuide(); break;
         case cmdSeparateStems: separateStemsDialog(); break;
         case cmdSplitVoices:   splitVoicesDialog(); break;
+        case cmdAraEdit:       araEditDialog(); break;
         case cmdAlignPhrases:  alignPhrasesSelected(); break;
         case cmdToolWarp:      timeline->setTool (Tool::Warp); break;
         case cmdToolScrub:     timeline->setTool (Tool::Scrub); break;
@@ -2484,7 +2487,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 99: add ({ cmdNew, cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdImport, cmdImportVideo, cmdRemoveVideo, 0, cmdExport, cmdExportVideo, 0, cmdAudioSettings }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, cmdSeparateStems, cmdSplitVoices, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClipNudgeL, cmdClipNudgeR, cmdClipNudgeLBig, cmdClipNudgeRBig, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdSelectAll, cmdSplit, cmdJoin, cmdCrossfade, cmdSnapZero, cmdAutoFade, cmdStripSilence, cmdProcInvert, cmdProcReverse, cmdProcDc, cmdProcLufs, 0, cmdRangeSplit, cmdRangeDelete, cmdRangeRemove, cmdRangeTrim, cmdRangeLoop, cmdEditMode, 0, cmdTrimStart, cmdTrimEnd, cmdTimeStretch, cmdAlignToGuide, cmdAlignPhrases, cmdSeparateStems, cmdSplitVoices, cmdAraEdit, 0, cmdWarpApply, cmdWarpCancel, 0, cmdSyncSet, cmdSyncToCue, cmdSyncClear, 0, cmdClipNudgeL, cmdClipNudgeR, cmdClipNudgeLBig, cmdClipNudgeRBig, 0, cmdClearEnvelope, 0, cmdSampleEditor, cmdSliceHits, cmdLogicalEditor, cmdBatchRename, 0, cmdInsertTime, cmdRemoveTime, 0, cmdReConform, 0, cmdDuplicate, cmdDelete, cmdRippleDelete }); break;
         case 2:
             add ({ cmdAddTrack, cmdDuplicateTrack, cmdRenameTrack, cmdRemoveTrack, 0, cmdExportTrackArchive, cmdImportTrackArchive, 0, cmdTrackUp, cmdTrackDown, 0, cmdArm, cmdClearAutomation, 0, cmdRefTrack, cmdRefAB, 0, cmdAddPlugin, cmdAddMasterPlugin, 0, cmdAutoDuck, cmdLevelTrack });
             m.addSeparator();
@@ -3595,6 +3598,80 @@ private:
     juce::TextButton openBtn { TRANS ("Apri") }, delBtn { TRANS ("Elimina") };
 };
 } // namespace
+
+void MainComponent::araEditDialog()
+{
+   #if ADR_ARA
+    const Clip* clip = nullptr;
+    for (auto id : project->selection)
+        if (auto* c = project->findClip (id); c != nullptr && c->asset != nullptr && ! c->asset->offline && ! c->rejected && c->length > 0) { clip = c; break; }
+    if (clip == nullptr) { showError (TRANS ("Seleziona prima un clip da modificare con il plug-in ARA.")); return; }
+
+    juce::Array<juce::File> cands;
+    for (auto& f : PluginHost::findInstalledVST3())
+    {
+        const auto n = f.getFileNameWithoutExtension();
+        if (n.containsIgnoreCase ("ARA") || n.containsIgnoreCase ("melodyne") || n.containsIgnoreCase ("spectralayers") || n.containsIgnoreCase ("revoice")) cands.add (f);
+    }
+    juce::PopupMenu m;
+    m.addSectionHeader (TRANS ("Plug-in ARA trovati"));
+    for (int i = 0; i < cands.size(); ++i) m.addItem (i + 1, cands[i].getFileNameWithoutExtension());
+    m.addSeparator();
+    m.addItem (1000, TRANS ("Altro plug-in ARA..."));
+    juce::Component::SafePointer<MainComponent> safe (this);
+    const auto clipId = clip->id;
+    auto start = [safe, clipId] (juce::File vst3)
+    {
+        if (safe == nullptr || vst3 == juce::File()) return;
+        auto* c = safe->project->findClip (clipId);
+        if (c == nullptr || c->asset == nullptr) return;
+        const int64_t len = juce::jmin (c->length, c->asset->length() - c->offset);
+        if (len <= 0) return;
+        fc::ara::Source src;
+        src.rate = safe->project->getSampleRate();
+        src.name = c->name.isNotEmpty() ? c->name : c->asset->name;
+        const int chans = juce::jmin (2, c->asset->numChannels());
+        src.audio.setSize (chans, (int) len);
+        for (int ch = 0; ch < chans; ++ch) src.audio.copyFrom (ch, 0, c->asset->audio, ch, (int) c->offset, (int) len);
+        const int srcChans = chans;
+        const auto base = src.name;
+        fc::ara::openWindow (std::move (src), vst3, safe->engine.deviceManager, safe.getComponent(),
+            [safe, clipId, srcChans, base] (juce::AudioBuffer<float> out)
+            {
+                if (safe == nullptr) return;
+                const auto file = recordingsFolder (*safe->project).getChildFile ("ARA").getChildFile (juce::File::createLegalFileName (base + "_ARA_" + juce::String (juce::Time::getCurrentTime().toMilliseconds())) + ".wav");
+                file.getParentDirectory().createDirectory();
+                {
+                    auto fs = file.createOutputStream();
+                    juce::WavAudioFormat wav;
+                    std::unique_ptr<juce::AudioFormatWriter> w;
+                    if (fs != nullptr) w.reset (wav.createWriterFor (fs.get(), safe->project->getSampleRate(), (unsigned) srcChans, 32, {}, 0));
+                    if (w == nullptr) { safe->showError (TRANS ("Non riesco a scrivere il file dell'audio modificato.")); return; }
+                    fs.release();
+                    w->writeFromAudioSampleBuffer (out, 0, out.getNumSamples());
+                }
+                juce::String err;
+                auto a = loadAsset (safe->project->getFormats(), file, safe->project->getSampleRate(), err);
+                if (a == nullptr) { safe->showError (err); return; }
+                safe->project->replaceClipAudio (clipId, a);
+            },
+            [safe] (juce::String e) { if (safe != nullptr) safe->showError (e); });
+    };
+    auto chooseOther = [start]
+    {
+        auto chooser = std::make_shared<juce::FileChooser> (TRANS ("Scegli un plug-in ARA (VST3)"), juce::File ("/Library/Audio/Plug-Ins/VST3"), "*.vst3");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories,
+                              [chooser, start] (const juce::FileChooser& fc) { start (fc.getResult()); });
+    };
+    m.showMenuAsync (juce::PopupMenu::Options(), [cands, start, chooseOther] (int r)
+    {
+        if (r == 1000) chooseOther();
+        else if (r > 0 && r <= cands.size()) start (cands[r - 1]);
+    });
+   #else
+    showError (TRANS ("Questa versione non include il supporto ai plug-in ARA."));
+   #endif
+}
 
 void MainComponent::separateStemsDialog()
 {
