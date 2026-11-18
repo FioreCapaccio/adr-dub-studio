@@ -35,8 +35,9 @@ void runAraProbe (const juce::String& pluginPath, const juce::String& inPath, co
             if (w != nullptr) w->writeFromAudioSampleBuffer (out, 0, out.getNumSamples());
         }
         std::cout << "scritto " << outPath << std::endl;
-        s.reset();
-        done (0);
+        // distruzione fuori dalla callback di creazione, come fa la finestra
+        std::shared_ptr<fc::ara::Session> sp (std::move (s));
+        MessageManager::callAsync ([sp, done] () mutable { auto* raw = sp.get(); (void) raw; std::cout << "distruggo" << std::endl; sp.reset(); std::cout << "distrutto" << std::endl; done (0); });
     });
 }
 

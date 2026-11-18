@@ -108,6 +108,9 @@ struct Session::Impl : public AudioIODeviceCallback
     ~Impl() override
     {
         detachPreview();
+        // Il distruttore di PlaybackRegionRegistry di JUCE cancella dalla mappa mentre la scorre (UB, crash): si tolgono le regioni a mano.
+        if (inst != nullptr) inst->releaseResources();
+        if (region != nullptr && ext.isValid()) { ed.remove (*region); pb.remove (*region); }
         ed = {};          // prima le regioni dai renderer, poi il plug-in, poi il documento (ordine inverso di dichiarazione)
         pb = {};
         ext = {};
