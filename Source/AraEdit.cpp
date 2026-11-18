@@ -301,12 +301,27 @@ public:
         setUsingNativeTitleBar (true);
         auto* editor = session->hasEditor() ? session->createEditor() : nullptr;
         if (editor == nullptr) editor = new GenericAudioProcessorEditor (session->plugin());
-        auto* panel = new Panel (editor,
-            [this, onApply = std::move (onApply)] { auto out = session->render(); onApply (std::move (out)); requestClose(); },
-            [this] { requestClose(); });
+        // Applica: prima si distrugge l'editor (i suoi timer leggono il plug-in e vanno in crash se il render lo cambia sotto di loro),
+        // poi si renderizza; tutto fuori dal clic del pulsante, che appartiene al pannello che si cancella.
+        applyFn = [this, onApply = std::move (onApply)]
+        {
+            if (closing) return;
+            closing = true;
+            MessageManager::callAsync ([w = SafePointer<Window> (this), onApply]
+            {
+                if (w == nullptr) return;
+                w->clearContentComponent();
+                auto out = w->session->render();
+                onApply (std::move (out));
+                MessageManager::callAsync ([c = w->closed] { c(); });
+            });
+        };
+        auto* panel = new Panel (editor, applyFn, [this] { requestClose(); });
         setContentOwned (panel, true);
         setResizable (false, false);
         setVisible (true);
+        if (auto ms = SystemStats::getEnvironmentVariable ("ADR_ARA_AUTOAPPLY", {}).getIntValue(); ms > 0)   // solo per le prove
+            Timer::callAfterDelay (ms, [w = SafePointer<Window> (this)] { if (w != nullptr) w->applyFn(); });
     }
     ~Window() override { clearContentComponent(); session.reset(); }   // l'editor prima del plug-in
     void closeButtonPressed() override { requestClose(); }
@@ -314,7 +329,7 @@ public:
 private:
     void requestClose() { if (! closing) { closing = true; MessageManager::callAsync ([c = closed] { c(); }); } }
     std::unique_ptr<Session> session;
-    std::function<void()> closed;
+    std::function<void()> closed, applyFn;
     bool closing = false;
 };
 
