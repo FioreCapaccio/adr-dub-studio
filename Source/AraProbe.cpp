@@ -62,7 +62,7 @@ void runAraUi (const juce::String& pluginPath, const juce::String& inPath, const
             File of (outPath); of.deleteFile();
             if (auto fs = of.createOutputStream()) { WavAudioFormat wav; std::unique_ptr<AudioFormatWriter> w (wav.createWriterFor (fs.release(), rate, 2, 24, {}, 0)); if (w != nullptr) w->writeFromAudioSampleBuffer (out, 0, out.getNumSamples()); }
             std::cout << "applicato: " << outPath << std::endl;
-            done (0);
+            Timer::callAfterDelay (5000, [done] { std::cout << "dopo 5 s ancora vivo" << std::endl; done (0); });   // un editor rimasto orfano va in crash nei suoi timer
         },
         [done] (String e) { std::cout << "errore: " << e << std::endl; done (2); });
 }

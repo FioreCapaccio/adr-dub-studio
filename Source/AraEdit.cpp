@@ -262,7 +262,7 @@ struct Panel : public Component
 {
     Panel (AudioProcessorEditor* e, std::function<void()> apply, std::function<void()> cancel) : editor (e)
     {
-        addAndMakeVisible (editor);
+        addAndMakeVisible (editor.get());
         hint.setText (TRANS ("Modifica il clip nell'interfaccia del plug-in, poi premi Applica: l'audio modificato sostituisce quello del clip (si annulla con Modifica > Annulla)."), dontSendNotification);
         hint.setJustificationType (Justification::centredLeft);
         hint.setFont (FontOptions (12.0f));
@@ -286,7 +286,7 @@ struct Panel : public Component
         editor->setBounds (r.withSizeKeepingCentre (jmin (r.getWidth(), editor->getWidth()), r.getHeight()));
     }
     static constexpr int barH = 44;
-    AudioProcessorEditor* editor;
+    std::unique_ptr<AudioProcessorEditor> editor;   // JUCE non cancella i figli: un editor orfano continua a far scattare i suoi timer sul plug-in distrutto
     Label hint;
     TextButton applyBtn, cancelBtn;
 };
