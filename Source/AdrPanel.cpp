@@ -140,10 +140,11 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     h.addColumn ("Out", 6, 100, 80, 160, juce::TableHeaderComponent::notSortable);
     h.addColumn (TRANS ("Durata"), 7, 64, 50, 100, juce::TableHeaderComponent::notSortable);
     h.addColumn ("Take", 8, 56, 40, 100, juce::TableHeaderComponent::notSortable);
+    h.addColumn (TRANS ("Appr."), 10, 52, 44, 80, juce::TableHeaderComponent::notResizableOrSortable);
     h.addColumn (TRANS ("Dialogo"), 9, 300, 120, 2000, juce::TableHeaderComponent::notSortable);
     addAndMakeVisible (table);
 
-    for (auto* b : { &importBtn, &addBtn, &delBtn, &joinBtn, &settingsBtn, &csvBtn, &ptBtn, &bwfBtn, &recBtn, &prevBtn, &nextBtn, &auditionBtn, &originalBtn, &activateBtn, &deleteTakeBtn, &keepBtn, &rejectBtn, &purgeBtn })
+    for (auto* b : { &importBtn, &addBtn, &delBtn, &joinBtn, &settingsBtn, &csvBtn, &ptBtn, &bwfBtn, &recBtn, &prevBtn, &nextBtn, &auditionBtn, &originalBtn, &activateBtn, &deleteTakeBtn, &keepBtn, &rejectBtn, &purgeBtn, &approveAllBtn })
     {
         b->setWantsKeyboardFocus (false);
         addAndMakeVisible (*b);
@@ -198,6 +199,14 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
         if (n == 0) juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Take scartati"), TRANS ("Non ci sono take scartati da eliminare."));
     };
     activateBtn.onClick = [this] { if (viewTake != 0 && shownCueId != 0) project.setActiveTake (shownCueId, viewTake); };
+    approveAllBtn.setTooltip (TRANS ("Approva tutti i cue mostrati che hanno almeno un take (si puo' annullare)"));
+    approveAllBtn.onClick = [this]
+    {
+        std::vector<int> ids;
+        for (auto i : shown) ids.push_back (project.getSession().cues[i].id);
+        if (project.approveCues (ids, true) == 0)
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Approva tutti"), TRANS ("Non ci sono cue registrati da approvare."));
+    };
     deleteTakeBtn.onClick = [this] { if (viewTake != 0 && shownCueId != 0) project.deleteTake (shownCueId, viewTake); };
     importBtn.onClick = [this] { if (actions.importFile) actions.importFile(); };
     addBtn.onClick = [this] { if (actions.addCue) actions.addCue(); };
@@ -531,6 +540,17 @@ private:
 juce::Component* AdrPanel::refreshComponentForCell (int row, int columnId, bool isRowSelected, juce::Component* existing)
 {
     const auto* c = cueAtRow (row);
+    if (columnId == 10 && c != nullptr)
+    {
+        auto* tb = dynamic_cast<juce::ToggleButton*> (existing);
+        if (tb == nullptr) { delete existing; tb = new juce::ToggleButton(); }
+        const int id = c->id;
+        tb->setToggleState (c->status == 2, juce::dontSendNotification);
+        tb->setEnabled (project.takeCount (id) > 0);
+        tb->setTooltip (TRANS ("Approva il cue (il suo take attivo). Serve almeno un take"));
+        tb->onClick = [this, tb, id] { project.approveCues ({ id }, tb->getToggleState()); };
+        return tb;
+    }
     if ((columnId != 3 && columnId != 4 && columnId != 9) || c == nullptr)
     {
         delete existing;
@@ -558,7 +578,7 @@ juce::Component* AdrPanel::refreshComponentForCell (int row, int columnId, bool 
 void AdrPanel::paintCell (juce::Graphics& g, int row, int columnId, int w, int h, bool selected)
 {
     const auto* c = cueAtRow (row);
-    if (c == nullptr || columnId == 3 || columnId == 4 || columnId == 9) return;   // queste colonne sono celle modificabili
+    if (c == nullptr || columnId == 3 || columnId == 4 || columnId == 9 || columnId == 10) return;   // queste colonne sono celle modificabili
     const double rate = project.getSampleRate();
     juce::String t;
     juce::Colour col = text;
@@ -642,6 +662,7 @@ void AdrPanel::resized()
     cbStatusFilter.setBounds (fr.removeFromLeft (210));
     fr.removeFromLeft (10);
     lblCount.setBounds (fr.removeFromLeft (120));
+    approveAllBtn.setBounds (fr.removeFromRight (130));
     r.removeFromTop (8);
 
     // area dei dettagli in basso

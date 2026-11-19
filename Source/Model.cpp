@@ -1059,6 +1059,19 @@ void Project::editCue (int id, const std::function<void (AdrCue&)>& change)
     }
 }
 
+int Project::approveCues (const std::vector<int>& ids, bool approve)
+{
+    const int to = approve ? 2 : 1;
+    std::vector<int> todo;
+    for (int id : ids)
+        if (auto* c = findCue (id)) if (c->status != to && takeCount (id) > 0) todo.push_back (id);
+    if (todo.empty()) return 0;
+    beginEdit();
+    for (int id : todo) findCue (id)->status = to;
+    changed();
+    return (int) todo.size();
+}
+
 std::vector<int64_t> Project::takeClipIds (int cueId) const
 {
     std::vector<std::pair<int, int64_t>> found;

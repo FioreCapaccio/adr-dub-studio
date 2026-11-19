@@ -106,7 +106,7 @@ private:
     juce::TextButton importBtn { TRANS ("IMPORTA...") }, addBtn { TRANS ("+ CUE") }, delBtn { TRANS ("ELIMINA") }, joinBtn { TRANS ("UNISCI") }, settingsBtn { TRANS ("IMPOSTAZIONI") },
                      csvBtn { TRANS ("ESPORTA CSV") }, ptBtn { TRANS ("ESPORTA PRO TOOLS") }, bwfBtn { TRANS ("ESPORTA TAKE (BWF)") },
                      recBtn { TRANS ("REGISTRA CUE") }, prevBtn { TRANS ("< CUE") }, nextBtn { TRANS ("CUE >") },
-                     keepBtn { TRANS ("TIENI QUESTO") }, rejectBtn { TRANS ("SCARTA") }, purgeBtn { TRANS ("ELIMINA SCARTATE") },
+                     keepBtn { TRANS ("TIENI QUESTO") }, rejectBtn { TRANS ("SCARTA") }, purgeBtn { TRANS ("ELIMINA SCARTATE") }, approveAllBtn { TRANS ("APPROVA TUTTI") },
                      auditionBtn { TRANS ("ASCOLTA") }, originalBtn { TRANS ("ORIGINALE") }, activateBtn { TRANS ("ATTIVA") }, deleteTakeBtn { TRANS ("ELIMINA TAKE") };
     StarRating stars;
     juce::Label lblRate;
