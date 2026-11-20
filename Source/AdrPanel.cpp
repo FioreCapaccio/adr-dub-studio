@@ -182,6 +182,11 @@ AdrPanel::AdrPanel (Project& p, Actions a) : project (p), actions (std::move (a)
     lblRate.setColour (juce::Label::textColourId, dim);
     addAndMakeVisible (lblRate);
     addAndMakeVisible (stars);
+    addAndMakeVisible (approveTakeTog);
+    approveTakeTog.setWantsKeyboardFocus (false);
+    approveTakeTog.setColour (juce::ToggleButton::textColourId, text);
+    approveTakeTog.setTooltip (TRANS ("Approva il take scelto: diventa quello attivo e il cue risulta Approvato. Togliendo la spunta il cue torna a Registrato"));
+    approveTakeTog.onClick = [this] { if (viewTake != 0 && shownCueId != 0) project.approveTake (shownCueId, viewTake, approveTakeTog.getToggleState()); };
     stars.setTooltip (TRANS ("Valutazione del take scelto: da 1 a 5 stelle. Un secondo clic sulla stessa stella la toglie"));
     stars.onChange = [this] (int v) { if (viewTake != 0 && shownCueId != 0) project.setTakeRating (shownCueId, viewTake, v); };
     keepBtn.onClick = [this] { if (viewTake != 0 && shownCueId != 0) project.keepOnlyTake (shownCueId, viewTake); };
@@ -422,7 +427,8 @@ void AdrPanel::rebuildTakes()
             int rating = 0;
             bool rejected = false;
             for (auto& i : project.takeInfos (c->id)) if (i.takeNo == n) { rating = i.rating; rejected = i.rejected; }
-            auto b = std::make_unique<juce::TextButton> ("T" + juce::String (n) + (rejected ? juce::String (" x") : (rating > 0 ? " " + juce::String (rating) + juce::String (juce::CharPointer_UTF8 ("\xe2\x98\x85")) : juce::String())));
+            const bool approvedTake = c->status == 2 && c->activeTake == n;
+            auto b = std::make_unique<juce::TextButton> ("T" + juce::String (n) + (approvedTake ? juce::String (juce::CharPointer_UTF8 (" \xe2\x9c\x93")) : juce::String()) + (rejected ? juce::String (" x") : (rating > 0 ? " " + juce::String (rating) + juce::String (juce::CharPointer_UTF8 ("\xe2\x98\x85")) : juce::String())));
             const bool active = c->activeTake == n;
             b->setClickingTogglesState (false);
             b->setToggleState (n == viewTake, juce::dontSendNotification);
@@ -460,6 +466,8 @@ void AdrPanel::rebuildTakes()
             }
         stars.setValue (rating);
         stars.setEnabled (any);
+        approveTakeTog.setToggleState (c != nullptr && c->status == 2 && c->activeTake == viewTake, juce::dontSendNotification);
+        approveTakeTog.setEnabled (any);
         keepBtn.setEnabled (any && (alive > 1 || viewRejected || (c != nullptr && c->activeTake != viewTake)));
         rejectBtn.setEnabled (any);
         rejectBtn.setButtonText (viewRejected ? TRANS ("RIPRISTINA") : TRANS ("SCARTA"));
@@ -703,6 +711,8 @@ void AdrPanel::resized()
     auto rateRow = d.removeFromTop (30);
     lblRate.setBounds (rateRow.removeFromLeft (92).withTrimmedTop (8));
     stars.setBounds (rateRow.removeFromLeft (120).reduced (0, 3));
+    rateRow.removeFromLeft (10);
+    approveTakeTog.setBounds (rateRow.removeFromLeft (110));
     purgeBtn.setBounds (rateRow.removeFromRight (150));
     rateRow.removeFromRight (6);
     rejectBtn.setBounds (rateRow.removeFromRight (100));

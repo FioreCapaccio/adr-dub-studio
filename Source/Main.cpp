@@ -2247,7 +2247,9 @@ private:
         const auto hp = fc::tools::findHitpoints (b, 0, b.getNumSamples(), R, 0.5, 0.08);
         expect (hp.size() == 3 && std::abs (hp[0] - (int64_t) (0.5 * R)) < 0.02 * R && std::abs (hp[1] - (int64_t) (1.0 * R)) < 0.02 * R && std::abs (hp[2] - (int64_t) (1.8 * R)) < 0.02 * R,
                 "hitpoint: tre attacchi trovati nel punto giusto (" + juce::String ((int) hp.size()) + ")");
-        expect (fc::tools::findHitpoints (juce::AudioBuffer<float> (1, 48000), 0, 48000, R, 1.0, 0.08).empty(), "hitpoint: il silenzio non ha attacchi");
+        juce::AudioBuffer<float> silence (1, 48000);
+        silence.clear();   // un buffer nuovo non e' azzerato
+        expect (fc::tools::findHitpoints (silence, 0, 48000, R, 1.0, 0.08).empty(), "hitpoint: il silenzio non ha attacchi");
         fc::Project p (formats, 48000.0);
         auto a = std::make_shared<fc::Asset>(); a->name = "colpi"; a->audio = b; a->buildPeaks();
         fc::Clip c; c.id = 55; c.asset = a; c.start = 1000; c.offset = 0; c.length = b.getNumSamples(); c.fadeIn = 200; c.fadeOut = 300;
@@ -3119,6 +3121,19 @@ private:
         p.keepOnlyTake (cid, 2);
         expect (p.findCue (cid)->activeTake == 2 && p.findClip (1)->rejected && p.findClip (3)->rejected && ! p.findClip (2)->rejected && p.undecidedCues() == 0,
                 "Take: TIENI QUESTO attiva il take scelto e scarta gli altri");
+        p.setTakeRejected (cid, 1, true);
+        const int statusBefore = p.findCue (cid)->status;
+        p.approveTake (cid, 1, true);   // approvare un take scartato lo ripristina e lo rende attivo
+        expect (p.findCue (cid)->status == 2 && p.findCue (cid)->activeTake == 1 && ! p.findClip (1)->rejected && ! p.findClip (1)->muted && p.findClip (2)->muted,
+                "Take: APPROVATO attiva il take, lo ripristina e porta il cue ad Approvato");
+        p.undo();
+        expect (p.findCue (cid)->status == statusBefore && p.findCue (cid)->activeTake == 2 && p.findClip (1)->rejected, "Take: l'approvazione di un take si annulla in un passo");
+        p.approveTake (cid, 2, true);
+        p.approveTake (cid, 2, false);
+        expect (p.findCue (cid)->status == 1 && p.findCue (cid)->activeTake == 2, "Take: togliendo la spunta il cue torna a Registrato");
+        p.approveTake (cid, 99, true);
+        expect (p.findCue (cid)->status == 1, "Take: un take inesistente non approva nulla");
+        p.undo(); p.undo();   // le due approvazioni di prova
         // un take scartato non suona nemmeno se e' l'ascolto dell'originale
         auto s = p.getSession().cloneDetached();
         s.master->limiterOn = false;
@@ -5286,7 +5301,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.1"; }
+    const juce::String getApplicationVersion() override { return "2.64.2"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

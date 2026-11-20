@@ -1244,6 +1244,25 @@ void Project::setActiveTake (int cueId, int takeNo)
     changed();
 }
 
+void Project::approveTake (int cueId, int takeNo, bool approve)
+{
+    auto* cue = findCue (cueId);
+    if (cue == nullptr || takeNo <= 0) return;
+    bool found = false;
+    for (auto& t : session.tracks) for (auto& c : t.clips) if (c.cueId == cueId && c.takeNo == takeNo) found = true;
+    if (! found) return;
+    beginEdit();
+    if (approve)
+    {
+        for (auto& t : session.tracks)
+            for (auto& c : t.clips)
+                if (c.cueId == cueId) { if (c.takeNo == takeNo) c.rejected = false; c.muted = (c.takeNo != takeNo); }
+        cue->activeTake = takeNo;
+    }
+    cue->status = approve ? 2 : 1;
+    changed();
+}
+
 //==============================================================================
 Marker* Project::findMarker (int id) noexcept
 {

@@ -109,6 +109,7 @@ private:
                      keepBtn { TRANS ("TIENI QUESTO") }, rejectBtn { TRANS ("SCARTA") }, purgeBtn { TRANS ("ELIMINA SCARTATE") }, approveAllBtn { TRANS ("APPROVA TUTTI") },
                      auditionBtn { TRANS ("ASCOLTA") }, originalBtn { TRANS ("ORIGINALE") }, activateBtn { TRANS ("ATTIVA") }, deleteTakeBtn { TRANS ("ELIMINA TAKE") };
     StarRating stars;
+    juce::ToggleButton approveTakeTog { TRANS ("APPROVATO") };
     juce::Label lblRate;
     juce::Label lblChar, lblScene, lblReel, lblIn, lblOut, lblStatus, lblDialogue, lblNotes, lblTrack, lblTakes;
     juce::TextEditor edChar, edScene, edReel, edIn, edOut, edDialogue, edNotes;

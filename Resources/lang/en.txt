@@ -1674,3 +1674,5 @@ language: English
 "Approva tutti" = "Approve all"
 "Non ci sono cue registrati da approvare." = "There are no recorded cues to approve."
 "Approva il cue (il suo take attivo). Serve almeno un take" = "Approves the cue (its active take). At least one take is needed"
+"APPROVATO" = "APPROVED"
+"Approva il take scelto: diventa quello attivo e il cue risulta Approvato. Togliendo la spunta il cue torna a Registrato" = "Approves the chosen take: it becomes the active one and the cue is marked Approved. Unticking returns the cue to Recorded"

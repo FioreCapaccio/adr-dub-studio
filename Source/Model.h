@@ -735,6 +735,8 @@ public:
     int nextTakeNumber (int cueId) const;
     /** Rende attivo un take: gli altri clip dello stesso cue vengono silenziati. */
     void setActiveTake (int cueId, int takeNo);
+    /** Approva un take: lo rende attivo (se era scartato lo ripristina) e porta il cue ad Approvato; con approve=false riporta il cue a Registrato. Un solo annulla. */
+    void approveTake (int cueId, int takeNo, bool approve);
     std::vector<int64_t> takeClipIds (int cueId) const;
     void deleteTake (int cueId, int takeNo);
     // piu' registrazioni dello stesso cue: si valutano, si sceglie la migliore e si scartano le altre
