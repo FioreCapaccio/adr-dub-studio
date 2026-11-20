@@ -1570,6 +1570,25 @@ void TimelineView::cancelWarp()
     repaint();
 }
 
+void TimelineView::demoState (int kind)
+{
+    warpClipId = 0; envClipId = 0; project.range = {};
+    const double r = project.getSampleRate();
+    int64_t clipId = 0;
+    for (auto& t : project.getSession().tracks) { for (auto& c : t.clips) if (c.cueId == 0 && c.asset != nullptr) { clipId = c.id; break; } if (clipId != 0) break; }
+    if (kind == 1) { setTool (Tool::Range); project.range = { (int64_t) (r * 6.0), (int64_t) (r * 15.0), 1, 2 }; }
+    if (kind == 2 && clipId != 0) { setTool (Tool::Warp); warpClipId = clipId; warpAnchors = { { (int64_t) (r * 20.0), (int64_t) (r * 22.0) }, { (int64_t) (r * 50.0), (int64_t) (r * 48.5) } }; }
+    if (kind == 3 && clipId != 0)
+    {
+        setTool (Tool::Envelope);
+        project.selection = { clipId };
+        envClipId = clipId;
+        project.addEnvPoint (clipId, (int64_t) (r * 25.0), -12.0f);
+        project.addEnvPoint (clipId, (int64_t) (r * 45.0), 0.0f);
+    }
+    repaint();
+}
+
 void TimelineView::applyWarp()
 {
     if (warpClipId == 0) return;

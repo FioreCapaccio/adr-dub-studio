@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  APP_VERSION: "2.64.0"
+  APP_VERSION: "2.64.1"
 
 jobs:
   macos-universal:

@@ -235,6 +235,8 @@ private:
     int dropoutTick = 0, lastXruns = -1, overloadSeconds = 0;
 public:
     void snapshotSettings (const juce::File& dir);   // verifica: immagini delle schede delle Impostazioni
+    void snapshotDemo (const juce::File& dir, const juce::File& takesFolder, const juce::File& cueFile);
+    void snapshotWindows (const juce::File& dir);   // dopo snapshotDemo: salva le finestre ADR, copione, pool, direttore, EQ, Sample Editor, Info Line, impostazioni e controllo   // verifica/manuale: importa i take di una cartella e salva le immagini della finestra
     void snapshotLayouts (const juce::File& dir);    // verifica: finestra con la barra del trasporto in ogni posizione (non salva le preferenze)
 private:
     friend class SettingsPanel;

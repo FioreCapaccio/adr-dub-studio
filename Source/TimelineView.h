@@ -58,6 +58,7 @@ public:
     std::function<void (int64_t clipId)> onOpenEditor;   // doppio clic su un clip: Sample Editor
     std::function<void()> onExportRequested;   // dal menu della barra di esportazione   // time-stretch dei clip selezionati (toCue: durata del cue ADR)
 
+    void demoState (int kind);   // manuale: 1 Range su due tracce, 2 Time Warp con due punti, 3 inviluppo con due punti (sul primo clip audio)
     bool warpActive() const noexcept { return warpClipId != 0; }
     void applyWarp();
     void cancelWarp();

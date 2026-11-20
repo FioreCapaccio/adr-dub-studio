@@ -135,6 +135,7 @@ public:
     void timerCallback() override;
     /** Azzera il picco massimo mostrato su tutti i canali. */
     void resetPeaks();
+    void openEq (int trackId);   // apre l'editor di EQ e compressore della traccia
 
 private:
     void rebuild();
@@ -156,7 +157,6 @@ private:
     unsigned computeHiddenSignature() const;
     std::unique_ptr<ChannelStrip> groupStrips[Session::kNumGroups];   // a destra delle tracce, nell'area scorrevole
     void makeAux (int k);
-    void openEq (int trackId);
     std::vector<std::pair<std::shared_ptr<TrackLive>, std::unique_ptr<EqWindow>>> eqWindows;
     void makeGroup (int k);
 };

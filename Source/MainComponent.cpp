@@ -4932,6 +4932,132 @@ void MainComponent::setStripPos (int pos)
     strip.repaint();
 }
 
+void MainComponent::snapshotDemo (const juce::File& dir, const juce::File& takesFolder, const juce::File& cueFile)
+{
+    dir.createDirectory();
+    project->tcFormat = tcFormatForFps (24.0);
+    project->tcStartSec = 3600.0;
+    if (! project->getSession().tracks.empty()) project->renameTrack (project->getSession().tracks.front().id, TRANS ("Guida"));
+    {
+        juce::StringArray w;
+        project->addCues (adr::toCues (adr::parse (cueFile.loadFileAsString()), *project, project->getSampleRate(), 4.0, w), true);
+    }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    auto save = [safe, dir] (const juce::String& name)
+    {
+        if (safe == nullptr) return;
+        juce::PNGImageFormat png;
+        const auto f = dir.getChildFile (name + ".png");
+        f.deleteFile();
+        if (auto os = f.createOutputStream()) png.writeImageToStream (safe->createComponentSnapshot (safe->getLocalBounds(), true, 2.0f), *os);
+    };
+    project->addMarker ((int64_t) (project->getSampleRate() * 7.0), "Scena 2");
+    project->addMarker ((int64_t) (project->getSampleRate() * 21.0), "Scena 3");
+    int d = 0;
+    auto found = takes::scan (project->getFormats(), takesFolder, d);
+    auto plan = std::make_shared<takes::Plan> (takes::plan (*project, found));
+    project->importTakes (plan->items, [safe, save, dir] (juce::StringArray, int)
+    {
+        if (safe == nullptr) return;
+        auto& s = safe->project->getSession();
+        if (s.cues.size() > 1) safe->project->approveCues ({ s.cues[1].id }, true);
+        const auto oldTheme = ThemeManager::currentId();
+        juce::Timer::callAfterDelay (1500, [safe, save, oldTheme, dir]
+        {
+            if (safe == nullptr) return;
+            safe->project->selectedCueId = 0;
+            safe->timeline->zoomToFit();
+            safe->engine.setPosition ((int64_t) (safe->project->getSampleRate() * 28.0));
+            safe->repaint();
+            juce::Timer::callAfterDelay (1500, [safe, save, oldTheme, dir]
+            {
+                if (safe == nullptr) return;
+                save ("main");
+                for (int k = 1; k <= 3; ++k)
+                {
+                    safe->timeline->demoState (k);
+                    safe->timeline->zoomToFit();
+                    safe->repaint();
+                    save ("tool" + juce::String (k));
+                }
+                safe->timeline->setTool (Tool::Select);
+                safe->timeline->demoState (0);
+                if (! safe->project->getSession().cues.empty()) safe->goToAdrCue (safe->project->getSession().cues[0].id);
+                juce::Timer::callAfterDelay (1500, [safe, save, oldTheme, dir]
+                {
+                    if (safe == nullptr) return;
+                    save ("main_cue");
+                    juce::Timer::callAfterDelay (200, [safe, save, oldTheme, dir]
+                    {
+                        for (auto& t : ThemeManager::all())
+                            if (t.id == "light" || t.name == "Default 5")
+                            {
+                                ThemeManager::select (t.id);
+                                if (safe != nullptr) { safe->resized(); safe->repaint(); }
+                                save (t.name == "Default 5" ? "theme_d5" : "theme_light");
+                            }
+                        ThemeManager::select (oldTheme);
+                        if (safe != nullptr) safe->snapshotWindows (dir); else juce::JUCEApplicationBase::quit();
+                    });
+                });
+            });
+        });
+    });
+}
+
+void MainComponent::snapshotWindows (const juce::File& dir)
+{
+    juce::Component::SafePointer<MainComponent> safe (this);
+    // salva il contenuto della finestra il cui titolo contiene 'title'; i dialoghi modali si chiudono da soli
+    auto snap = [dir] (const juce::String& title, const juce::String& name) -> juce::TopLevelWindow*
+    {
+        for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
+            if (auto* w = juce::TopLevelWindow::getTopLevelWindow (i))
+                if (w->getName().contains (title))
+                    if (auto* dw = dynamic_cast<juce::DocumentWindow*> (w))
+                        if (auto* c = dw->getContentComponent())
+                        {
+                            juce::PNGImageFormat png;
+                            const auto f = dir.getChildFile (name + ".png");
+                            f.deleteFile();
+                            if (auto os = f.createOutputStream()) png.writeImageToStream (c->createComponentSnapshot (c->getLocalBounds(), true, 2.0f), *os);
+                            if (auto* d = dynamic_cast<juce::DialogWindow*> (w)) d->exitModalState (0);
+                            return w;
+                        }
+        return nullptr;
+    };
+    auto steps = std::make_shared<std::vector<std::function<void()>>>();
+    auto& s = project->getSession();
+    const int edTrack = s.tracks.size() > 1 ? s.tracks[1].id : s.tracks.front().id;
+    const int64_t edClip = s.tracks.size() > 1 && ! s.tracks[1].clips.empty() ? s.tracks[1].clips.front().id : 0;
+    steps->push_back ([safe] { if (safe != nullptr) { if (! safe->project->getSession().cues.empty()) safe->goToAdrCue (safe->project->getSession().cues[0].id); safe->showAdrWindow(); } });
+    steps->push_back ([safe, snap] { snap (TRANS ("Cue ADR - ADR Dub Studio"), "adr_selected"); if (safe != nullptr) { safe->adrPanel = nullptr; safe->adrWindow.reset(); safe->toggleScriptWindow(); } });
+    steps->push_back ([safe, snap] { snap (TRANS ("Lettore copione - ADR Dub Studio"), "script"); if (safe != nullptr) { safe->scriptWindow.reset(); safe->togglePoolWindow(); } });
+    steps->push_back ([safe, snap] { snap (TRANS ("Pool dei media - ADR Dub Studio"), "pool"); if (safe != nullptr) { safe->poolWindow.reset(); safe->toggleDirectorWindow(); } });
+    steps->push_back ([safe, snap, edTrack] { snap (TRANS ("Mix del direttore - ADR Dub Studio"), "director"); if (safe != nullptr) { safe->directorWindow.reset(); safe->mixer->openEq (edTrack); } });
+    steps->push_back ([safe, snap, edClip] { snap (TRANS (" - EQ e compressore"), "eq_editor"); if (safe != nullptr) { safe->project->selection = { edClip }; safe->project->sendChangeMessage(); safe->openSampleEditor (edClip); } });
+    steps->push_back ([safe, edClip] { if (safe == nullptr || safe->sampleWindow == nullptr) return;
+        if (auto* ed = dynamic_cast<SampleEditor*> (safe->sampleWindow->getContentComponent()))
+            if (auto* c = safe->project->findClip (edClip)) ed->setSelection (c->length * 30 / 100, c->length * 62 / 100); });
+    steps->push_back ([safe, snap] { snap (TRANS ("Sample Editor - "), "editor_wave");
+        if (safe != nullptr && safe->sampleWindow != nullptr)
+            if (auto* ed = safe->sampleWindow->getContentComponent())
+                for (auto* ch : ed->getChildren()) if (auto* b = dynamic_cast<juce::TextButton*> (ch)) { b->triggerClick(); break; } });
+    steps->push_back ([safe, snap] { snap (TRANS ("Sample Editor - "), "editor_spectro"); if (safe != nullptr) { safe->sampleWindow.reset(); safe->perform (juce::ApplicationCommandTarget::InvocationInfo (cmdInfoLine)); } });
+    steps->push_back ([safe, snap] { snap (TRANS ("Info clip (Info Line)"), "infoline"); if (safe != nullptr) { safe->infoWindow.reset(); safe->showSessionSettings(); } });
+    steps->push_back ([safe, snap] { snap (TRANS ("Impostazioni sessione: timecode e ADR"), "dlg_session_settings"); if (safe != nullptr) safe->workflowDialog(); });
+    steps->push_back ([safe, snap] { snap (TRANS ("Flusso di lavoro del doppiaggio"), "workflow"); if (safe != nullptr) safe->checkSessionDialog(); });
+    steps->push_back ([safe, snap] { snap (TRANS ("Controllo della sessione"), "dlg_check"); });
+    auto run = std::make_shared<std::function<void (size_t)>>();
+    *run = [steps, run] (size_t i)
+    {
+        if (i >= steps->size()) { juce::JUCEApplicationBase::quit(); return; }
+        (*steps)[i]();
+        juce::Timer::callAfterDelay (1500, [run, i] { (*run) (i + 1); });
+    };
+    (*run) (0);
+}
+
 void MainComponent::snapshotLayouts (const juce::File& dir)
 {
     dir.createDirectory();

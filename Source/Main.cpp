@@ -5286,7 +5286,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.0"; }
+    const juce::String getApplicationVersion() override { return "2.64.1"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -5505,6 +5505,12 @@ public:
         }
         window = std::make_unique<MainWindow> (getApplicationName());
         window->main().importFromCommandLine (juce::StringArray::fromTokens (commandLine, true));
+        if (const auto demo = juce::SystemStats::getEnvironmentVariable ("ADR_DEMO_SNAP", {}); demo.isNotEmpty())   // "cartella immagini|cartella take": per le immagini del manuale
+        {
+            const auto parts = juce::StringArray::fromTokens (demo, "|", "");
+            window->setBounds (20, 40, 1850, 1160);
+            juce::Timer::callAfterDelay (5000, [this, parts] { if (window != nullptr && parts.size() == 3) window->main().snapshotDemo (juce::File (parts[0]), juce::File (parts[1]), juce::File (parts[2])); });
+        }
         if (const auto dumpPath = juce::SystemStats::getEnvironmentVariable ("ADR_UIDUMP", {}); dumpPath.isNotEmpty())   // elenco dei testi visibili (controllo traduzioni)
             juce::Timer::callAfterDelay (juce::jmax (7000, juce::SystemStats::getEnvironmentVariable ("ADR_UIDUMP_MS", "7000").getIntValue()), [this, dumpPath] { if (window != nullptr) window->main().dumpUiTexts (juce::File (dumpPath)); quit(); });
     }
