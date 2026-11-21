@@ -13,7 +13,7 @@ LicensePanel::LicensePanel (bool lockedIn, std::function<void()> onChanged, std:
     msg.setFont (theme::font (12.5f));
     msg.setColour (juce::Label::textColourId, theme::dim);
     msg.setJustificationType (juce::Justification::topLeft);
-    idLabel.setText (TRANS ("Machine ID (da inviare per ottenere la licenza)"), juce::dontSendNotification);
+    idLabel.setText (TRANS ("Machine ID (identifica questo computer)"), juce::dontSendNotification);
     idLabel.setFont (theme::font (12.0f));
     idLabel.setColour (juce::Label::textColourId, theme::dim);
     idBox.setReadOnly (true);
@@ -59,7 +59,7 @@ void LicensePanel::refresh()
     buyBtn.setVisible (s.state != State::Licensed);   // con la licenza attiva non serve
     resized();
     msg.setText (locked && ! kHardLock ? TRANS ("Il programma continua a funzionare con tutte le funzioni: la licenza e' facoltativa. Se ti e' utile, acquistala (49 euro, una tantum) e importa il file .lic che ricevi per email.")
-              : locked ? TRANS ("Per continuare serve una licenza. Invia il Machine ID per riceverla, poi importa il file .lic. Le sessioni gia' salvate restano al sicuro: non vengono toccate.")
+              : locked ? TRANS ("Per continuare serve una licenza. Premi «Acquista la licenza»: dopo il pagamento ricevi per email il file .lic, poi importalo qui. Le sessioni gia' salvate restano al sicuro: non vengono toccate.")
                         : TRANS ("La licenza e' facoltativa. Per attivarla importa il file .lic ricevuto per email: e' valido solo su questo computer."),
                 juce::dontSendNotification);
 }
