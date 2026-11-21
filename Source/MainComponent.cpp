@@ -293,7 +293,7 @@ MainComponent::MainComponent()
     viewer.tcFormatter = [this] (double s) { return project->formatTc (s); };
     addAndMakeVisible (inMeter);
 
-    for (juce::Button* b : std::initializer_list<juce::Button*> { &rewindBtn, &playBtn, &stopBtn, &recBtn, &loopBtn, &snapBtn, &followBtn, &monBtn, &preBtn, &zoomOutBtn, &zoomInBtn,
+    for (juce::Button* b : std::initializer_list<juce::Button*> { &rewindBtn, &playBtn, &pauseBtn, &stopBtn, &recBtn, &loopBtn, &snapBtn, &followBtn, &monBtn, &preBtn, &zoomOutBtn, &zoomInBtn,
                      &fitBtn, &importBtn, &exportBtn, &addTrackBtn, &videoBtn, &mixerBtn, &exitBtn })
     {
         b->setWantsKeyboardFocus (false);
@@ -346,7 +346,7 @@ MainComponent::MainComponent()
     prevMarkBtn.onClick = [this] { grabKeyboardFocus(); commandManager.invokeDirectly (cmdPrevMarker, false); refreshTransportFields (true); };
     nextMarkBtn.onClick = [this] { grabKeyboardFocus(); commandManager.invokeDirectly (cmdNextMarker, false); refreshTransportFields (true); };
     // senza questo JUCE, al clic, passa il focus al primo campo della barra (il timecode)
-    for (auto* c : { (juce::Component*) &rewindBtn, (juce::Component*) &playBtn, (juce::Component*) &stopBtn, (juce::Component*) &recBtn,
+    for (auto* c : { (juce::Component*) &rewindBtn, (juce::Component*) &playBtn, (juce::Component*) &pauseBtn, (juce::Component*) &stopBtn, (juce::Component*) &recBtn,
                      (juce::Component*) &prevMarkBtn, (juce::Component*) &nextMarkBtn, (juce::Component*) &stripPosBtn })
     { c->setWantsKeyboardFocus (false); c->setMouseClickGrabsKeyboardFocus (false); }
     prevMarkBtn.setTooltip (TRANS ("Marker precedente"));
@@ -355,7 +355,7 @@ MainComponent::MainComponent()
     stripPosBtn.setWantsKeyboardFocus (false);
     stripPosBtn.setTooltip (TRANS ("Posizione della barra: sotto o sopra il mixer, in alto, oppure staccata"));
     stripPosBtn.onClick = [this] { stripMenu(); };
-    for (juce::Component* c : std::initializer_list<juce::Component*> { &rewindBtn, &playBtn, &stopBtn, &recBtn, &tcEdit, &prevMarkBtn, &markerEdit, &nextMarkBtn, &stripPosBtn })
+    for (juce::Component* c : std::initializer_list<juce::Component*> { &rewindBtn, &playBtn, &pauseBtn, &stopBtn, &recBtn, &tcEdit, &prevMarkBtn, &markerEdit, &nextMarkBtn, &stripPosBtn })
         strip.addAndMakeVisible (c);
     strip.onPaint = [this] (juce::Graphics& g) { paintStrip (g); };
     strip.onLayout = [this] { layoutStrip(); };
@@ -369,6 +369,7 @@ MainComponent::MainComponent()
     ThemeManager::onSelected = [this] { menuItemsChanged(); };   // la spunta del menu Tema segue il tema scelto, da qualunque parte
     if (surface::savedDevice().isNotEmpty()) { ensureSurface(); surface->open (surface::savedDevice()); }   // il controller scelto l'ultima volta si riattiva da solo
     playBtn.onClick = [this] { toggleTransport(); };
+    pauseBtn.onClick = [this] { pauseOrResume(); };
     stopBtn.onClick = [this] { stopAll(); };
     recBtn.onClick = [this] { if (engine.isRecording()) finishRecording(); else startRecording(); };
     monBtn.onClick = [this] { applyMonitorArmed (monBtn.getToggleState()); };
@@ -389,6 +390,7 @@ MainComponent::MainComponent()
 
     rewindBtn.setTooltip (TRANS ("Vai all'inizio (Home)"));
     playBtn.setTooltip (TRANS ("Play / Stop (barra spaziatrice)"));
+    pauseBtn.setTooltip (TRANS ("Pausa: ferma la riproduzione lasciando la testina dov'e'. Un altro clic (o Maiusc + spazio) riprende da li'"));
     stopBtn.setTooltip (TRANS ("Stop"));
     recBtn.setTooltip (TRANS ("Registra sulle tracce armate (R). Se nessuna e' armata usa la traccia selezionata"));
     loopBtn.setTooltip (TRANS ("Loop (L). Maiusc + trascina sul righello per definire la regione"));
@@ -810,10 +812,16 @@ void MainComponent::timerCallback()
         repaint (0, 0, getWidth(), toolbarH);
         repaint (statusBox);
     }
+    if (playing || engine.isRecording()) paused = false;
     if (playBtn.getToggleState() != playing)
     {
         playBtn.setClickingTogglesState (false);
         playBtn.setToggleState (playing, juce::dontSendNotification);
+    }
+    if (pauseBtn.getToggleState() != paused)
+    {
+        pauseBtn.setClickingTogglesState (false);
+        pauseBtn.setToggleState (paused, juce::dontSendNotification);
     }
     {
         const float tp = project->getTaskProgress();
@@ -900,7 +908,25 @@ void MainComponent::stopPlayback()
 
 void MainComponent::stopAll()
 {
+    paused = false;
     if (engine.isRecording()) finishRecording(); else stopPlayback();
+}
+
+// Pausa: come Stop ma la testina resta dov'e' e non torna al punto di partenza; con il programma in pausa riparte da li'
+void MainComponent::pauseOrResume()
+{
+    if (engine.isRecording()) return;
+    if (engine.isPlaying())
+    {
+        engine.stop();
+        startedFromPlay = false;   // niente ritorno all'inizio
+        paused = true;
+    }
+    else if (paused)
+    {
+        paused = false;
+        toggleTransport();
+    }
 }
 
 void MainComponent::armSelectedTrack()
@@ -1782,7 +1808,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
     c.addArray ({ cmdNew, cmdOpen, cmdSave, cmdSaveAs, cmdImport, cmdExport, cmdAudioSettings, cmdSettings,
                   cmdUndo, cmdRedo, cmdSelectAll, cmdDelete, cmdDuplicate, cmdSplit,
                   cmdAddTrack, cmdRemoveTrack, cmdRenameTrack,
-                  cmdPlay, cmdHome, cmdEnd, cmdLoop, cmdLoopFromSel, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig,
+                  cmdPlay, cmdPause, cmdHome, cmdEnd, cmdLoop, cmdLoopFromSel, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig,
                   cmdSnap, cmdFollow, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdMixer, cmdTaller, cmdShorter,
                   cmdRecord, cmdArm, cmdMonitor, cmdImportVideo, cmdRemoveVideo, cmdExportVideo, cmdShowVideo,
                   cmdDetachVideo, cmdFitTracks, cmdVideoOffsetMinus, cmdVideoOffsetPlus,
@@ -1831,6 +1857,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdRenameTrack:   i.setInfo (TRANS ("Rinomina traccia selezionata..."), "", TRANS ("Traccia"), 0); break;
 
         case cmdPlay:          i.setInfo (engine.isPlaying() ? TRANS ("Stop") : TRANS ("Play"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::spaceKey, 0); break;
+        case cmdPause:         i.setInfo (paused ? TRANS ("Riprendi") : TRANS ("Pausa"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::spaceKey, shift); i.setTicked (paused); break;
         case cmdHome:          i.setInfo (TRANS ("Vai all'inizio"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::homeKey, 0); break;
         case cmdEnd:           i.setInfo (TRANS ("Vai alla fine"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress (KeyPress::endKey, 0); break;
         case cmdLoop:          i.setInfo (TRANS ("Loop"), "", TRANS ("Trasporto"), 0); i.addDefaultKeypress ('l', 0); i.setTicked (engine.isLooping()); break;
@@ -2022,6 +2049,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRenameTrack:   timeline->renameTrackDialog (project->selectedTrackId); break;
 
         case cmdPlay:          toggleTransport(); break;
+        case cmdPause:         pauseOrResume(); break;
         case cmdHome:          engine.setPosition (0); break;
         case cmdEnd:           engine.setPosition (project->contentEnd()); break;
         case cmdLoop:          toggleLoop(); break;
@@ -2505,7 +2533,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 5: add ({ cmdAdrWindow, 0, cmdAdrImport, cmdAdrImportTakes, cmdAdrAddCue, 0, cmdAdrPrevCue, cmdAdrNextCue, cmdAdrRecord, 0, cmdAdrExportCsv, cmdAdrExportPT, cmdAdrExportBwf, cmdAdrCueSheet, 0, cmdScriptReader, cmdCueMix, cmdDirectorMix, 0, cmdSessionSettings }); break;
-        case 6: add ({ cmdPlay, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc, cmdSurface }); break;
+        case 6: add ({ cmdPlay, cmdPause, cmdRecord, cmdMonitor, cmdPdc, cmdReturnToStart, 0, cmdHome, cmdEnd, 0, cmdLoop, cmdLoopFromSel, 0, cmdNudgeL, cmdNudgeR, cmdNudgeLBig, cmdNudgeRBig, 0, cmdMtc, cmdSurface }); break;
         case 8:
         {
             add ({ cmdManual, cmdManualOther, 0, cmdWorkflow, cmdShortcuts, cmdKeyEditor, 0, cmdLicense, cmdEula, cmdThirdParty });
@@ -4858,7 +4886,7 @@ void MainComponent::layoutStrip()
     const int x = juce::jlimit (b.getX(), juce::jmax (b.getX(), b.getRight() - stripControlsW), strip.getWidth() / 2 - stripControlsW / 2);
     b = juce::Rectangle<int> (x, b.getY(), stripControlsW, b.getHeight());
     auto put = [&b] (juce::Component& c, int w, int gap = 4) { c.setBounds (b.removeFromLeft (w)); b.removeFromLeft (gap); };
-    put (rewindBtn, 32); put (playBtn, 38); put (stopBtn, 32); put (recBtn, 38, 16);
+    put (rewindBtn, 32); put (playBtn, 38); put (pauseBtn, 32); put (stopBtn, 32); put (recBtn, 38, 16);
     tcCaption = b.removeFromLeft (66);
     put (tcEdit, 130, 16);
     markerCaption = b.removeFromLeft (56);

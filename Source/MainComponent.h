@@ -172,6 +172,7 @@ private:
 
     theme::IconButton rewindBtn { theme::IconButton::Icon::Rewind, theme::blue },
                       playBtn   { theme::IconButton::Icon::Play, theme::green },
+                      pauseBtn  { theme::IconButton::Icon::Pause, theme::yellow },
                       stopBtn   { theme::IconButton::Icon::Stop, theme::blue },
                       recBtn    { theme::IconButton::Icon::Record, theme::accent };
     juce::TextButton exitBtn { TRANS ("ESCI") };
@@ -179,7 +180,9 @@ private:
     int stallTicks = 0;
     int64_t playStartPos = 0;          // dove e' partita l'ultima riproduzione
     bool returnToStart = true, startedFromPlay = false;   // allo stop la testina torna al punto di partenza
+    bool paused = false;                                   // in pausa: la testina resta dov'e' e un altro comando riprende da li'
     void stopPlayback();
+    void pauseOrResume();
     juce::TextButton loopBtn   { TRANS ("LOOP") }, snapBtn { "SNAP" }, followBtn { TRANS ("SEGUI") },
                      monBtn    { "MON" },
                      preBtn    { "PRE" },
@@ -198,7 +201,7 @@ private:
     std::unique_ptr<class BoothWindow> stripWindow;      // barra staccata (dopo 'strip': distrutta prima)
     enum StripPos { stripBelowMixer = 0, stripAboveMixer, stripTop, stripFloating };
     int stripPos = stripBelowMixer;
-    static constexpr int stripH = 32, stripControlsW = 598, stripContentW = 8 + stripControlsW + 8 + 26 + 8;
+    static constexpr int stripH = 32, stripControlsW = 634, stripContentW = 8 + stripControlsW + 8 + 26 + 8;
     void setStripPos (int pos);
     void layoutStrip();
     void paintStrip (juce::Graphics&);

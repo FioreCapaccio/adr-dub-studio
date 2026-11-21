@@ -107,7 +107,7 @@ inline juce::Rectangle<float> draw3dButton (juce::Graphics& g, juce::Rectangle<f
 class IconButton : public juce::Button
 {
 public:
-    enum class Icon { Rewind, Play, Stop, Record };
+    enum class Icon { Rewind, Play, Pause, Stop, Record };
 
     IconButton (Icon i, juce::Colour activeColour) : juce::Button ({}), icon (i), active (activeColour) {}
 
@@ -123,7 +123,7 @@ public:
         auto ir = r.withSizeKeepingCentre (r.getHeight() * 0.38f, r.getHeight() * 0.38f);
         juce::Colour ic = theme::text;
         if (icon == Icon::Record) ic = on ? juce::Colours::white : accent;
-        else if (icon == Icon::Play) ic = on ? active.brighter (0.5f) : theme::text;
+        else if (icon == Icon::Play || icon == Icon::Pause) ic = on ? active.brighter (0.5f) : theme::text;
         g.setColour (ic.withAlpha (isEnabled() ? 1.0f : 0.4f));
 
         juce::Path p;
@@ -132,6 +132,10 @@ public:
             case Icon::Play:
                 p.addTriangle (ir.getX() + ir.getWidth() * 0.1f, ir.getY(), ir.getX() + ir.getWidth() * 0.1f, ir.getBottom(),
                                ir.getRight() + ir.getWidth() * 0.1f, ir.getCentreY());
+                break;
+            case Icon::Pause:
+                p.addRectangle (ir.getX() + ir.getWidth() * 0.08f, ir.getY(), ir.getWidth() * 0.3f, ir.getHeight());
+                p.addRectangle (ir.getX() + ir.getWidth() * 0.62f, ir.getY(), ir.getWidth() * 0.3f, ir.getHeight());
                 break;
             case Icon::Stop:  p.addRoundedRectangle (ir, 1.5f); break;
             case Icon::Record: p.addEllipse (ir.expanded (ir.getWidth() * 0.05f)); break;
