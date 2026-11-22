@@ -3145,6 +3145,17 @@ private:
         expect (removed == 2 && p.takeCount (cid) == 1, "Take: ELIMINA SCARTATE toglie solo gli scartati");
         p.undo();
         expect (p.takeCount (cid) == 3, "Take: l'eliminazione degli scartati si annulla");
+        {   // trascinare un clip sotto l'ultima traccia: traccia nuova + spostamento in un solo Annulla
+            const int nBefore = (int) p.getSession().tracks.size();
+            p.beginEdit();
+            p.addTrackNoUndo();
+            p.moveClipTo (1, nBefore, 4800);
+            p.changed();
+            int ti = -1;
+            expect ((int) p.getSession().tracks.size() == nBefore + 1 && p.findClip (1, &ti) != nullptr && ti == nBefore, "Traccia nuova: il clip finisce nella traccia creata");
+            p.undo();
+            expect ((int) p.getSession().tracks.size() == nBefore && p.findClip (1, &ti) != nullptr && ti == 0, "Traccia nuova: un solo Annulla toglie traccia e spostamento");
+        }
         const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("selftest_take_scelta.adb");
         juce::String err;
         const bool saved = p.save (f, err);
@@ -5301,7 +5312,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.4"; }
+    const juce::String getApplicationVersion() override { return "2.64.5"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

@@ -341,6 +341,13 @@ int Project::addTrack()
     return id;
 }
 
+int Project::addTrackNoUndo()
+{
+    const int id = addTrackInternal();
+    selectedTrackId = id;
+    return id;
+}
+
 int Project::addTrackAs (const juce::String& name, int type, juce::Colour colour, int outBus)
 {
     beginEdit();

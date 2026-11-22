@@ -1290,6 +1290,20 @@ void TimelineView::paintBody (juce::Graphics& g)
             g.drawVerticalLine ((int) x1, (float) lanes.getY(), (float) lanes.getBottom());
         }
 
+        if (newTrackDrop)
+        {
+            const auto r = juce::Rectangle<int> (lanes.getX(), laneTop ((int) project.getSession().tracks.size()), lanes.getWidth(), 70).getIntersection (lanes);
+            if (! r.isEmpty())
+            {
+                g.setColour (blue.withAlpha (0.12f));
+                g.fillRect (r);
+                g.setColour (blue.withAlpha (0.8f));
+                g.drawRect (r);
+                g.setFont (font (13.0f, true));
+                g.drawText (TRANS ("Rilascia qui per creare una nuova traccia"), r, juce::Justification::centred);
+            }
+        }
+
         if (! marquee.isEmpty())
         {
             g.setColour (blue.withAlpha (0.15f));
@@ -2485,6 +2499,12 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
             int rowDelta = juce::jlimit (-1000, 1000, trackIndexAtY (e.y) - trackIndexAtY (downPos.y));
             for (auto& o : origins)
                 rowDelta = juce::jlimit (-o.track, nTracks - 1 - o.track, rowDelta);
+            {   // puntatore sotto l'ultima traccia e clip tutti della stessa traccia: al rilascio si crea una traccia nuova
+                bool sameTrack = ! origins.empty();
+                for (auto& o : origins) sameTrack = sameTrack && o.track == origins.front().track;
+                const bool wantNew = sameTrack && trackIndexAtY (e.y) >= nTracks;
+                if (wantNew != newTrackDrop) { newTrackDrop = wantNew; repaint(); }
+            }
 
             std::vector<Project::ClipMove> moves;
             for (auto& o : origins)
@@ -2543,8 +2563,27 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
     project.changed();
 }
 
+// il drag ha gia' aperto il suo passo di undo: traccia nuova e spostamento dei clip stanno nello stesso Annulla
+void TimelineView::dropOnNewTrack()
+{
+    project.addTrackNoUndo();
+    const int newIdx = (int) project.getSession().tracks.size() - 1;
+    std::vector<Project::ClipMove> moves;
+    for (auto& o : origins)
+        if (const auto* c = project.findClip (o.id))
+        {
+            const int64_t s = c->start;
+            project.moveClipTo (o.id, newIdx, s);
+            moves.push_back ({ o.id, o.track, o.start, o.start + o.length, newIdx, s });
+        }
+    project.carryAutomation (autoOrigin, moves);
+    project.changed();
+}
+
 void TimelineView::mouseUp (const juce::MouseEvent& e)
 {
+    if (drag == Drag::Move && dragStarted && newTrackDrop) dropOnNewTrack();
+    if (newTrackDrop) { newTrackDrop = false; repaint(); }
     if (drag == Drag::Marquee && ! dragStarted && ! e.mods.isPopupMenu())
     {
         const auto pos = juce::jmax<int64_t> (0, xToSample (e.x));

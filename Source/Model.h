@@ -620,6 +620,8 @@ public:
 
     // tracce
     int addTrack();
+    /** Come addTrack ma senza passo di undo: per i gesti che hanno gia' aperto il loro (trascinare un clip sotto l'ultima traccia). Chi la chiama poi chiama changed(). */
+    int addTrackNoUndo();
     /** Aggiunge una traccia gia' impostata: nome, ruolo (applica il preset), colore e bus di uscita (un solo passo di undo). */
     int addTrackAs (const juce::String& name, int type, juce::Colour colour, int outBus);
     void setTrackOutBus (int trackId, int bus);

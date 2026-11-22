@@ -204,6 +204,8 @@ private:
 
     Drag drag = Drag::None;
     bool dragStarted = false, dropHighlight = false;
+    bool newTrackDrop = false;   // trascinando clip con il puntatore sotto l'ultima traccia: al rilascio nasce una traccia nuova
+    void dropOnNewTrack();
     int64_t primaryId = 0;
     std::vector<Origin> origins;
     std::vector<int64_t> snapPoints;
