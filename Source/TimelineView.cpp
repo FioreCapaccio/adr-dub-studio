@@ -116,6 +116,14 @@ void TimelineView::fitTrackHeights()
     setAllTrackHeights (juce::jmin (160, laneArea().getHeight() / n));   // con poche tracce non diventano enormi
 }
 
+juce::Rectangle<float> TimelineView::envIconRect (int ti, const Clip& c) const
+{
+    if ((tool != Tool::Select && tool != Tool::Envelope) || c.asset == nullptr || c.asset->offline) return {};
+    const auto r = clipRect (ti, c);
+    if (r.getWidth() < 70.0f || r.getHeight() < 46.0f) return {};
+    return { juce::jmax (r.getX(), (float) laneArea().getX()) + 7.0f, r.getBottom() - 22.0f, 20.0f, 15.0f };
+}
+
 juce::Rectangle<float> TimelineView::clipRect (int ti, const Clip& c) const
 {
     const auto& tracks = project.getSession().tracks;
@@ -759,8 +767,10 @@ void TimelineView::drawWaveformChannel (juce::Graphics& g, const Clip& c, juce::
 
     auto column = [&] (int px, float lo, float hi)
     {
-        const float y0 = mid - juce::jlimit (-1.0f, 1.0f, hi * gain) * half;
-        float y1 = mid - juce::jlimit (-1.0f, 1.0f, lo * gain) * half;
+        // l'inviluppo di guadagno del clip ingrandisce o riduce l'onda come il suono
+        const float gn = c.env.empty() ? gain : gain * dbToGain (envDbAt (c.env, c.offset + (int64_t) (xToSampleD (px) + 0.5 * spp - (double) c.start)));
+        const float y0 = mid - juce::jlimit (-1.0f, 1.0f, hi * gn) * half;
+        float y1 = mid - juce::jlimit (-1.0f, 1.0f, lo * gn) * half;
         if (y1 - y0 < 1.0f) y1 = y0 + 1.0f;
         g.fillRect (juce::Rectangle<float> ((float) px, y0, 1.0f, y1 - y0));
     };
@@ -917,6 +927,23 @@ void TimelineView::drawClip (juce::Graphics& g, const Track& t, int ti, const Cl
                     g.drawEllipse (px - 4.0f, py - 4.0f, 8.0f, 8.0f, 1.0f);
                 }
         }
+    }
+    if (const auto ir = envIconRect (ti, c); ! ir.isEmpty())   // icona dell'inviluppo
+    {
+        const bool on = tool == Tool::Envelope && sel;
+        const auto yel = juce::Colour (0xffffe27a);
+        g.setColour (juce::Colours::black.withAlpha (on ? 0.8f : 0.5f));
+        g.fillRoundedRectangle (ir, 3.5f);
+        g.setColour (on ? yel : yel.withAlpha (c.env.empty() ? 0.45f : 0.8f));
+        g.drawRoundedRectangle (ir.reduced (0.5f), 3.5f, 1.0f);
+        juce::Path ep;   // mini inviluppo: sale e scende, con un punto
+        ep.startNewSubPath (ir.getX() + 3.0f, ir.getBottom() - 5.0f);
+        ep.lineTo (ir.getX() + 8.0f, ir.getY() + 4.5f);
+        ep.lineTo (ir.getX() + 13.0f, ir.getY() + 4.5f);
+        ep.lineTo (ir.getRight() - 3.0f, ir.getBottom() - 5.0f);
+        g.strokePath (ep, juce::PathStrokeType (1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.fillEllipse (ir.getX() + 6.2f, ir.getY() + 2.7f, 3.6f, 3.6f);
+        g.fillEllipse (ir.getX() + 11.2f, ir.getY() + 2.7f, 3.6f, 3.6f);
     }
     if (c.hasSync())   // punto di sincronia: bandierina e linea
     {
@@ -1597,8 +1624,10 @@ void TimelineView::demoState (int kind)
         setTool (Tool::Envelope);
         project.selection = { clipId };
         envClipId = clipId;
-        project.addEnvPoint (clipId, (int64_t) (r * 25.0), -12.0f);
-        project.addEnvPoint (clipId, (int64_t) (r * 45.0), 0.0f);
+        const auto* dc = project.findClip (clipId);   // i due punti cadono a un terzo e a due terzi del clip
+        const int64_t a = dc->start + dc->length / 3, b = dc->start + dc->length * 2 / 3;
+        project.addEnvPoint (clipId, a, -18.0f);
+        project.addEnvPoint (clipId, b, 0.0f);
     }
     repaint();
 }
@@ -1882,6 +1911,10 @@ void TimelineView::beginDragEdit()
 void TimelineView::mouseMove (const juce::MouseEvent& e)
 {
     const auto hit = hitTest (e.getPosition());
+    if (hit.clip != 0 && hit.trackIndex >= 0)
+        if (const auto* ic = project.findClip (hit.clip); ic != nullptr && envIconRect (hit.trackIndex, *ic).contains (e.position))
+        { setMouseCursor (juce::MouseCursor::PointingHandCursor); return; }
+
     const int newHover = hit.type == HitType::TrackResize ? hit.trackIndex : -1;
     if (newHover != hoverResize) { hoverResize = newHover; repaint(); }
 
@@ -1993,6 +2026,20 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
         else project.setGroupMuteSolo (hit.group, hit.groupPart == 2, ! groupAll (hit.group, hit.groupPart == 2));
         return;
     }
+
+    // icona in basso a sinistra del clip: attiva/disattiva l'inviluppo di guadagno su quel clip
+    if (hit.clip != 0 && hit.trackIndex >= 0)
+        if (const auto* ic = project.findClip (hit.clip); ic != nullptr && envIconRect (hit.trackIndex, *ic).contains (e.position))
+        {
+            if (project.trackLocked (hit.track)) return;
+            const bool off = tool == Tool::Envelope && project.selection.count (ic->id) > 0;
+            project.selectedTrackId = hit.track;
+            project.selection = { ic->id };
+            primaryId = envClipId = ic->id;
+            setTool (off ? Tool::Select : Tool::Envelope);
+            project.sendChangeMessage();
+            return;
+        }
 
     // cue ADR: bordo = sposta ingresso/uscita, fascia = sposta tutto il cue
     if (tool == Tool::Select && ! e.mods.isCommandDown())

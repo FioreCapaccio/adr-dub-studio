@@ -158,7 +158,7 @@ SampleEditor::~SampleEditor() { project.removeChangeListener (this); }
 bool SampleEditor::applyRange (Project::RangeOp op, double param)
 {
     if (selA < 0 || std::abs (selB - selA) < 2) { if (showError) showError (TRANS ("Seleziona prima una porzione di audio.")); return false; }
-    const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+    const auto folder = project.mediaFolder ("Elaborati");
     project.processRange (clipId, juce::jmin (selA, selB), juce::jmax (selA, selB), op, param, folder, [this, safe = juce::Component::SafePointer<SampleEditor> (this)] (juce::String err)
     {
         if (safe != nullptr && err.isNotEmpty() && showError) showError (err);

@@ -5114,6 +5114,15 @@ private:
                     const auto txt = fa.getChildFile ("selftest_cartella.adb").loadFileAsString();
                     expect (e.isEmpty() && txt.contains ("\"video\": \"Media/") && ! txt.contains (fa.getFullPathName()), "salva in cartella: sessione con percorsi relativi " + e);
                     expect (fa.copyDirectoryTo (fb), "salva in cartella: cartella copiata");
+                    // secondo salvataggio (Cmd+S) sulla stessa cartella: nessun file duplicato, percorsi sempre relativi, media = Project::mediaFolderFor
+                    const int nFiles = fa.getChildFile ("Media").getNumberOfChildFiles (juce::File::findFiles);
+                    project->saveToFolder (fa, [this, fa, nFiles] (juce::String e3)
+                    {
+                        expect (e3.isEmpty() && fa.getChildFile ("Media").getNumberOfChildFiles (juce::File::findFiles) == nFiles && nFiles > 0
+                                    && ! fa.getChildFile ("selftest_cartella.adb").loadFileAsString().contains (fa.getFullPathName())
+                                    && fc::Project::mediaFolderFor (fa.getChildFile ("selftest_cartella.adb")) == fa.getChildFile ("Media"),
+                                "ri-salvataggio nella cartella: niente duplicati " + e3);
+                    }, "selftest_cartella");
                     folderCopy = std::make_unique<fc::Project> (formats, 48000.0);
                     folderCopy->loadSession (fb.getChildFile ("selftest_cartella.adb"), [this, fb, nClips] (juce::String e2)
                     {
@@ -5312,7 +5321,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.5"; }
+    const juce::String getApplicationVersion() override { return "2.64.6"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

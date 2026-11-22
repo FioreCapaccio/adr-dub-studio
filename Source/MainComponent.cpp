@@ -54,20 +54,8 @@ juce::File autosaveFile() { return appDataFolder().getChildFile ("autosave.arost
 juce::File autosaveInfo() { return appDataFolder().getChildFile ("autosave.info"); }
 juce::File runningFlag() { return appDataFolder().getChildFile ("running.flag"); }
 
-/** Cartella di default delle registrazioni (sessione non ancora salvata). */
-juce::File defaultRecordingsFolder()
-{
-    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Registrazioni");
-}
-
-/** Le registrazioni stanno accanto alla sessione (<nome>_media), cosi' si spostano e si archiviano insieme; senza file di sessione, in Musica. */
-juce::File recordingsFolder (const Project& p)
-{
-    if (p.getFile() == juce::File()) return defaultRecordingsFolder();
-    const auto folder = p.getFile().getParentDirectory().getChildFile (p.getFile().getFileNameWithoutExtension() + "_media");
-    folder.createDirectory();
-    return folder;
-}
+/** Le registrazioni stanno nella cartella dei media della sessione (si spostano insieme); senza file di sessione, in Musica, e al primo salvataggio vengono portate dentro. */
+juce::File recordingsFolder (const Project& p) { return p.mediaFolder ("Registrazioni"); }
 } // namespace
 
 //==============================================================================
@@ -273,13 +261,13 @@ MainComponent::MainComponent()
     timeline->onFreezeRequest = [this] (const std::vector<int>& ids) { freezeTracks (ids); };
     timeline->onStretchCommit = [this] (int64_t id, double ratio, int64_t newStart)
     {
-        const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+        const auto folder = project->mediaFolder ("Elaborati");
         juce::Component::SafePointer<MainComponent> safe (this);
         project->stretchClip (id, ratio, true, folder, [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); }, newStart);
     };
     timeline->onWarpCommit = [this] (int64_t id, std::vector<warp::Anchor> anchors)
     {
-        const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+        const auto folder = project->mediaFolder ("Elaborati");
         juce::Component::SafePointer<MainComponent> safe (this);
         project->warpClip (id, std::move (anchors), folder, [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); });
     };
@@ -1126,8 +1114,8 @@ void MainComponent::confirmDiscard (std::function<void()> proceed)
         {
             if (safe->project->getFile() != juce::File())
             {
-                juce::String err;
-                if (safe->project->save (safe->project->getFile(), err)) proceed(); else safe->showError (err);
+                const auto sf = safe->project->getFile();
+                safe->project->saveToFolder (sf.getParentDirectory(), [safe, proceed] (juce::String err) { if (safe == nullptr) return; if (err.isEmpty()) proceed(); else safe->showError (err); }, sf.getFileNameWithoutExtension());
             }
             else
             {
@@ -1138,8 +1126,9 @@ void MainComponent::confirmDiscard (std::function<void()> proceed)
                 {
                     auto f = fc.getResult();
                     if (safe == nullptr || f == juce::File()) return;
-                    juce::String err;
-                    if (safe->project->save (f.withFileExtension ("adb"), err)) proceed(); else safe->showError (err);
+                    const auto name = f.getFileNameWithoutExtension();
+                    const auto folder = f.getParentDirectory().getFileName() == name ? f.getParentDirectory() : f.getParentDirectory().getChildFile (name);
+                    safe->project->saveToFolder (folder, [safe, proceed] (juce::String err) { if (safe == nullptr) return; if (err.isEmpty()) proceed(); else safe->showError (err); }, name);
                 });
             }
         }
@@ -1333,22 +1322,6 @@ private:
     bool ok = false;
     juce::String error;
 };
-
-/** Dopo il primo salvataggio: se ci sono registrazioni nella cartella di default (sessione non ancora salvata) si propone di portarle accanto alla sessione. */
-void MainComponent::offerCollectRecordings()
-{
-    const auto def = defaultRecordingsFolder();
-    int n = 0;
-    for (auto& t : project->getSession().tracks)
-        for (auto& c : t.clips)
-            if (c.asset != nullptr && ! c.asset->offline && c.asset->file.isAChildOf (def)) ++n;
-    if (n == 0) return;
-    auto opts = juce::MessageBoxOptions::makeOptionsYesNo (juce::MessageBoxIconType::QuestionIcon, TRANS ("Registrazioni della sessione"),
-                                                           juce::String (n) + TRANS (" clip usano registrazioni salvate in Musica/ADR Dub Studio/Registrazioni. Le copio accanto alla sessione, nella cartella dei media, cosi' il progetto si sposta con i suoi file?"),
-                                                           TRANS ("Copia accanto alla sessione"), TRANS ("No"));
-    juce::Component::SafePointer<MainComponent> safe (this);
-    juce::NativeMessageBox::showAsync (opts, [safe] (int r) { if (r == 0 && safe != nullptr) safe->collectMedia(); });   // 0 = primo pulsante
-}
 
 void MainComponent::collectMedia()
 {
@@ -1727,40 +1700,29 @@ void MainComponent::saveAs()
     {
         auto f = fc.getResult();
         if (safe == nullptr || f == juce::File()) return;
-        // dove salvare: solo il file della sessione, oppure una cartella con tutto dentro (sessione con i cue, video e take)
-        auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, TRANS ("Salva sessione"),
-                                                                     TRANS ("Vuoi salvare tutto in una cartella?\n\nLa cartella \"") + f.getFileNameWithoutExtension() + TRANS ("\" conterra' il file della sessione (con i cue) e, in \"Media\", il video e tutte le take: si puo' spostare o copiare intera."),
-                                                                     TRANS ("Salva in una cartella"), TRANS ("Solo il file"), TRANS ("Annulla"));
-        juce::NativeMessageBox::showAsync (opts, [safe, f] (int r)   // 0 = cartella, 1 = solo il file, 2 = annulla
+        // tutto in una cartella: sessione (con i cue), video, take ed elaborazioni; si puo' spostare o copiare intera
+        const auto name = f.getFileNameWithoutExtension();
+        const auto folder = f.getParentDirectory().getFileName() == name ? f.getParentDirectory() : f.getParentDirectory().getChildFile (name);
+        safe->project->saveToFolder (folder, [safe, folder, name] (juce::String err)
         {
-            if (safe == nullptr || r == 2) return;
-            if (r == 0)
+            if (safe == nullptr) return;
+            if (err.isNotEmpty()) safe->showError (err);
+            else
             {
-                const auto folder = f.getParentDirectory().getChildFile (f.getFileNameWithoutExtension());
-                safe->project->saveToFolder (folder, [safe, folder] (juce::String err)
-                {
-                    if (safe == nullptr) return;
-                    if (err.isNotEmpty()) safe->showError (err);
-                    else
-                    {
-                        safe->addRecent (folder.getChildFile (folder.getFileName() + ".adb"));
-                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Sessione salvata"), TRANS ("Tutto salvato nella cartella:\n") + folder.getFullPathName());
-                    }
-                });
-                return;
+                safe->addRecent (folder.getChildFile (name + ".adb"));
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, TRANS ("Sessione salvata"), TRANS ("Tutto salvato nella cartella:\n") + folder.getFullPathName());
             }
-            juce::String err;
-            if (! safe->project->save (f.withFileExtension ("adb"), err)) safe->showError (err);
-            else { safe->addRecent (f.withFileExtension ("adb")); safe->offerCollectRecordings(); }
-        });
+        }, name);
     });
 }
 
 void MainComponent::saveCurrent()
 {
     if (project->getFile() == juce::File()) { saveAs(); return; }
-    juce::String err;
-    if (! project->save (project->getFile(), err)) showError (err);
+    // ogni salvataggio porta nella cartella della sessione anche i file arrivati da fuori (registrazioni fatte prima di salvare, importazioni)
+    const auto f = project->getFile();
+    juce::Component::SafePointer<MainComponent> safe (this);
+    project->saveToFolder (f.getParentDirectory(), [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); }, f.getFileNameWithoutExtension());
 }
 
 void MainComponent::openDialog()
@@ -2565,7 +2527,7 @@ void MainComponent::freezeTracks (const std::vector<int>& ids)
 {
     if (engine.isRecording()) return;
     engine.stop();   // il rendering usa gli stessi plug-in del motore: il trasporto deve essere fermo
-    const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+    const auto folder = project->mediaFolder ("Elaborati");
     juce::Component::SafePointer<MainComponent> safe (this);
     for (int id : ids)
     {
@@ -2675,7 +2637,7 @@ void MainComponent::processSelected (int op)
 {
     std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
     if (ids.empty()) { showError (TRANS ("Seleziona almeno un clip.")); return; }
-    const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+    const auto folder = project->mediaFolder ("Elaborati");
     juce::Component::SafePointer<MainComponent> safe (this);
     auto report = [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); };
     if (op == 24)
@@ -2702,7 +2664,7 @@ void MainComponent::joinSelected()
 {
     std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
     if (project->joinableGroups (project->selection) == 0) { showError (TRANS ("Seleziona almeno due clip sulla stessa traccia (i clip silenziati non si uniscono).")); return; }
-    const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+    const auto folder = project->mediaFolder ("Elaborati");
     juce::Component::SafePointer<MainComponent> safe (this);
     project->joinClips (ids, folder, [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); });
 }
@@ -2711,7 +2673,7 @@ void MainComponent::timeStretchSelected (bool toCue)
 {
     std::vector<int64_t> ids (project->selection.begin(), project->selection.end());
     if (ids.empty()) { showError (TRANS ("Seleziona almeno un clip.")); return; }
-    const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+    const auto folder = project->mediaFolder ("Elaborati");
     juce::Component::SafePointer<MainComponent> safe (this);
     auto report = [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); };
 
@@ -4373,7 +4335,7 @@ void MainComponent::alignSelectedToGuide()
         auto& p = *safe->project;
         const auto items = align::alignToGuide (p, ids, range, 0.55, adapt);
 
-        const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+        const auto folder = p.mediaFolder ("Elaborati");
         auto report = [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); };
         int done = 0;
         juce::String msg;
@@ -4423,7 +4385,7 @@ void MainComponent::alignPhrasesSelected()
         const double range = juce::jlimit (50.0, 5000.0, aw->getTextEditorContents ("range").replaceCharacter (',', '.').getDoubleValue()) / 1000.0;
         auto& p = *safe->project;
         const auto items = align::alignPhrases (p, ids, range, 0.55);
-        const auto folder = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile ("Elaborati");
+        const auto folder = p.mediaFolder ("Elaborati");
         auto report = [safe] (juce::String err) { if (safe != nullptr && err.isNotEmpty()) safe->showError (err); };
         int done = 0;
         juce::String msg;

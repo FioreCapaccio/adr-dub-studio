@@ -1895,16 +1895,31 @@ void Project::exportPackage (const juce::File& zip, const std::vector<int>& only
     });
 }
 
-void Project::saveToFolder (const juce::File& folder, std::function<void (juce::String)> done)
+juce::File Project::mediaFolderFor (const juce::File& f)
+{
+    const auto dir = f.getParentDirectory();
+    return dir.getFileName() == f.getFileNameWithoutExtension() ? dir.getChildFile ("Media") : dir.getChildFile (f.getFileNameWithoutExtension() + "_media");
+}
+
+juce::File Project::mediaFolder (const juce::String& defaultSub) const
+{
+    const auto dir = sessionFile == juce::File() ? juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("ADR Dub Studio").getChildFile (defaultSub)
+                                                 : mediaFolderFor (sessionFile);
+    dir.createDirectory();
+    return dir;
+}
+
+void Project::saveToFolder (const juce::File& folder, std::function<void (juce::String)> done, juce::String sessionName)
 {
     auto root = toVar();
-    const auto sessionName = folder.getFileName();
+    if (sessionName.isEmpty()) sessionName = folder.getFileName();
     runAsync ([=, this]() mutable -> std::function<void()>
     {
         std::set<juce::String> files;
         collectFiles (root, files);
         folder.createDirectory();
-        const auto media = folder.getChildFile ("Media");
+        const auto adb = folder.getChildFile (sessionName + ".adb");
+        const auto media = mediaFolderFor (adb);
         media.createDirectory();
         std::map<juce::String, juce::String> rel;       // percorso originale -> percorso relativo scritto nella sessione
         std::map<juce::String, juce::File> moved;       // percorso originale -> nuovo file
@@ -1918,14 +1933,13 @@ void Project::saveToFolder (const juce::File& folder, std::function<void (juce::
             juce::File dest = src;
             if (! src.isAChildOf (media))
             {
-                dest = media.getChildFile (juce::String (k).paddedLeft ('0', 3) + "_" + juce::File::createLegalFileName (src.getFileName()));
+                dest = media.getNonexistentChildFile (juce::File::createLegalFileName (src.getFileNameWithoutExtension()), src.getFileExtension(), false);
                 if (! src.copyFileTo (dest)) { err += (err.isEmpty() ? "" : "\n") + juce::String (TRANS ("Impossibile copiare ")) + path; continue; }
             }
             rel[path] = dest.getRelativePathFrom (folder).replaceCharacter ('\\', '/');
             moved[path] = dest;
         }
         relocateFiles (root, rel);
-        const auto adb = folder.getChildFile (sessionName + ".adb");
         if (! adb.replaceWithText (juce::JSON::toString (root, false))) err += (err.isEmpty() ? "" : "\n") + juce::String (TRANS ("Impossibile scrivere ")) + adb.getFullPathName();
         setTask ({}, -1.0f);
         return [=, this]

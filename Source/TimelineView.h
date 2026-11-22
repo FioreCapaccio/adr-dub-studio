@@ -252,6 +252,8 @@ private:
     int envIdx = -1;
     static float envYFor (juce::Rectangle<float> wf, float db) noexcept { return wf.getY() + std::pow (juce::jlimit (0.0f, 1.0f, (12.0f - db) / 72.0f), 0.55f) * wf.getHeight(); }
     static float envDbFor (juce::Rectangle<float> wf, float y) noexcept { return 12.0f - 72.0f * std::pow (juce::jlimit (0.0f, 1.0f, (y - wf.getY()) / juce::jmax (1.0f, wf.getHeight())), 1.0f / 0.55f); }
+    /** Icona in basso a sinistra del clip: attiva/disattiva lo strumento Inviluppo su quel clip (vuoto se il clip e' troppo piccolo, offline o con un altro strumento attivo). */
+    juce::Rectangle<float> envIconRect (int ti, const Clip& c) const;
     static juce::Rectangle<float> envArea (juce::Rectangle<float> r) noexcept { return r.withTrimmedTop (18.0f).reduced (0.0f, 3.0f); }
 
     int64_t lastPos = -1;
