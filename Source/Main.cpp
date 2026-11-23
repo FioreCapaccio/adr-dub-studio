@@ -3116,6 +3116,38 @@ private:
             expect (c2b != nullptr && c2b->start == 144000 && std::abs (ev (144000 + 38000) + 6.0f) < 0.01f, "automazione: eliminando in Shuffle/Ripple la curva dei clip che scorrono li segue");
             q.editMode = fc::Project::EditMode::Normal;
         }
+        {   // eliminare una take con automazione: si puo' togliere anche la sua curva (con domanda), un solo undo
+            fc::Project d (formats, 48000.0);
+            d.addTrack();
+            auto& dt = d.edit().tracks[0];
+            fc::Clip c1; c1.id = 1; c1.asset = a; c1.start = 100000; c1.length = 48000;
+            fc::Clip c2; c2.id = 2; c2.asset = a; c2.start = 400000; c2.length = 48000;
+            dt.clips.push_back (c1); dt.clips.push_back (c2);
+            dt.volAuto = { { 1, 0, 0.0f }, { 2, 110000, -12.0f }, { 3, 140000, -12.0f }, { 4, 300000, 0.0f }, { 5, 420000, -6.0f }, { 6, 440000, -6.0f } };
+            auto cnt = [&] { return d.getSession().tracks[0].volAuto.size(); };
+            d.selection = { 2 };
+            expect (d.selectionHasAutomation(), "elimina take: il clip con punti di automazione e' riconosciuto");
+            d.selection = { 1, 2 };
+            int asked = 0, answer = 1;
+            d.onAskDeleteAutomation = [&] (std::function<void (int)> go) { ++asked; go (answer); };
+            d.requestDelete (false);   // risposta 1: solo i clip, la curva resta
+            expect (asked == 1 && d.getSession().tracks[0].clips.empty() && cnt() == 6, "elimina take: 'solo le take' lascia l'automazione");
+            d.undo();
+            answer = 0; d.selection = { 1 }; d.requestDelete (false);   // annulla: non cambia nulla
+            expect (asked == 2 && d.getSession().tracks[0].clips.size() == 2 && cnt() == 6, "elimina take: Annulla non toglie niente");
+            answer = 2; d.selection = { 2 }; d.requestDelete (false);   // clip e automazione
+            const auto& vl = d.getSession().tracks[0].volAuto;
+            bool none = true;
+            for (auto& q : vl) none = none && ! (q.pos >= 420000 - 48000 && q.pos <= 440000 + 48000 && q.pos > 400000);
+            expect (d.getSession().tracks[0].clips.size() == 1 && none && std::abs (fc::evalAutomationDb (vl, 110000) + 12.0f) < 0.01f && std::abs (fc::evalAutomationDb (vl, 300000)) < 0.01f,
+                    "elimina take: i punti della take spariscono, il resto della curva resta");
+            d.undo();
+            expect (d.getSession().tracks[0].clips.size() == 2 && cnt() == 6, "elimina take: un solo undo ridà clip e automazione");
+            d.selection = { 2 }; d.requestDelete (true);   // anche in Ripple (clip 1 resta dov'e')
+            asked = 0;
+            d.undo(); d.onAskDeleteAutomation = nullptr; d.selection = { 2 }; d.requestDelete (false);
+            expect (asked == 0 && d.getSession().tracks[0].clips.size() == 1 && cnt() == 6, "elimina take: senza finestra di domanda l'automazione resta com'era");
+        }
         {   // Elimina intervallo con ripple: il tempo tolto sparisce anche dalla curva, prima e dopo il taglio resta com'era
             fc::Project r (formats, 48000.0);
             r.addTrack();
@@ -5380,7 +5412,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.9"; }
+    const juce::String getApplicationVersion() override { return "2.64.10"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

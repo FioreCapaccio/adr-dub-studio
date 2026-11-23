@@ -1690,3 +1690,7 @@ language: English
 "Cartella per i file originali" = "Folder for the original files"
 " file originali copiati." = " original files copied."
 "I clip selezionati non hanno un file originale da esportare." = "The selected clips have no original file to export."
+"Elimina take" = "Delete takes"
+"Le take da eliminare hanno dei punti di automazione. Eliminare anche l'automazione relativa a queste take?" = "The takes to delete have automation points. Delete the automation for these takes as well?"
+"Elimina anche l'automazione" = "Also delete the automation"
+"Solo le take" = "Takes only"

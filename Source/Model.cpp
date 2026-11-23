@@ -2288,6 +2288,70 @@ Project::AutoSnapshot Project::snapshotAutomation() const
     return snap;
 }
 
+// tratto di curva di un clip: il clip piu' le rampe appena fuori, fino a 1 s e al massimo meta' strada dal clip vicino che suona (come carryAutomation)
+static std::pair<int64_t, int64_t> autoSpanOfClip (const Track& t, const Clip& c, double rate)
+{
+    int64_t pre = (int64_t) rate, post = (int64_t) rate;
+    for (auto& o : t.clips)
+    {
+        if (o.id == c.id || o.muted) continue;
+        if (o.start < c.start) pre = juce::jmin (pre, juce::jmax<int64_t> (0, (c.start - o.end()) / 2));
+        else post = juce::jmin (post, juce::jmax<int64_t> (0, (o.start - c.end()) / 2));
+    }
+    return { juce::jmax<int64_t> (0, c.start - pre), c.end() + post };
+}
+
+bool Project::selectionHasAutomation() const
+{
+    for (auto& t : session.tracks)
+    {
+        if (t.editLocked()) continue;
+        for (auto& c : t.clips)
+        {
+            if (selection.count (c.id) == 0) continue;
+            const auto [a, b] = autoSpanOfClip (t, c, sampleRate);
+            for (int p = 0; p < kNumAutoParams; ++p)
+                for (auto& q : t.lane (p)) if (q.pos >= a && q.pos <= b) return true;
+        }
+    }
+    return false;
+}
+
+void Project::requestDelete (bool ripple)
+{
+    if (selection.empty()) return;
+    const bool ripp = ripple || editMode != EditMode::Normal;
+    auto run = [this, ripp] (bool withAuto) { if (ripp) rippleDeleteSelected (withAuto); else deleteSelected (withAuto); };
+    if (onAskDeleteAutomation && selectionHasAutomation())
+        onAskDeleteAutomation ([run] (int choice) { if (choice == 1) run (false); else if (choice == 2) run (true); });
+    else run (false);
+}
+
+// toglie i punti di automazione dei clip selezionati (su tracce non bloccate); la curva fuori dal tratto resta com'era (un ponte la tiene)
+static void eraseAutomationOfSelection (Session& session, const std::set<int64_t>& selection, double rate, int& nextAutoId)
+{
+    for (auto& t : session.tracks)
+    {
+        if (t.editLocked()) continue;
+        std::vector<std::pair<int64_t, int64_t>> spans;
+        for (auto& c : t.clips) if (selection.count (c.id) > 0) spans.push_back (autoSpanOfClip (t, c, rate));
+        for (auto& [a, b] : spans)
+            for (int p = 0; p < kNumAutoParams; ++p)
+            {
+                auto& lane = t.lane (p);
+                if (std::none_of (lane.begin(), lane.end(), [a = a, b = b] (const AutoPoint& q) { return q.pos >= a && q.pos <= b; })) continue;
+                const float va = evalAutomationDb (lane, a), vb = evalAutomationDb (lane, b);
+                lane.erase (std::remove_if (lane.begin(), lane.end(), [a = a, b = b] (const AutoPoint& q) { return q.pos >= a && q.pos <= b; }), lane.end());
+                if (! lane.empty())
+                {
+                    lane.push_back ({ nextAutoId++, a, va });
+                    lane.push_back ({ nextAutoId++, b, vb });
+                    std::stable_sort (lane.begin(), lane.end(), [] (const AutoPoint& x, const AutoPoint& y) { return x.pos < y.pos; });
+                }
+            }
+    }
+}
+
 void Project::carryAutomationSince (const AutoSnapshot& before)
 {
     std::vector<ClipMove> moves;
@@ -2457,10 +2521,11 @@ void Project::splitClip (int64_t id, int64_t pos)
     changed();
 }
 
-void Project::rippleDeleteSelected()
+void Project::rippleDeleteSelected (bool withAutomation)
 {
     if (selection.empty()) return;
     beginEdit();
+    if (withAutomation) eraseAutomationOfSelection (session, selection, sampleRate, nextAutoId);
     const auto before = snapshotAutomation();
     for (auto& t : session.tracks)
     {
@@ -2673,11 +2738,12 @@ void Project::duplicateTrack (int id)
     changed();
 }
 
-void Project::deleteSelected()
+void Project::deleteSelected (bool withAutomation)
 {
     if (selection.empty()) return;
-    if (editMode != EditMode::Normal) { rippleDeleteSelected(); return; }   // in Ripple e Shuffle eliminare chiude il vuoto
+    if (editMode != EditMode::Normal) { rippleDeleteSelected (withAutomation); return; }   // in Ripple e Shuffle eliminare chiude il vuoto
     beginEdit();
+    if (withAutomation) eraseAutomationOfSelection (session, selection, sampleRate, nextAutoId);
     for (auto& t : session.tracks)
         if (! t.editLocked())
             t.clips.erase (std::remove_if (t.clips.begin(), t.clips.end(),

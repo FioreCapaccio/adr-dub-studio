@@ -3396,7 +3396,7 @@ void TimelineView::showClipMenu (int64_t clipId)
         {
             case 1: p.splitAt (safe->engine.getPosition()); break;
             case 2: p.duplicateSelected(); break;
-            case 3: p.deleteSelected(); break;
+            case 3: p.requestDelete (false); break;
             case 4: p.normalizeClip (clipId); break;
             case 5: if (c != nullptr) p.setClipGain (clipId, c->gainDb + 3.0f); break;
             case 6: if (c != nullptr) p.setClipGain (clipId, c->gainDb - 3.0f); break;

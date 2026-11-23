@@ -797,9 +797,15 @@ public:
     void nudgeSelected (int64_t delta);
     void splitAt (int64_t pos, bool allTracks = false);   // clip selezionati sotto la testina, altrimenti tutti (o sempre tutti)
     void splitClip (int64_t clipId, int64_t pos);         // un solo clip (strumento Lama)
-    void rippleDeleteSelected();                          // elimina i clip selezionati chiudendo il vuoto sulla stessa traccia
+    void rippleDeleteSelected (bool withAutomation = false);   // elimina i clip selezionati chiudendo il vuoto sulla stessa traccia
     void trimToPlayhead (bool trimStart, int64_t pos);    // taglia l'inizio/la fine dei clip alla testina
-    void deleteSelected();
+    void deleteSelected (bool withAutomation = false);    // con 'withAutomation' toglie anche i punti di automazione di quelle take (il clip e le rampe appena fuori)
+    /** True se tra i clip selezionati (su tracce non bloccate) ce n'e' uno con punti di automazione nel suo tratto di curva. */
+    bool selectionHasAutomation() const;
+    /** Elimina i clip selezionati (Ripple se 'ripple' o se la modalita' non e' Normale). Se hanno automazione e c'e' onAskDeleteAutomation chiede prima:
+        risposta 0 annulla, 1 solo i clip, 2 clip e automazione; senza domanda l'automazione resta com'e'. */
+    void requestDelete (bool ripple);
+    std::function<void (std::function<void (int)>)> onAskDeleteAutomation;
     void duplicateSelected();
 
     // modalita' di modifica (come in Nuendo): Normale; Ripple: eliminare chiude il vuoto; Shuffle: in piu' i clip spostati spingono quelli vicini

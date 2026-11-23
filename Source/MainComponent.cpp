@@ -209,6 +209,13 @@ MainComponent::MainComponent()
     project = std::make_unique<Project> (formats, engine.getSampleRate());
     project->onPublish = [this] (std::shared_ptr<const Session> s) { engine.publish (std::move (s)); };
     project->onSessionLoaded = [this] { pluginHost->restoreAll (project->getSession()); };
+    project->onAskDeleteAutomation = [this] (std::function<void (int)> answer)   // 0 annulla, 1 solo i clip, 2 clip e automazione
+    {
+        auto opts = juce::MessageBoxOptions::makeOptionsYesNoCancel (juce::MessageBoxIconType::QuestionIcon, TRANS ("Elimina take"),
+                                                                    TRANS ("Le take da eliminare hanno dei punti di automazione. Eliminare anche l'automazione relativa a queste take?"),
+                                                                    TRANS ("Elimina anche l'automazione"), TRANS ("Solo le take"), TRANS ("Annulla"));
+        juce::NativeMessageBox::showAsync (opts, [answer] (int r) { answer (r == 0 ? 2 : (r == 1 ? 1 : 0)); });   // Si = 0, No = 1, Annulla = 2
+    };
     project->isPlayingFn = [this] { return engine.isPlaying(); };
     project->positionFn = [this] { return engine.getPosition(); };
     pluginHost->onChanged = [this] { project->liveChanged(); adviseBuffer (false); };
@@ -2092,7 +2099,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRedo:          project->redo(); break;
         case cmdSelectAll:     project->selectAll(); break;
         case cmdDuplicate:     project->duplicateSelected(); break;
-        case cmdDelete:        project->deleteSelected(); break;
+        case cmdDelete:        project->requestDelete (false); break;
         case cmdSplit:         project->splitAt (engine.getPosition()); break;
         case cmdJoin:          joinSelected(); break;
 
@@ -2331,7 +2338,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdClearRecent:   settings().setValue ("recent", ""); settings().saveIfNeeded(); break;
         case cmdToolAuto:      timeline->setTool (Tool::Automation); break;
         case cmdClearAutomation: project->clearAutomation (project->selectedTrackId); break;
-        case cmdRippleDelete:  project->rippleDeleteSelected(); break;
+        case cmdRippleDelete:  project->requestDelete (true); break;
         case cmdTrimStart:     project->trimToPlayhead (true, engine.getPosition()); break;
         case cmdTrimEnd:       project->trimToPlayhead (false, engine.getPosition()); break;
         case cmdTrackUp:       { const int i = project->trackIndexForId (project->selectedTrackId); if (i > 0) project->moveTrackTo (i, i - 1); break; }
