@@ -255,6 +255,7 @@ MainComponent::MainComponent()
     timeline->onProcessRequest = [this] (int op) { processSelected (op); };
     timeline->onSilenceRequest = [this] { silenceDialog(); };
     timeline->onSeparateRequest = [this] { separateStemsDialog(); };
+    timeline->onExportClipsRequest = [this] { exportSelectedClips(); };
     timeline->onSplitVoicesRequest = [this] { splitVoicesDialog(); };
     timeline->onCrossfadeRequest = [this] { crossfadeDialog(); };
     timeline->onLevelRequest = [this] (const std::vector<int>& ids) { levelTrackDialog (ids); };
@@ -1687,6 +1688,45 @@ void MainComponent::runExport (const ExportOptions& o)
         auto f = fc.getResult();
         if (f == juce::File()) return;
         start (f.withFileExtension (o.format));
+    });
+}
+
+/** Esporta come file audio i clip selezionati (una take, o piu' clip mescolati), come suonano: guadagno, inviluppo, dissolvenze, EQ e plug-in della traccia. */
+void MainComponent::exportSelectedClips()
+{
+    if (! requireLicense()) return;
+    if (exportJob != nullptr || videoJob != nullptr) return;
+    if (project->selection.empty()) { showError (TRANS ("Seleziona almeno un clip.")); return; }
+
+    Session snap;
+    ExportOptions o;
+    juce::String name;
+    if (! prepareClipExport (*project, snap, o, name)) { showError (TRANS ("I clip selezionati non hanno audio da esportare.")); return; }
+    const auto base = juce::File::createLegalFileName (name);
+    const auto def = juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (base).withFileExtension ("wav");
+    juce::Component::SafePointer<MainComponent> safe (this);
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Esporta audio"), def, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [safe, snap = std::make_shared<Session> (std::move (snap)), o, base] (const juce::FileChooser& fc) mutable
+    {
+        auto f = fc.getResult();
+        if (safe == nullptr || f == juce::File()) return;
+        const auto ext = f.getFileExtension().toLowerCase().trimCharactersAtStart (".");
+        o.format = ext == "aif" || ext == "aiff" ? "aiff" : ext == "flac" ? "flac" : ext == "mp3" ? "mp3" : "wav";
+        o.bitDepth = 24;
+        const auto target = f.withFileExtension (o.format);
+        safe->exportJob = std::make_unique<ExportJob> (*snap, safe->project->getSampleRate(), o, target, base, [safe] (ExportResult r)
+        {
+            juce::MessageManager::callAsync ([safe, r]
+            {
+                if (safe == nullptr) return;
+                safe->exportJob.reset();
+                if (! r.ok) { juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, TRANS ("Esportazione"), r.message); return; }
+                auto opts = juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::InfoIcon, TRANS ("Esportazione completata"), r.message, TRANS ("Mostra nel Finder"), TRANS ("Chiudi"));
+                juce::NativeMessageBox::showAsync (opts, [r] (int res) { if (res == 0 && r.files.size() > 0) juce::File (r.files[0]).revealToUser(); });
+            });
+        });
+        safe->exportJob->launchThread();
     });
 }
 

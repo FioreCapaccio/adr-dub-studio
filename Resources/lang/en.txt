@@ -1680,3 +1680,7 @@ language: English
 "Riprendi" = "Resume"
 "Pausa: ferma la riproduzione lasciando la testina dov'e'. Un altro clic (o Maiusc + spazio) riprende da li'" = "Pause: stops playback and leaves the playhead where it is. Another click (or Shift + Space) resumes from there"
 "Rilascia qui per creare una nuova traccia" = "Drop here to create a new track"
+"Esporta i clip selezionati..." = "Export the selected clips..."
+"Esporta questa take..." = "Export this take..."
+"Esporta questo clip..." = "Export this clip..."
+"I clip selezionati non hanno audio da esportare." = "The selected clips have no audio to export."

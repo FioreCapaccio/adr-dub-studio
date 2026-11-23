@@ -945,6 +945,32 @@ void TimelineView::drawClip (juce::Graphics& g, const Track& t, int ti, const Cl
         g.fillEllipse (ir.getX() + 6.2f, ir.getY() + 2.7f, 3.6f, 3.6f);
         g.fillEllipse (ir.getX() + 11.2f, ir.getY() + 2.7f, 3.6f, 3.6f);
     }
+    if (const auto kr = gainKnobRect (ti, c); ! kr.isEmpty())   // manopola del guadagno del clip
+    {
+        const bool lit = std::abs (c.gainDb) > 0.05f || (drag == Drag::ClipGain && ! gainDragClips.empty() && gainDragClips.front().first == c.id);
+        const auto col2 = juce::Colour (0xff7fd4ff);
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillEllipse (kr);
+        const auto ring = kr.reduced (1.5f);
+        const float a0 = juce::degreesToRadians (-135.0f), a1 = juce::degreesToRadians (135.0f);
+        const auto angleOf = [&] (float db) { return a0 + (a1 - a0) * (juce::jlimit (kGainMin, kGainMax, db) - kGainMin) / (kGainMax - kGainMin); };
+        juce::Path track;
+        track.addCentredArc (ring.getCentreX(), ring.getCentreY(), ring.getWidth() * 0.5f, ring.getHeight() * 0.5f, 0.0f, a0, a1, true);
+        g.setColour (juce::Colours::white.withAlpha (0.25f));
+        g.strokePath (track, juce::PathStrokeType (1.2f));
+        if (lit)   // arco dal punto 0 dB al valore attuale
+        {
+            juce::Path val;
+            const float z = angleOf (0.0f), v = angleOf (c.gainDb);
+            val.addCentredArc (ring.getCentreX(), ring.getCentreY(), ring.getWidth() * 0.5f, ring.getHeight() * 0.5f, 0.0f, juce::jmin (z, v), juce::jmax (z, v), true);
+            g.setColour (col2);
+            g.strokePath (val, juce::PathStrokeType (1.8f));
+        }
+        const float ang = angleOf (c.gainDb);
+        const float cx = kr.getCentreX(), cy = kr.getCentreY();
+        g.setColour (lit ? col2 : juce::Colours::white.withAlpha (0.8f));
+        g.drawLine (cx, cy, cx + std::sin (ang) * 4.2f, cy - std::cos (ang) * 4.2f, 1.6f);
+    }
     if (c.hasSync())   // punto di sincronia: bandierina e linea
     {
         const float sx = sampleToX (c.syncTime());
@@ -1915,6 +1941,10 @@ void TimelineView::mouseMove (const juce::MouseEvent& e)
         if (const auto* ic = project.findClip (hit.clip); ic != nullptr && envIconRect (hit.trackIndex, *ic).contains (e.position))
         { setMouseCursor (juce::MouseCursor::PointingHandCursor); return; }
 
+    if (hit.clip != 0 && hit.trackIndex >= 0)
+        if (const auto* kc = project.findClip (hit.clip); kc != nullptr && gainKnobRect (hit.trackIndex, *kc).contains (e.position))
+        { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
+
     const int newHover = hit.type == HitType::TrackResize ? hit.trackIndex : -1;
     if (newHover != hoverResize) { hoverResize = newHover; repaint(); }
 
@@ -2026,6 +2056,24 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
         else project.setGroupMuteSolo (hit.group, hit.groupPart == 2, ! groupAll (hit.group, hit.groupPart == 2));
         return;
     }
+
+    // manopola del clip: guadagno uniforme su tutta la take (con piu' clip selezionati, la stessa variazione per tutti)
+    if (hit.clip != 0 && hit.trackIndex >= 0)
+        if (const auto* kc = project.findClip (hit.clip); kc != nullptr && gainKnobRect (hit.trackIndex, *kc).contains (e.position))
+        {
+            if (project.trackLocked (hit.track)) return;
+            if (project.selection.count (kc->id) == 0) project.selection = { kc->id };
+            project.selectedTrackId = hit.track;
+            primaryId = kc->id;
+            gainDragClips.clear();
+            gainDragClips.push_back ({ kc->id, kc->gainDb });
+            for (auto id : project.selection)
+                if (id != kc->id)
+                    if (const auto* o = project.findClip (id)) gainDragClips.push_back ({ id, o->gainDb });
+            drag = Drag::ClipGain;
+            project.sendChangeMessage();
+            return;
+        }
 
     // icona in basso a sinistra del clip: attiva/disattiva l'inviluppo di guadagno su quel clip
     if (hit.clip != 0 && hit.trackIndex >= 0)
@@ -2449,6 +2497,15 @@ void TimelineView::mouseDrag (const juce::MouseEvent& e)
         repaint();
         return;
     }
+    if (drag == Drag::ClipGain)
+    {
+        if (! dragStarted && e.getDistanceFromDragStart() < 2) return;
+        beginDragEdit();
+        const float delta = (float) (downPos.y - e.y) * (e.mods.isShiftDown() ? 0.04f : 0.2f);
+        for (auto& [id, g0] : gainDragClips)
+            project.setClipGainInEdit (id, std::round (juce::jlimit (kGainMin, kGainMax, g0 + delta) * 10.0f) / 10.0f);
+        return;
+    }
     if (drag == Drag::Envelope)
     {
         int ti = -1;
@@ -2670,6 +2727,11 @@ void TimelineView::mouseUp (const juce::MouseEvent& e)
         engine.endScrub();
     else if (drag == Drag::Envelope)
         envIdx = -1;
+    else if (drag == Drag::ClipGain)
+    {
+        gainDragClips.clear();
+        repaint();
+    }
     else if (drag == Drag::Stretch)
     {
         const double ratio = (double) stretchLen / (double) juce::jmax<int64_t> (1, stretchOrigLen);
@@ -2739,6 +2801,12 @@ void TimelineView::mouseUp (const juce::MouseEvent& e)
 void TimelineView::mouseDoubleClick (const juce::MouseEvent& e)
 {
     const auto hit = hitTest (e.getPosition());
+    if (hit.clip != 0 && hit.trackIndex >= 0)
+        if (const auto* kc = project.findClip (hit.clip); kc != nullptr && gainKnobRect (hit.trackIndex, *kc).contains (e.position))
+        {
+            if (! project.trackLocked (hit.track)) project.setClipGain (kc->id, 0.0f);   // doppio clic: torna a 0 dB
+            return;
+        }
     if (hit.type == HitType::Marker) { renameMarkerDialog (hit.markerId); return; }
     if (hit.type == HitType::GroupBar) { renameGroupDialog (hit.group); return; }
     if (hit.type == HitType::TrackResize && hit.trackIndex >= 0)
@@ -3285,6 +3353,11 @@ void TimelineView::showClipMenu (int64_t clipId)
         m.addItem (11, TRANS ("ADR: adatta alla durata del cue (time-stretch)"));
     }
     m.addSeparator();
+    {
+        const auto* cl = project.findClip (clipId);
+        const bool several = project.selection.size() > 1 && project.selection.count (clipId) > 0;
+        m.addItem (50, several ? TRANS ("Esporta i clip selezionati...") : (cl != nullptr && cl->cueId != 0 ? TRANS ("Esporta questa take...") : TRANS ("Esporta questo clip...")));
+    }
     m.addItem (12, TRANS ("Unisci i clip selezionati (JOIN)"), project.joinableGroups (project.selection) > 0);
     {
         int ti = -1;
@@ -3333,6 +3406,10 @@ void TimelineView::showClipMenu (int64_t clipId)
             case 8: if (c != nullptr) p.setActiveTake (c->cueId, c->takeNo); break;
             case 9: if (c != nullptr) p.deleteTake (c->cueId, c->takeNo); break;
             case 12: if (safe->onJoinRequest) safe->onJoinRequest(); break;
+            case 50:
+                if (p.selection.count (clipId) == 0) p.selection = { clipId };
+                if (safe->onExportClipsRequest) safe->onExportClipsRequest();
+                break;
             case 41:
                 if (p.selection.count (clipId) == 0) p.selection = { clipId };
                 if (safe->onSplitVoicesRequest) safe->onSplitVoicesRequest();

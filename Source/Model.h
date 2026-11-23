@@ -827,6 +827,8 @@ public:
     void selectAll();
     void normalizeClip (int64_t id);
     void setClipGain (int64_t id, float db);
+    /** Come setClipGain, ma dentro una modifica gia' iniziata (trascinamento della manopola del clip): non crea passi di annullamento. */
+    void setClipGainInEdit (int64_t id, float db);
     /** JOIN: i clip selezionati della stessa traccia (almeno due, non silenziati) diventano un solo clip, con gli spazi vuoti a silenzio; il nuovo file va in 'folder'. Un solo passo di undo. */
     void joinClips (const std::vector<int64_t>& ids, const juce::File& folder, std::function<void (juce::String)> done);
     /** Quanti gruppi di clip (per traccia) il JOIN unirebbe con questa selezione. */

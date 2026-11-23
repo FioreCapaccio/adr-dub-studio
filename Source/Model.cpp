@@ -3207,6 +3207,16 @@ void Project::joinClips (const std::vector<int64_t>& ids, const juce::File& fold
     });
 }
 
+void Project::setClipGainInEdit (int64_t id, float db)
+{
+    int gti = -1;
+    if (auto* c = findClip (id, &gti); c != nullptr && ! session.tracks[(size_t) gti].editLocked())
+    {
+        c->gainDb = db;
+        changed();
+    }
+}
+
 void Project::setClipGain (int64_t id, float db)
 {
     int gti = -1;

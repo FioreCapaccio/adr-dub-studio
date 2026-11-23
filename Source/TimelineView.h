@@ -48,6 +48,7 @@ public:
     std::function<void (int op)> onProcessRequest;   // Direct Offline Processing dal menu del clip (tools::Op)
     std::function<void()> onSilenceRequest;
     std::function<void()> onSeparateRequest;
+    std::function<void()> onExportClipsRequest;
     std::function<void()> onSplitVoicesRequest;
     std::function<void()> onCrossfadeRequest;          // Rileva / elimina i silenzi
     std::function<void (const std::vector<int>&)> onLevelRequest;   // Livella il volume delle tracce scelte
@@ -92,7 +93,7 @@ public:
 
 private:
     enum class Drag { None, Move, TrimL, TrimR, FadeIn, FadeOut, Marquee, RulerSeek, RulerLoop, ExportRange, Stretch, Trim, AutoSegment, TrackResize, VideoMove,
-                      Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove, Range, Comp, Warp, Scrub, Envelope };
+                      Slip, Pan, ZoomRect, TrackReorder, MarkerMove, AutoPoint, CueIn, CueOut, CueMove, Range, Comp, Warp, Scrub, Envelope, ClipGain };
     enum class HitType { None, ExportBar, Ruler, Marker, Video, Header, HeaderGrip, HeaderAuto, HeaderAutoParam, HeaderTrim, HeaderMute, HeaderSolo, HeaderArm, HeaderMon, HeaderInput, TrackResize,
                          Clip, ClipTrimL, ClipTrimR, ClipFadeIn, ClipFadeOut, Lane, GroupBar, HeaderLock, GlobalMute, GlobalSolo, GlobalVisibility };
     struct Hit { HitType type = HitType::None; int track = -1; int trackIndex = -1; int64_t clip = 0; int markerId = 0; int group = 0, groupPart = 0; /* 0 barra, 1 muto, 2 solo */ };
@@ -254,6 +255,10 @@ private:
     static float envDbFor (juce::Rectangle<float> wf, float y) noexcept { return 12.0f - 72.0f * std::pow (juce::jlimit (0.0f, 1.0f, (y - wf.getY()) / juce::jmax (1.0f, wf.getHeight())), 1.0f / 0.55f); }
     /** Icona in basso a sinistra del clip: attiva/disattiva lo strumento Inviluppo su quel clip (vuoto se il clip e' troppo piccolo, offline o con un altro strumento attivo). */
     juce::Rectangle<float> envIconRect (int ti, const Clip& c) const;
+    /** Manopola accanto all'icona: guadagno uniforme di tutto il clip (trascina in verticale, doppio clic = 0 dB). */
+    juce::Rectangle<float> gainKnobRect (int ti, const Clip& c) const { const auto r = envIconRect (ti, c); return r.isEmpty() ? r : juce::Rectangle<float> (r.getRight() + 5.0f, r.getY() - 0.5f, 16.0f, 16.0f); }
+    static constexpr float kGainMin = -40.0f, kGainMax = 18.0f;
+    std::vector<std::pair<int64_t, float>> gainDragClips;   // clip trascinati con il loro guadagno iniziale
     static juce::Rectangle<float> envArea (juce::Rectangle<float> r) noexcept { return r.withTrimmedTop (18.0f).reduced (0.0f, 3.0f); }
 
     int64_t lastPos = -1;

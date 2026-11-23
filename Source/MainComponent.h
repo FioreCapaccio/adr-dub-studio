@@ -136,6 +136,7 @@ private:
     void autosaveTick();
     void checkRecovery();
     void runExport (const ExportOptions&);
+    void exportSelectedClips();
     void exportVideoDialog();
     void saveAs();
     void saveCurrent();

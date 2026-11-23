@@ -434,6 +434,28 @@ private:
             std::unique_ptr<juce::AudioFormatReader> rd (formats.createReaderFor (f));
             expect (r.ok && rd != nullptr && rd->numChannels == 1 && rd->lengthInSamples > 0, "export: con \"mono\" il file ha un solo canale");
         }
+        // 2c. esporta clip: solo il clip scelto (anche silenziato), lungo come il clip
+        {
+            auto& cl = p.edit().tracks[0].clips[0];
+            float refPk = 0;
+            { fc::ExportOptions ro; ro.bitDepth = 24; const auto rf = tmpDir.getChildFile ("ref.wav"); go (ro, rf); measureFileLufs (formats, rf, &refPk); }
+            cl.muted = true;
+            p.selection = { cl.id };
+            fc::Session snap;
+            fc::ExportOptions o; o.bitDepth = 24;
+            juce::String nm;
+            const bool prepared = fc::prepareClipExport (p, snap, o, nm);
+            auto f = tmpDir.getChildFile ("clip.wav");
+            auto r = prepared ? fc::exportSession (snap, 48000.0, o, f, "prova", [] (double) { return true; }) : fc::ExportResult();
+            float pk = 0;
+            measureFileLufs (formats, f, &pk);
+            std::unique_ptr<juce::AudioFormatReader> rd (formats.createReaderFor (f));
+            expect (prepared && r.ok && rd != nullptr && std::abs ((double) rd->lengthInSamples - (double) len) < 4800 && std::abs (pk - refPk) < 0.5f && refPk > -60.0f && nm.isNotEmpty(),
+                    "esporta clip: il file dura quanto il clip e non e' muto (picco " + juce::String (pk, 1) + " dB, " + juce::String (rd != nullptr ? (juce::int64) rd->lengthInSamples : 0) + " campioni su " + juce::String ((juce::int64) len) + ")");
+            p.selection.clear();
+            expect (! fc::prepareClipExport (p, snap, o, nm), "esporta clip: senza selezione non c'e' nulla da esportare");
+            cl.muted = false;
+        }
         // 3. limiter true-peak: obiettivo altissimo, tetto -1 dB
         {
             fc::ExportOptions o; o.norm = fc::ExportOptions::Norm::Lufs; o.normTarget = -0.5; o.ceilingDb = -1.0; o.bitDepth = 24;
@@ -5321,7 +5343,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.6"; }
+    const juce::String getApplicationVersion() override { return "2.64.7"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

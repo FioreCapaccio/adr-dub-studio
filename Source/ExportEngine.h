@@ -42,6 +42,10 @@ struct ExportResult
 ExportResult exportSession (const Session& session, double projectRate, const ExportOptions&, const juce::File& target,
                             const juce::String& baseName, const std::function<bool (double)>& progress);
 
+/** Prepara l'esportazione dei clip selezionati: una copia della sessione con solo quei clip (anche se silenziati), le opzioni con il loro intervallo e un nome proposto.
+    Ritorna false se non c'e' audio da esportare. */
+bool prepareClipExport (const Project&, Session& out, ExportOptions& options, juce::String& name);
+
 /** Freeze: rende l'audio di una traccia con guadagno in ingresso, EQ, compressore e plug-in (prima del fader), come file WAV a 32 bit float. */
 bool renderTrackProcessed (const Session& source, int trackId, double rate, int64_t totalSamples, const juce::File& dest,
                            const std::function<bool (double)>& progress, juce::String& error);

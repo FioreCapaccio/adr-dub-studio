@@ -500,3 +500,42 @@ bool encodeMp3 (const juce::File& wav, const juce::File& mp3, int kbps, juce::St
 }
 
 } // namespace fc
+
+namespace fc
+{
+bool prepareClipExport (const Project& project, Session& out, ExportOptions& o, juce::String& name)
+{
+    out = project.getSession().cloneDetached();
+    int64_t a = std::numeric_limits<int64_t>::max(), b = 0;
+    name.clear();
+    for (auto& t : out.tracks)
+    {
+        std::vector<Clip> keep;
+        for (auto c : t.clips)
+            if (project.selection.count (c.id) > 0 && c.asset != nullptr && ! c.asset->offline)
+            {
+                c.muted = false;   // il clip e' stato scelto esplicitamente
+                a = juce::jmin (a, c.start);
+                b = juce::jmax (b, c.start + c.length);
+                if (name.isEmpty())
+                {
+                    if (const auto* cue = project.findCue (c.cueId))
+                        name = juce::String::formatted ("%02d_", cue->number) + (cue->character.isEmpty() ? juce::String ("ADR") : cue->character) + "_T" + juce::String (c.takeNo);
+                    else name = c.name.isNotEmpty() ? c.name : c.asset->name;
+                }
+                keep.push_back (c);
+            }
+        t.clips = std::move (keep);
+        t.versions.clear();
+        t.frozen = nullptr;
+        t.live->mute = false;
+        t.live->solo = false;
+    }
+    if (b <= a) return false;
+    o.loopRange = true;
+    o.rangeStart = a;
+    o.rangeEnd = b;
+    o.excludeGuide = false;
+    return true;
+}
+} // namespace fc
