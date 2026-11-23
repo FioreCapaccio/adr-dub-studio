@@ -131,6 +131,7 @@ OptionsPanel::OptionsPanel (int numClips, double totalSeconds, bool needsDownloa
     go.onClick = [this] { Choice c; c.mergeME = two.getToggleState(); c.highQuality = hq.getToggleState(); c.muteSources = mute.getToggleState(); c.splitVoices = voices.getToggleState(); if (start) start (c); };
     cancel.onClick = [this] { if (cancelFn) cancelFn(); };
     for (juce::Component* c : std::initializer_list<juce::Component*> { &title, &info, &note, &three, &two, &hq, &mute, &voices, &go, &cancel }) addAndMakeVisible (c);
+    hq.setToggleState (true, juce::dontSendNotification);   // qualita' alta di partenza: separa meglio le voci (si puo' togliere per fare piu' in fretta)
     setSize (560, 360);
 }
 

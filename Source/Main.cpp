@@ -1855,7 +1855,7 @@ private:
             for (int i = 0; i < n; ++i) { L[(size_t) i] = 0.4f * std::sin (0.031f * (float) i); R[(size_t) i] = 0.3f * std::sin (0.017f * (float) i + 1.0f); }
             const float* ch[2] = { L.data(), R.data() };
             juce::String err;
-            Options o; o.highQuality = hq == 1;
+            Options o; o.highQuality = hq == 1; o.sharpen = 1.0f; o.gateDb = 0.0f;   // maschere semplici: qui si controlla la matematica base
             const bool ok = separate (ch, 2, n, 48000.0, o, files, fake, {}, err);
             expect (ok, juce::String ("separazione con cuore finto (") + (hq ? "alta qualita'" : "veloce") + "): " + err);
             juce::AudioBuffer<float> b0, b1, b2;
@@ -1870,6 +1870,36 @@ private:
             }
             expect (eSum < 2.0e-3f, "dialoghi + musica + effetti = originale (errore " + juce::String (eSum, 6) + ")");
             expect (eMask < 2.0e-3f, "ogni stem segue la sua maschera sul canale destro (errore " + juce::String (eMask, 6) + ")");
+        }
+        // maschere piu' nette (nitidezza 3): lo stem minoritario cala molto (quota 0,19 -> ~0,04), il dominante sale (0,5 -> ~0,77); espansore: un segnale debole scende
+        {
+            const int n = 8 * 48000;
+            std::vector<float> L ((size_t) n), R ((size_t) n);
+            for (int i = 0; i < n; ++i) { L[(size_t) i] = 0.4f * std::sin (0.031f * (float) i); R[(size_t) i] = 0.3f * std::sin (0.017f * (float) i + 1.0f); }
+            const float* ch[2] = { L.data(), R.data() };
+            juce::String err;
+            Options o; o.gateDb = 0.0f;
+            expect (separate (ch, 2, n, 48000.0, o, files, fake, {}, err), "separazione con maschere nette: " + err);
+            juce::AudioBuffer<float> b0, b2;
+            if (readAll (files[0], b0) && readAll (files[2], b2))
+            {
+                float p0 = 0.0f, p2 = 0.0f, pr = 0.0f;
+                for (int i = 24000; i < n - 24000; ++i) { p0 = juce::jmax (p0, std::abs (b0.getSample (1, i))); p2 = juce::jmax (p2, std::abs (b2.getSample (1, i))); pr = juce::jmax (pr, std::abs (R[(size_t) i])); }
+                expect (std::abs (p0 / pr - 0.77f) < 0.04f && std::abs (p2 / pr - 0.041f) < 0.015f, "maschere nette: dominante " + juce::String (p0 / pr, 3) + ", minoritario " + juce::String (p2 / pr, 3));
+            }
+            for (auto& v : L) v *= 0.001f;
+            for (auto& v : R) v *= 0.001f;
+            Options g; g.sharpen = 1.0f;   // espansore acceso (-50 dBFS): il segnale a -60 dBFS cala molto
+            const std::array<juce::File, 3> files2 { dir.getChildFile ("d2.wav"), dir.getChildFile ("m2.wav"), dir.getChildFile ("e2.wav") };
+            Options g0 = g; g0.gateDb = 0.0f;
+            expect (separate (ch, 2, n, 48000.0, g, files2, fake, {}, err) && separate (ch, 2, n, 48000.0, g0, files, fake, {}, err), "separazione con espansore: " + err);
+            juce::AudioBuffer<float> e_on, e_off;
+            if (readAll (files2[2], e_on) && readAll (files[2], e_off))
+            {
+                float pOn = 0.0f, pOff = 0.0f;
+                for (int i = 24000; i < n - 24000; ++i) { pOn = juce::jmax (pOn, std::abs (e_on.getSample (0, i))); pOff = juce::jmax (pOff, std::abs (e_off.getSample (0, i))); }
+                expect (pOn < 0.3f * pOff && pOff > 1.0e-5f, "espansore: effetti deboli attenuati (" + juce::String (pOn / pOff, 3) + ")");
+            }
         }
         // 44,1 kHz: l'uscita e' a 48 kHz, allineata (fase di un seno a 440 Hz)
         {
@@ -1910,7 +1940,7 @@ private:
                 std::vector<float> m ((size_t) n);
                 for (int i = 0; i < n; ++i) m[(size_t) i] = 0.3f * std::sin (0.05f * (float) i) * (0.5f + 0.5f * std::sin (0.0001f * (float) i));
                 const float* ch[1] = { m.data() };
-                Options mo;
+                Options mo; mo.sharpen = 1.0f; mo.gateDb = 0.0f;
                 mo.workers = OnnxCore::suggestedWorkers();
                 const bool ok = separate (ch, 1, n, 48000.0, mo, files, core.fn(), {}, err);
                 expect (ok, "modello vero: separazione di 12 s: " + err);
@@ -5350,7 +5380,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.8"; }
+    const juce::String getApplicationVersion() override { return "2.64.9"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override
@@ -5410,6 +5440,8 @@ public:
                     {
                         fc::stems::Options o;
                         o.highQuality = args.contains ("alta");
+                        for (auto& a : args) if (a.startsWith ("nitidezza=")) o.sharpen = a.fromFirstOccurrenceOf ("=", false, false).getFloatValue();   // prove: esponente delle maschere
+                        for (auto& a : args) if (a.startsWith ("soglia=")) o.gateDb = a.fromFirstOccurrenceOf ("=", false, false).getFloatValue();
                         o.workers = fc::stems::OnnxCore::suggestedWorkers();
                         const auto t0 = juce::Time::getMillisecondCounterHiRes();
                         const bool ok = fc::stems::separate (ch, nch, (int64_t) r->lengthInSamples, r->sampleRate, o, files, core.fn(), [] (float p) { std::cout << "\r" << (int) (p * 100) << "%" << std::flush; return true; }, err);

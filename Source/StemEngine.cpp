@@ -239,6 +239,24 @@ bool separate (const float* const* channels, int numChannels, int64_t numSamples
         sc.out.assign ((size_t) kStems, std::vector<std::vector<float>> ((size_t) numChannels, std::vector<float> ((size_t) kChunk, 0.0f)));
     }
 
+    // espansore: livello (RMS a blocchi di 10 ms, canali insieme); sotto la soglia il guadagno cala di 2 dB per ogni dB sotto (fino a -60 dB), con
+    // attacco rapido e rilascio lento per non tagliare le code degli effetti
+    auto expand = [&] (std::vector<std::vector<float>>& chans, float thrDb)
+    {
+        const int blk = kRate / 100;
+        float g = 1.0f;
+        for (int b0 = 0; b0 + blk <= kChunk; b0 += blk)
+        {
+            double e = 0.0;
+            for (auto& ch : chans) for (int j = 0; j < blk; ++j) e += (double) ch[(size_t) (b0 + j)] * ch[(size_t) (b0 + j)];
+            const float lvl = 10.0f * std::log10 ((float) (e / (blk * (double) chans.size())) + 1.0e-14f);
+            const float targetDb = lvl >= thrDb ? 0.0f : juce::jmax (-60.0f, 2.0f * (lvl - thrDb));
+            const float tg = std::pow (10.0f, targetDb / 20.0f);
+            g += (tg - g) * (tg > g ? 0.15f : 0.4f);   // sale piano (rilascio), scende in fretta (attacco)
+            for (auto& ch : chans) for (int j = 0; j < blk; ++j) ch[(size_t) (b0 + j)] *= g;
+        }
+    };
+
     auto processChunk = [&] (int64_t ci, Scratch& sc)
     {
         const int64_t s0 = ci * hop - ovl;   // inizio (virtuale) del blocco
@@ -272,12 +290,23 @@ bool separate (const float* const* channels, int numChannels, int64_t numSamples
                 pw += p[st];
             }
             const float t2 = tr * tr + ti * ti;
+            // maschera piu' netta: la quota di ampiezza di ogni stem (|e_k| / somma |e|) si eleva a 'sharpen' e si rinormalizza; il fattore
+            // r/s riduce la maschera complessa dove lo stem e' minoritario (la' passava un po' di voce negli altri stem)
+            float fac[kStems] = { 1.0f, 1.0f, 1.0f };
+            if (opt.sharpen > 1.001f)
+            {
+                float am[kStems], sa = 1.0e-10f, sg = 1.0e-10f, sh[kStems];
+                for (int st = 0; st < kStems; ++st) { am[st] = std::sqrt (p[st]); sa += am[st]; }
+                for (int st = 0; st < kStems; ++st) { sh[st] = std::pow (am[st] / sa, opt.sharpen); sg += sh[st]; }
+                for (int st = 0; st < kStems; ++st) fac[st] = am[st] > 1.0e-12f ? (sh[st] / sg) / (am[st] / sa) : 0.0f;
+            }
             for (int st = 0; st < kStems; ++st)
             {
                 const float* e = sc.est.data() + (size_t) st * specSize + i * 2;
                 float* gp = sc.g.data() + ((size_t) st * kBins * kFrames + i) * 2;
                 if (t2 > 0.01f * pw) { gp[0] = (e[0] * tr + e[1] * ti) / t2; gp[1] = (e[1] * tr - e[0] * ti) / t2; }   // e / somma
                 else { gp[0] = p[st] / pw; gp[1] = 0.0f; }
+                gp[0] *= fac[st]; gp[1] *= fac[st];
             }
         }
         for (int c = 0; c < numChannels; ++c)
@@ -295,6 +324,8 @@ bool separate (const float* const* channels, int numChannels, int64_t numSamples
                 istftChunk (sc.tmpSpec.data(), sc.out[(size_t) st][(size_t) c].data());
             }
         }
+        if (opt.gateDb < -1.0f)
+            for (int st = 1; st < kStems; ++st) expand (sc.out[(size_t) st], opt.gateDb);
     };
 
     std::vector<std::vector<std::vector<float>>> acc ((size_t) kStems, std::vector<std::vector<float>> ((size_t) numChannels, std::vector<float> ((size_t) kChunk, 0.0f)));

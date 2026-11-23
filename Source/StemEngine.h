@@ -34,6 +34,8 @@ struct Options
 {
     bool highQuality = false;   // sovrapposizione 50% (4 s di passo) invece di 25% (6 s)
     int workers = 1;            // blocchi elaborati insieme (1..8); il cuore deve poter essere chiamato da piu' thread
+    float gateDb = -50.0f;       // espansore su musica ed effetti: sotto questa soglia (dBFS, 0 = spento) il segnale scende piu' in fretta (toglie il fruscio di voce residua)
+    float sharpen = 3.0f;       // esponente delle maschere (1 = rapporto semplice; >1 separa in modo piu' netto e lascia meno voce negli altri stem)
 };
 
 /** Esegue la separazione di 'channels' (1 o 2 canali, numSamples campioni, srcRate Hz). Scrive tre file WAV a 24 bit, a 48 kHz, con lo stesso numero
