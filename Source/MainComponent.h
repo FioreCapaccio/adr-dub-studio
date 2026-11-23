@@ -137,6 +137,7 @@ private:
     void checkRecovery();
     void runExport (const ExportOptions&);
     void exportSelectedClips();
+    void exportOriginalFiles();
     void exportVideoDialog();
     void saveAs();
     void saveCurrent();

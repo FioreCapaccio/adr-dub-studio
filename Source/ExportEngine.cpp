@@ -539,3 +539,24 @@ bool prepareClipExport (const Project& project, Session& out, ExportOptions& o, 
     return true;
 }
 } // namespace fc
+
+namespace fc
+{
+std::vector<std::pair<juce::File, juce::String>> originalFilesOfSelection (const Project& project)
+{
+    std::vector<std::pair<juce::File, juce::String>> out;
+    std::set<juce::String> seen;
+    for (auto& t : project.getSession().tracks)
+        for (auto& c : t.clips)
+            if (project.selection.count (c.id) > 0 && c.asset != nullptr && ! c.asset->offline && c.asset->file.existsAsFile()
+                && seen.insert (c.asset->file.getFullPathName()).second)
+            {
+                juce::String name = c.asset->file.getFileName();
+                if (const auto* cue = project.findCue (c.cueId))
+                    name = juce::File::createLegalFileName (juce::String::formatted ("%02d_", cue->number) + (cue->character.isEmpty() ? juce::String ("ADR") : cue->character)
+                                                            + "_T" + juce::String (c.takeNo)) + c.asset->file.getFileExtension();
+                out.push_back ({ c.asset->file, name });
+            }
+    return out;
+}
+} // namespace fc

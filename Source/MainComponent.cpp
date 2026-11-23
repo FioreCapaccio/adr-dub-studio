@@ -256,6 +256,7 @@ MainComponent::MainComponent()
     timeline->onSilenceRequest = [this] { silenceDialog(); };
     timeline->onSeparateRequest = [this] { separateStemsDialog(); };
     timeline->onExportClipsRequest = [this] { exportSelectedClips(); };
+    timeline->onExportOriginalRequest = [this] { exportOriginalFiles(); };
     timeline->onSplitVoicesRequest = [this] { splitVoicesDialog(); };
     timeline->onCrossfadeRequest = [this] { crossfadeDialog(); };
     timeline->onLevelRequest = [this] (const std::vector<int>& ids) { levelTrackDialog (ids); };
@@ -1727,6 +1728,55 @@ void MainComponent::exportSelectedClips()
             });
         });
         safe->exportJob->launchThread();
+    });
+}
+
+/** Copia i file audio originali dei clip selezionati, uguali a come sono stati registrati o importati (nessuna elaborazione, nessun taglio). */
+void MainComponent::exportOriginalFiles()
+{
+    if (! requireLicense()) return;
+    const auto files = originalFilesOfSelection (*project);
+    if (files.empty()) { showError (TRANS ("I clip selezionati non hanno un file originale da esportare.")); return; }
+    juce::Component::SafePointer<MainComponent> safe (this);
+    const auto desktop = juce::File::getSpecialLocation (juce::File::userDesktopDirectory);
+    auto report = [safe] (int copied, juce::String err, juce::File first)
+    {
+        if (safe == nullptr) return;
+        if (err.isNotEmpty()) { safe->showError (err); return; }
+        auto opts = juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::InfoIcon, TRANS ("Esportazione completata"),
+                                                                 juce::String (copied) + TRANS (" file originali copiati."), TRANS ("Mostra nel Finder"), TRANS ("Chiudi"));
+        juce::NativeMessageBox::showAsync (opts, [first] (int res) { if (res == 0) first.revealToUser(); });
+    };
+
+    if (files.size() == 1)
+    {
+        const auto src = files[0].first;
+        chooser = std::make_unique<juce::FileChooser> (TRANS ("Esporta file originale"), desktop.getChildFile (files[0].second), "*" + src.getFileExtension());
+        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+                              [src, report] (const juce::FileChooser& fc)
+        {
+            auto f = fc.getResult();
+            if (f == juce::File()) return;
+            if (f.getFileExtension().isEmpty()) f = f.withFileExtension (src.getFileExtension());
+            report (1, src.copyFileTo (f) ? juce::String() : TRANS ("Impossibile copiare ") + src.getFileName(), f);
+        });
+        return;
+    }
+    chooser = std::make_unique<juce::FileChooser> (TRANS ("Cartella per i file originali"), desktop, "");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [files, report] (const juce::FileChooser& fc)
+    {
+        const auto dir = fc.getResult();
+        if (! dir.isDirectory()) return;
+        int n = 0;
+        juce::String err;
+        juce::File first;
+        for (auto& [src, name] : files)
+        {
+            const auto dest = dir.getNonexistentChildFile (juce::File (name).getFileNameWithoutExtension(), juce::File (name).getFileExtension(), false);
+            if (src.copyFileTo (dest)) { ++n; if (first == juce::File()) first = dest; }
+            else err += (err.isEmpty() ? "" : "\n") + TRANS ("Impossibile copiare ") + src.getFileName();
+        }
+        report (n, err, first);
     });
 }
 

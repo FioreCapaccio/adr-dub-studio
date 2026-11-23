@@ -46,6 +46,9 @@ ExportResult exportSession (const Session& session, double projectRate, const Ex
     Ritorna false se non c'e' audio da esportare. */
 bool prepareClipExport (const Project&, Session& out, ExportOptions& options, juce::String& name);
 
+/** I file audio originali dei clip selezionati (senza doppioni, esclusi quelli offline o mancanti): file sorgente e nome proposto (cue, personaggio e take per le take ADR, altrimenti il nome del file). */
+std::vector<std::pair<juce::File, juce::String>> originalFilesOfSelection (const Project&);
+
 /** Freeze: rende l'audio di una traccia con guadagno in ingresso, EQ, compressore e plug-in (prima del fader), come file WAV a 32 bit float. */
 bool renderTrackProcessed (const Session& source, int trackId, double rate, int64_t totalSamples, const juce::File& dest,
                            const std::function<bool (double)>& progress, juce::String& error);

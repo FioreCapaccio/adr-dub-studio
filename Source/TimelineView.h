@@ -49,6 +49,7 @@ public:
     std::function<void()> onSilenceRequest;
     std::function<void()> onSeparateRequest;
     std::function<void()> onExportClipsRequest;
+    std::function<void()> onExportOriginalRequest;
     std::function<void()> onSplitVoicesRequest;
     std::function<void()> onCrossfadeRequest;          // Rileva / elimina i silenzi
     std::function<void (const std::vector<int>&)> onLevelRequest;   // Livella il volume delle tracce scelte

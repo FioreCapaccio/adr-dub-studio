@@ -452,7 +452,14 @@ private:
             std::unique_ptr<juce::AudioFormatReader> rd (formats.createReaderFor (f));
             expect (prepared && r.ok && rd != nullptr && std::abs ((double) rd->lengthInSamples - (double) len) < 4800 && std::abs (pk - refPk) < 0.5f && refPk > -60.0f && nm.isNotEmpty(),
                     "esporta clip: il file dura quanto il clip e non e' muto (picco " + juce::String (pk, 1) + " dB, " + juce::String (rd != nullptr ? (juce::int64) rd->lengthInSamples : 0) + " campioni su " + juce::String ((juce::int64) len) + ")");
+            p.selection = { cl.id };
+            const auto savedFile = cl.asset->file;
+            cl.asset->file = tmpDir.getChildFile ("ref.wav");   // l'onda di prova e' sintetica: le si da un file vero
+            const auto orig = fc::originalFilesOfSelection (p);
+            expect (orig.size() == 1 && orig[0].first == cl.asset->file && orig[0].first.existsAsFile(), "esporta file originale: il file sorgente del clip selezionato");
+            cl.asset->file = savedFile;
             p.selection.clear();
+            expect (fc::originalFilesOfSelection (p).empty(), "esporta file originale: senza selezione non c'e' nulla");
             expect (! fc::prepareClipExport (p, snap, o, nm), "esporta clip: senza selezione non c'e' nulla da esportare");
             cl.muted = false;
         }
@@ -5343,7 +5350,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.7"; }
+    const juce::String getApplicationVersion() override { return "2.64.8"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

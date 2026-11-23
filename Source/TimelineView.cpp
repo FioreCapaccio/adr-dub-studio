@@ -3357,6 +3357,7 @@ void TimelineView::showClipMenu (int64_t clipId)
         const auto* cl = project.findClip (clipId);
         const bool several = project.selection.size() > 1 && project.selection.count (clipId) > 0;
         m.addItem (50, several ? TRANS ("Esporta i clip selezionati...") : (cl != nullptr && cl->cueId != 0 ? TRANS ("Esporta questa take...") : TRANS ("Esporta questo clip...")));
+        m.addItem (51, several ? TRANS ("Esporta i file originali...") : TRANS ("Esporta file originale..."));
     }
     m.addItem (12, TRANS ("Unisci i clip selezionati (JOIN)"), project.joinableGroups (project.selection) > 0);
     {
@@ -3406,6 +3407,10 @@ void TimelineView::showClipMenu (int64_t clipId)
             case 8: if (c != nullptr) p.setActiveTake (c->cueId, c->takeNo); break;
             case 9: if (c != nullptr) p.deleteTake (c->cueId, c->takeNo); break;
             case 12: if (safe->onJoinRequest) safe->onJoinRequest(); break;
+            case 51:
+                if (p.selection.count (clipId) == 0) p.selection = { clipId };
+                if (safe->onExportOriginalRequest) safe->onExportOriginalRequest();
+                break;
             case 50:
                 if (p.selection.count (clipId) == 0) p.selection = { clipId };
                 if (safe->onExportClipsRequest) safe->onExportClipsRequest();
