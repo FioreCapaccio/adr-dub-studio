@@ -42,6 +42,10 @@ public:
     std::vector<float> lastCue;
     bool referenceMode = false;   // confronto A/B: suonano solo le tracce di riferimento
     bool excludeTakes = false;    // registrazione di un cue ADR: non suonano i take ADR (in cuffia e in uscita solo la guida e l'audio originale)
+    // ascolto dell'ingresso: le tracce armate con l'ascolto acceso sommano l'ingresso prima di guadagno, EQ, compressore e plug-in
+    const float* const* monIn = nullptr;   // canali della scheda (gia' spostati all'inizio del blocco), nullptr = niente ascolto
+    int monNumIn = 0, monDefault = 0;
+    bool monitorOnly = false;              // trasporto fermo: solo l'ingresso, niente clip
 
     /** Compensazione di latenza dei plug-in: le tracce con meno latenza vengono ritardate fino alla piu' lenta. */
     void setPdcEnabled (bool on) noexcept { pdcEnabled = on; }
@@ -253,7 +257,7 @@ private:
     std::vector<std::shared_ptr<LivePeaks>> livePeaks;
 
     void processChunk (int n, const float* const* in, int numIn, int inOffset);
-    void addInputMonitor (int n, const float* const* in, int numIn, int inOffset);
+    bool anyInputMonitor() const;
     void processChunkMain (int n, const float* const* in, int numIn, int inOffset);
     void finishCue (int n, const float* const* in, int numIn, int inOffset);
     juce::AudioBuffer<float> cueBuf { 2, Mixer::kChunk }, cueSumBuf { 2, Mixer::kChunk };
@@ -288,6 +292,7 @@ private:
     juce::AudioBuffer<float> master { 2, Mixer::kChunk };
     MasterBus masterBus;
     bool busNeedsReset = true;
+    std::array<const float*, 64> monPtrs {};   // ingressi spostati all'inizio del blocco, per il mixer (niente allocazioni nel thread audio)
     float playGain = 0.0f;
 
     std::atomic<bool> playing { false };

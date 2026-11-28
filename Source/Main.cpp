@@ -3006,6 +3006,31 @@ private:
         expect (ra != nullptr && rb != nullptr && ra->bitsPerSample == 16 && rb->bitsPerSample == 16, "registrazione: profondita' scelta nelle Impostazioni (16 bit)");
         ra.reset(); rb.reset();
         fa.deleteFile(); fb.deleteFile();
+
+        // ascolto dell'ingresso: passa per la catena della traccia (qui fader -6 dB e fase invertita), da fermo e in riproduzione
+        {
+            fc::Project q (formats, 48000.0);
+            auto& tr = q.edit().tracks[0];
+            tr.live->armed = true; tr.live->monitor = true; tr.live->inputMode = fc::monoInput (0);
+            tr.live->limiterOn = false; tr.live->eq.enabled = false; tr.live->comp.enabled = false;
+            tr.live->volumeDb = -6.0f; tr.live->invert = true;
+            q.edit().master->limiterOn = false;
+            fc::AudioEngine e2;
+            e2.setNumInputChannelsForTest (1);
+            e2.publish (std::make_shared<const fc::Session> (q.getSession()));
+            std::vector<float> one ((size_t) block, 0.4f);
+            const float* in1[1] = { one.data() };
+            auto runMon = [&] { for (int b = 0; b < 20; ++b) e2.audioDeviceIOCallbackWithContext (in1, 1, outs, 2, block, juce::AudioIODeviceCallbackContext()); return l[(size_t) block - 1]; };
+            const float stopped = runMon();
+            e2.play();
+            const float playing = runMon();
+            e2.stop();
+            runMon();
+            tr.live->monitor = false;
+            const float off = runMon();
+            expect (std::abs (stopped + 0.2f) < 0.01f && std::abs (playing + 0.2f) < 0.01f && off == 0.0f,
+                    "ascolto: l'ingresso passa per fader e plug-in della traccia (fermo " + juce::String (stopped, 3) + ", in riproduzione " + juce::String (playing, 3) + ", spento " + juce::String (off, 3) + ")");
+        }
     }
 
     // lo zoom (tastiera, pulsanti, rotella, pinch) tiene la testina al centro della vista
@@ -5412,7 +5437,7 @@ class StudioApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "ADR Dub Studio"; }
-    const juce::String getApplicationVersion() override { return "2.64.10"; }
+    const juce::String getApplicationVersion() override { return "2.64.11"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String& commandLine) override

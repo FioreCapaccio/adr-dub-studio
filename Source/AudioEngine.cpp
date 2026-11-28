@@ -166,17 +166,29 @@ void Mixer::render (const Session& s, int64_t pos, juce::AudioBuffer<float>& out
             scratch.clear (0, chunk);
             scratch.clear (1, 0, chunk);
             const bool frozen = t.frozen != nullptr;
-            if (audible && frozen && auditionClip == 0 && ! excludeTakes)   // Freeze: suona l'audio gia' elaborato al posto dei clip
+            const bool playClips = audible && ! monitorOnly;
+            if (playClips && frozen && auditionClip == 0 && ! excludeTakes)   // Freeze: suona l'audio gia' elaborato al posto dei clip
             {
                 Clip fc;
                 fc.asset = t.frozen;
                 fc.length = t.frozen->length();
                 if (fc.end() > cpos && fc.start < cpos + chunk) renderClip (fc, cpos, chunk);
             }
-            else if (audible)
+            else if (playClips)
                 for (auto& c : t.clips)
                     if ((auditionClip > 0 ? c.id == auditionClip : (! c.muted && ! c.rejected && ! ((auditionClip < 0 || excludeTakes) && c.cueId != 0))) && (t.soloLane < 0 || c.lane == t.soloLane) && c.end() > cpos && c.start < cpos + chunk)
                         renderClip (c, cpos, chunk);
+
+            if (audible && monIn != nullptr && live.armed.load() && live.monitor.load())   // ascolto dell'ingresso: passa per la catena della traccia
+            {
+                const auto pick = decodeInput (live.inputMode.load(), monDefault, monNumIn);
+                const int a = pick.a, b = pick.b >= 0 ? pick.b : a;
+                if (a < monNumIn && b < monNumIn && monIn[a] != nullptr && monIn[b] != nullptr)
+                {
+                    scratch.addFrom (0, 0, monIn[a] + outStart + done, chunk);
+                    scratch.addFrom (1, 0, monIn[b] + outStart + done, chunk);
+                }
+            }
 
             if (audible)   // guadagno in ingresso (a rampa): alimenta EQ e compressore al livello giusto
             {
@@ -767,20 +779,11 @@ void AudioEngine::processChunk (int n, const float* const* in, int numIn, int in
 
 // ascolto in cuffia dell'ingresso delle tracce armate con l'ascolto acceso (come "input monitoring" di Reaper);
 // la registrazione non dipende da questo: scrive comunque, qualunque sia lo stato dell'ascolto
-void AudioEngine::addInputMonitor (int n, const float* const* in, int numIn, int inOffset)
+bool AudioEngine::anyInputMonitor() const
 {
-    if (current == nullptr || numIn <= 0 || in == nullptr) return;
     for (auto& t : current->tracks)
-    {
-        auto& live = *t.live;
-        if (! live.armed.load() || ! live.monitor.load()) continue;
-        const auto pick = decodeInput (live.inputMode.load(), defaultInput.load(), numIn);
-        const int a = pick.a, b = pick.b >= 0 ? pick.b : a;
-        if (a >= numIn || b >= numIn || in[a] == nullptr || in[b] == nullptr) continue;
-        const float g = dbToGain (live.trimDb.load());
-        juce::FloatVectorOperations::addWithMultiply (master.getWritePointer (0), in[a] + inOffset, g, n);
-        juce::FloatVectorOperations::addWithMultiply (master.getWritePointer (1), in[b] + inOffset, g, n);
-    }
+        if (t.live->armed.load() && t.live->monitor.load()) return true;
+    return false;
 }
 
 void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, int inOffset)
@@ -791,11 +794,25 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
 
     if (current == nullptr) { master.clear (0, n); return; }
 
+    // ascolto dell'ingresso: il mixer lo somma nelle tracce armate, cosi' passa anche per EQ, compressore e plug-in
+    const int nMon = juce::jlimit (0, (int) monPtrs.size(), numIn);
+    if (in != nullptr)
+        for (int c = 0; c < nMon; ++c) monPtrs[(size_t) c] = in[c] != nullptr ? in[c] + inOffset : nullptr;
+    mixer.monIn = nMon > 0 && in != nullptr ? monPtrs.data() : nullptr;
+    mixer.monNumIn = nMon;
+    mixer.monDefault = defaultInput.load();
+
     const bool wantPlay = playing.load();
     if (! wantPlay && playGain <= 0.0f)
     {
         master.clear (0, n);
-        addInputMonitor (n, in, numIn, inOffset);   // l'ascolto dell'ingresso vale anche a trasporto fermo
+        if (mixer.monIn != nullptr && anyInputMonitor())   // l'ascolto dell'ingresso vale anche a trasporto fermo
+        {
+            mixer.monitorOnly = true;
+            mixer.render (*current, pos, master, 0, n);
+            mixer.monitorOnly = false;
+        }
+        mixer.monIn = nullptr;
         busNeedsReset = true;
         return;
     }
@@ -866,7 +883,7 @@ void AudioEngine::processChunkMain (int n, const float* const* in, int numIn, in
     master.applyGainRamp (1, 0, n, playGain, newPlayGain);
     playGain = newPlayGain;
 
-    addInputMonitor (n, in, numIn, inOffset);
+    mixer.monIn = nullptr;
 
     // master: inserti, fader, limiter, misuratori
     masterBus.process (*current->master, master, n);

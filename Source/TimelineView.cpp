@@ -1434,7 +1434,8 @@ void TimelineView::paintBody (juce::Graphics& g)
     }
 
     // testina
-    const float px = sampleToX (engine.getPosition());
+    // la posizione letta dal timer, non quella attuale: la zona da ridisegnare e' stata scelta su quella, altrimenti la testina cade fuori e sparisce
+    const float px = sampleToX (lastPos >= 0 ? lastPos : engine.getPosition());
     if (px >= (float) headerW - 1.0f && px <= (float) lanes.getRight())
     {
         g.setColour (playhead.withAlpha (0.22f));
